@@ -1,0 +1,294 @@
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean as mysqlBoolean, json } from "drizzle-orm/mysql-core";
+
+/**
+ * Core user table backing auth flow.
+ */
+export const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  name: text("name"),
+  email: varchar("email", { length: 320 }),
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Resources - consultores e profissionais
+ */
+export const resources = mysqlTable("resources", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).default(""),
+  profile: varchar("profile", { length: 128 }).notNull().default("Funcional"),
+  front: varchar("front", { length: 128 }).notNull().default(""),
+  fronts: json("fronts").$type<string[]>().default([]),
+  dailyCapacity: int("dailyCapacity").notNull().default(8),
+  status: varchar("status", { length: 64 }).notNull().default("Ativo"),
+  birthDate: varchar("birthDate", { length: 10 }).default(""),
+  startDate: varchar("startDate", { length: 10 }).default(""),
+  endDate: varchar("endDate", { length: 10 }).default(""),
+  contractType: varchar("contractType", { length: 64 }).notNull().default("CLT"),
+  vacationDaysEntitled: int("vacationDaysEntitled").notNull().default(30),
+  skipAllocationCheck: mysqlBoolean("skipAllocationCheck").notNull().default(false),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Projects - projetos de implementação
+ */
+export const projects = mysqlTable("projects", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  client: varchar("client", { length: 255 }).notNull().default(""),
+  manager: varchar("manager", { length: 255 }).notNull().default(""),
+  status: varchar("status", { length: 64 }).notNull().default("Planejado"),
+  startDate: varchar("startDate", { length: 10 }).notNull().default(""),
+  endDate: varchar("endDate", { length: 10 }).notNull().default(""),
+  fronts: json("fronts").$type<string[]>().default([]),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Phases - fases de projeto (Prepare, Explore, Realize, Deploy, Run)
+ */
+export const phases = mysqlTable("phases", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  phase: varchar("phase", { length: 64 }).notNull(),
+  startDate: varchar("startDate", { length: 10 }).notNull().default(""),
+  endDate: varchar("endDate", { length: 10 }).notNull().default(""),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  completionPercent: int("completionPercent").notNull().default(0),
+  status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Absences - férias, ausências, feriados
+ */
+export const absences = mysqlTable("absences", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  resourceId: varchar("resourceId", { length: 64 }).notNull(),
+  type: varchar("type", { length: 64 }).notNull(),
+  startDate: varchar("startDate", { length: 10 }).notNull(),
+  endDate: varchar("endDate", { length: 10 }).notNull(),
+  approved: int("approved").notNull().default(1),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Allocations - alocações de recursos em projetos
+ */
+export const allocations = mysqlTable("allocations", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  resourceId: varchar("resourceId", { length: 64 }).notNull(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  phaseId: varchar("phaseId", { length: 64 }).notNull().default(""),
+  front: varchar("front", { length: 128 }).notNull().default(""),
+  startDate: varchar("startDate", { length: 10 }).notNull(),
+  endDate: varchar("endDate", { length: 10 }).notNull(),
+  hoursPerDay: int("hoursPerDay").notNull().default(8),
+  allocationType: varchar("allocationType", { length: 64 }).notNull().default("Projeto"),
+  status: varchar("status", { length: 64 }).notNull().default("Confirmada"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * App Users - gestão de acesso (separado do auth users)
+ */
+export const appUsers = mysqlTable("app_users", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  role: varchar("role", { length: 32 }).notNull().default("viewer"),
+  permissions: json("permissions").$type<{
+    dashboard: boolean;
+    resources: boolean;
+    projects: boolean;
+    absences: boolean;
+    planner: boolean;
+    access: boolean;
+    settings: boolean;
+  }>().notNull(),
+  active: int("active").notNull().default(1),
+  resourceId: varchar("resourceId", { length: 64 }).default(""),
+  teamFronts: json("teamFronts").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Lookups - cadastros auxiliares configuráveis
+ */
+export const lookups = mysqlTable("lookups", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  category: varchar("category", { length: 64 }).notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
+  active: int("active").notNull().default(1),
+  sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * TechMove Projects - dados do fluxo TechMove
+ */
+export const techmoveProjects = mysqlTable("techmove_projects", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull().unique(),
+  data: json("data").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// ===== WORKFLOW MODULE TABLES =====
+
+/**
+ * Scope Items - itens de escopo do DDA
+ */
+export const scopeItems = mysqlTable("scope_items", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  module: varchar("module", { length: 128 }).notNull(),
+  code: varchar("code", { length: 128 }).notNull().default(""),
+  name: varchar("name", { length: 512 }).notNull(),
+  processArea: varchar("processArea", { length: 256 }).notNull().default(""),
+  description: text("description"),
+  active: int("active").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * BDCQ Questions - perguntas do Business Driven Configuration Questionnaire
+ */
+export const bdcqQuestions = mysqlTable("bdcq_questions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  module: varchar("module", { length: 128 }).notNull(),
+  category: varchar("category", { length: 256 }).notNull().default(""),
+  question: text("question").notNull(),
+  isDefault: int("isDefault").notNull().default(0),
+  sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * BDCQ Answers - respostas do BDCQ
+ */
+export const bdcqAnswers = mysqlTable("bdcq_answers", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  questionId: varchar("questionId", { length: 64 }).notNull(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  answer: text("answer").notNull(),
+  answeredBy: varchar("answeredBy", { length: 255 }).notNull().default(""),
+  attachments: json("attachments").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Workshops - sessões de workshop
+ */
+export const workshops = mysqlTable("workshops", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  title: varchar("title", { length: 512 }).notNull(),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  scheduledDate: varchar("scheduledDate", { length: 10 }).notNull().default(""),
+  duration: varchar("duration", { length: 64 }).notNull().default(""),
+  participants: json("participants").$type<string[]>().default([]),
+  agenda: json("agenda").$type<string[]>().default([]),
+  status: varchar("status", { length: 64 }).notNull().default("Planejado"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Workshop Transcripts - transcrições de workshops
+ */
+export const workshopTranscripts = mysqlTable("workshop_transcripts", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  workshopId: varchar("workshopId", { length: 64 }).notNull(),
+  content: text("content").notNull(),
+  fileUrl: varchar("fileUrl", { length: 1024 }).default(""),
+  uploadedBy: varchar("uploadedBy", { length: 255 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+/**
+ * Meeting Minutes - atas geradas por IA
+ */
+export const meetingMinutes = mysqlTable("meeting_minutes", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  workshopId: varchar("workshopId", { length: 64 }).notNull(),
+  content: text("content").notNull(),
+  generatedBy: varchar("generatedBy", { length: 64 }).notNull().default("ai"),
+  version: int("version").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * DCD Documents - Design Configuration Documents gerados por IA
+ */
+export const dcdDocuments = mysqlTable("dcd_documents", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  title: varchar("title", { length: 512 }).notNull(),
+  content: text("content").notNull(),
+  version: int("version").notNull().default(1),
+  status: varchar("status", { length: 64 }).notNull().default("Rascunho"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Gaps - lacunas identificadas no DCD
+ */
+export const gaps = mysqlTable("gaps", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  dcdId: varchar("dcdId", { length: 64 }).notNull().default(""),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  description: text("description").notNull(),
+  impact: varchar("impact", { length: 64 }).notNull().default("Médio"),
+  resolution: text("resolution"),
+  status: varchar("status", { length: 64 }).notNull().default("Aberto"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Configurations - itens de configuração (checklist)
+ */
+export const configurations = mysqlTable("configurations", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  category: varchar("category", { length: 256 }).notNull().default(""),
+  description: text("description").notNull(),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  status: varchar("status", { length: 64 }).notNull().default("Pendente"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});

@@ -1,0 +1,1 @@
+ALTER TABLE "resources" ADD COLUMN IF NOT EXISTS "photoUrl" text DEFAULT '' NOT NULL;

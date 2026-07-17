@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1782238629580,
+      "tag": "0000_faithful_warpath",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782578193426,
+      "tag": "0001_parallel_mentallo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782720000000,
+      "tag": "0002_integrity_readiness",
+      "breakpoints": true
+    }
+  ]
+}

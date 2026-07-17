@@ -1,0 +1,60 @@
+name: Deploy Railway
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: railway-production
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript validation
+        run: pnpm run check
+
+      - name: Production build
+        run: pnpm run build
+
+  deploy:
+    name: Deploy to Railway
+    needs: validate
+    runs-on: ubuntu-latest
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+    steps:
+      - name: Check Railway configuration
+        if: ${{ env.RAILWAY_TOKEN == '' || env.RAILWAY_SERVICE_ID == '' }}
+        run: |
+          echo "Railway deploy not configured."
+          echo "Configure GitHub secret RAILWAY_TOKEN and GitHub variable RAILWAY_SERVICE_ID."
+          exit 1
+
+      - name: Checkout
+        if: ${{ env.RAILWAY_TOKEN != '' && env.RAILWAY_SERVICE_ID != '' }}
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        if: ${{ env.RAILWAY_TOKEN != '' && env.RAILWAY_SERVICE_ID != '' }}
+        run: railway up --service "$RAILWAY_SERVICE_ID" --ci

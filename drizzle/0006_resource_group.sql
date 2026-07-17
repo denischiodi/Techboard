@@ -1,0 +1,1 @@
+ALTER TABLE "resources" ADD COLUMN IF NOT EXISTS "group" text DEFAULT '' NOT NULL;

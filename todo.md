@@ -1,0 +1,53 @@
+# Delivery Resource Planner - TODO
+
+- [x] Instalar dependências: recharts, @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities, date-fns
+- [x] Configurar schema do banco de dados (resources, projects, project_phases, allocations, absences)
+- [x] Criar dados mockados embutidos para funcionamento imediato
+- [x] Criar API backend (tRPC routers) para CRUD de recursos, projetos, fases, ausências e alocações
+- [x] Implementar DashboardLayout com sidebar de navegação
+- [x] Implementar tela Dashboard com indicadores e gráficos Recharts (barras e pizza)
+- [x] Implementar tela Recursos com CRUD completo
+- [x] Implementar tela Projetos com CRUD completo
+- [x] Implementar tela Férias/Ausências com CRUD completo
+- [x] Implementar tela Planner Gantt com linhas por recurso e colunas por dia
+- [x] Implementar drag and drop de cards com DnD Kit
+- [x] Implementar resize de período nos cards do Gantt
+- [x] Implementar cálculo automático de capacidade diária
+- [x] Implementar alerta visual de sobrealocação no Gantt e Dashboard
+- [x] Implementar bloqueio visual de férias/ausências no Gantt
+- [x] Implementar filtros dinâmicos no Gantt (semana, projeto, frente, recurso)
+- [x] Implementar modal de edição rápida de alocação
+- [x] Implementar exportação para CSV
+- [x] Criar testes vitest
+- [x] Implementar resize real dos cards do Gantt com handles laterais
+- [x] Expandir tela de Projetos com CRUD de fases
+- [x] Melhorar resize com cálculo dinâmico de largura de coluna
+- [x] Remover coluna de horas da tabela de recursos (manter internamente para cálculos)
+- [x] Adicionar campos: data de nascimento e data de início na consultoria em Recursos
+- [x] Adicionar campo de saldo de férias (dias de direito) em Recursos
+- [x] Exibir saldo de férias usado/disponível na tela de Recursos
+- [x] Validar saldo de férias na tela de Férias/Ausências
+- [x] Adicionar upload em massa via Excel na aba Recursos
+- [x] Adicionar upload em massa via Excel na aba Projetos
+- [x] Adicionar upload em massa via Excel na aba Férias/Ausências
+- [x] Adicionar upload em massa via Excel na aba Planner (alocações)
+- [x] Adicionar filtro de sobrealocação (sim/não) no Planner Gantt
+- [x] Implementar visão mensal no Planner Gantt com barras contínuas
+- [x] Adicionar alternância fácil entre visão semanal e mensal
+- [x] Adicionar botão de download do modelo Excel em cada aba (Recursos, Projetos, Férias, Planner)
+- [x] Implementar visualização anual no Planner (agrupado por mês)
+- [x] Adicionar campo "frentes" no cadastro de projeto (múltiplas frentes por projeto)
+- [x] Gerar alerta de necessidade no Planner quando projeto tem frente sem recurso alocado
+- [x] Adicionar campo "data fim na consultoria" na tela de Recursos
+- [x] Remover coluna custo/hora da tela de Recursos
+- [x] Criar alerta de aniversário (quando data de nascimento se aproxima)
+- [x] Adicionar drag and drop nas barras da visão mensal do Planner
+- [x] Adicionar resize nas barras da visão mensal do Planner
+- [x] Dashboard: alerta de recurso sem alocação
+- [x] Dashboard: alerta de projeto faltando recurso (frente sem alocação)
+- [x] Adicionar modal interativo no Dashboard para alocação rápida ao clicar em projetos faltando recurso
+- [x] Criar sistema de gestão de acesso com controle por aba/tela
+- [x] Definir tipos de permissão por aba (Dashboard, Recursos, Projetos, Férias, Planner)
+- [x] Criar tela de administração de usuários e permissões
+- [x] Implementar navegação condicional baseada nas permissões do usuário logado
+- [x] Bloquear acesso a abas não autorizadas (redirect + mensagem)
