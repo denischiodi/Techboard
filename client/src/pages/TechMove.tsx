@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -11,6 +13,7 @@ import {
   FileText,
   Flag,
   GitBranch,
+  LogOut,
   Loader2,
   Lock,
   MessageSquareText,
@@ -23,9 +26,11 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { assetPath } from "@/const";
+import { appPath, assetPath } from "@/const";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { EmailCodeLogin } from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -78,6 +83,90 @@ function todayIso() {
 
 function asList(value?: string[]) {
   return Array.isArray(value) ? value : [];
+}
+
+function normalizeHeader(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function textValue(row: Record<string, unknown>, labels: string[]) {
+  const wanted = labels.map(normalizeHeader);
+  const entry = Object.entries(row).find(([key]) => wanted.includes(normalizeHeader(key)));
+  return entry ? String(entry[1] ?? "").trim() : "";
+}
+
+function normalizePriority(value: string) {
+  const priority = value.trim().toLowerCase();
+  if (priority.startsWith("alt")) return "Alta";
+  if (priority.startsWith("baix")) return "Baixa";
+  if (priority.startsWith("med")) return "Média";
+  return value || "Normal";
+}
+
+function readDdaScopeItems(file: File): Promise<TechMoveScopeItem[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Nao foi possivel ler a planilha DDA."));
+    reader.onload = () => {
+      try {
+        const workbook = XLSX.read(reader.result as ArrayBuffer, { type: "array", cellDates: false });
+        const sheetName =
+          workbook.SheetNames.find(name => normalizeHeader(name).includes("scope")) ||
+          workbook.SheetNames[0];
+        const sheet = sheetName ? workbook.Sheets[sheetName] : null;
+        if (!sheet) {
+          reject(new Error("A planilha nao possui abas para importar."));
+          return;
+        }
+
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+        const importedAt = new Date().toISOString();
+        const items = rows
+          .map((row, index): TechMoveScopeItem | null => {
+            const code = textValue(row, ["Código", "Codigo", "Code", "Scope Item ID"]);
+            const name = textValue(row, ["Scope Item", "Nome", "Name", "Descrição", "Descricao"]);
+            const module = textValue(row, ["Módulo", "Modulo", "Module", "Frente"]) || "Geral";
+            const lob = textValue(row, ["LOB SAP", "LOB", "Linha de Negócio", "Linha de Negocio"]);
+            const processArea = textValue(row, ["Processo", "Process Area", "Área de Processo", "Area de Processo"]) || lob || module;
+            const priority = normalizePriority(textValue(row, ["Prioridade", "Priority"]));
+            const fitToStandard = textValue(row, ["Fit-to-Standard", "Fit to Standard", "FTS"]);
+            const userStory = textValue(row, ["User Story", "História", "Historia"]);
+            const status = textValue(row, ["Status"]);
+
+            if (!code && !name) return null;
+
+            return {
+              id: uid("scope"),
+              module,
+              code: code || `DDA-${index + 1}`,
+              name: name || code || `Scope item ${index + 1}`,
+              processArea,
+              lob,
+              priority,
+              fitToStandard,
+              userStory,
+              status,
+              description: [lob ? `LOB SAP: ${lob}` : "", processArea ? `Processo: ${processArea}` : ""].filter(Boolean).join(" | "),
+              documentRef: file.name,
+              sourceFile: file.name,
+              importedAt,
+              consultantName: "",
+              active: true,
+            };
+          })
+          .filter((item): item is TechMoveScopeItem => Boolean(item));
+
+        resolve(items);
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error("Erro ao processar a planilha DDA."));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 function emptyData(projectId: string): TechMoveData {
@@ -213,6 +302,73 @@ function buildStages(data: TechMoveData): TrailStage[] {
 }
 
 export default function TechMove() {
+  const { loading, user, logout } = useAuth();
+
+  if (loading) {
+    return <LoadingState />;
+  }
+
+  if (!user) {
+    return <EmailCodeLogin />;
+  }
+
+  return (
+    <TechMoveShell userName={user.name || user.email || "Usuario"} onLogout={logout}>
+      <TechMoveWorkspace />
+    </TechMoveShell>
+  );
+}
+
+function TechMoveShell({
+  children,
+  userName,
+  onLogout,
+}: {
+  children: React.ReactNode;
+  userName: string;
+  onLogout: () => Promise<void>;
+}) {
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-950">
+      <header className="sticky top-0 z-40 border-b bg-white/95 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <a
+              href={appPath("/")}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-white text-slate-700 transition hover:bg-slate-100"
+              title="Voltar ao TechBoard"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </a>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="inline-flex rounded-xl bg-[#111b2e] px-3 py-2 shadow-sm">
+                <img src={assetPath("/techmove-logo.svg")} alt="TechMove" className="h-7 w-auto max-w-[180px] object-contain" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">Workflow SAP</p>
+                <p className="truncate text-xs text-slate-500">App separado, sincronizado com projetos e recursos do TechBoard</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 sm:justify-end">
+            <span className="truncate text-xs text-slate-500 sm:max-w-[220px]">{userName}</span>
+            <Button variant="outline" size="sm" onClick={() => void onLogout()}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sair
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+        {children}
+      </main>
+    </div>
+  );
+}
+
+function TechMoveWorkspace() {
   const { data: projects = [], isLoading: projectsLoading } = trpc.projects.list.useQuery();
   const [projectId, setProjectId] = useState("");
   const [data, setData] = useState<TechMoveData | null>(null);
@@ -286,7 +442,7 @@ export default function TechMove() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 pb-10">
+    <div className="mx-auto max-w-[1500px] space-y-5 pb-10">
       <header className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="grid gap-5 p-5 lg:grid-cols-[1fr_340px] lg:items-start">
           <div>
@@ -490,6 +646,7 @@ function Empty({ text }: { text: string }) {
 }
 
 function ScopeStep({ data, project, update }: StepProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const add = () => update(current => ({
     ...current,
     scopeItems: [...current.scopeItems, {
@@ -507,34 +664,73 @@ function ScopeStep({ data, project, update }: StepProps) {
 
   const activateAll = () => update(current => ({ ...current, scopeItems: current.scopeItems.map(item => ({ ...item, active: true })) }));
 
+  const importDda = async (file?: File) => {
+    if (!file) return;
+    try {
+      const imported = await readDdaScopeItems(file);
+      if (!imported.length) {
+        toast.error("Nenhum scope item encontrado na planilha DDA.");
+        return;
+      }
+      update(current => {
+        const importedKeys = new Set(imported.map(item => item.code.trim().toLowerCase()).filter(Boolean));
+        const kept = current.scopeItems.filter(item => !importedKeys.has(item.code.trim().toLowerCase()));
+        return {
+          ...current,
+          phase: "prepare",
+          scopeItems: [...kept, ...imported],
+        };
+      });
+      toast.success(`${imported.length} scope item(s) importado(s) do DDA.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao importar DDA.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className="space-y-3">
       <StepIntro
         icon={ClipboardList}
         title="DDA e Scope Items do projeto"
-        text="Cadastre codigo, nome, modulo/frente, prioridade e referencia do DDA ou documento SAP. Somente itens ativos entram no BDCQ e workshops."
-        action={<><Button variant="outline" size="sm" onClick={activateAll}><Check className="mr-2 h-4 w-4" />Ativar todos</Button><Button variant="outline" size="sm" onClick={add}><Plus className="mr-2 h-4 w-4" />Scope item</Button></>}
+        text="Suba a planilha DDA do projeto ou cadastre manualmente os scope items. Somente itens ativos entram no BDCQ e nos workshops."
+        action={<>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={event => importDda(event.target.files?.[0])}
+          />
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" />Importar DDA</Button>
+          <Button variant="outline" size="sm" onClick={activateAll}><Check className="mr-2 h-4 w-4" />Ativar todos</Button>
+          <Button variant="outline" size="sm" onClick={add}><Plus className="mr-2 h-4 w-4" />Scope item</Button>
+        </>}
       />
 
       <div className="overflow-x-auto rounded-lg border bg-background">
-        <div className="min-w-[980px]">
-          <div className="grid grid-cols-[60px_120px_1.4fr_130px_150px_1fr_56px] gap-3 border-b bg-muted/40 p-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <span>Ativo</span><span>Codigo</span><span>Nome</span><span>Modulo</span><span>Prioridade</span><span>Documento/Anexo</span><span />
+        <div className="min-w-[1180px]">
+          <div className="grid grid-cols-[60px_120px_1.4fr_120px_150px_120px_150px_1fr_56px] gap-3 border-b bg-muted/40 p-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>Ativo</span><span>Codigo</span><span>Nome</span><span>Modulo</span><span>Processo</span><span>Prioridade</span><span>Status</span><span>Documento/Anexo</span><span />
           </div>
           {data.scopeItems.map(item => (
-            <div key={item.id} className="grid grid-cols-[60px_120px_1.4fr_130px_150px_1fr_56px] gap-3 border-b p-3 last:border-b-0">
+            <div key={item.id} className="grid grid-cols-[60px_120px_1.4fr_120px_150px_120px_150px_1fr_56px] gap-3 border-b p-3 last:border-b-0">
               <div className="pt-2"><Checkbox checked={item.active} onCheckedChange={checked => patchScope(update, item.id, { active: Boolean(checked) })} /></div>
               <Input value={item.code} placeholder="1YE" onChange={event => patchScope(update, item.id, { code: event.target.value })} />
               <Input value={item.name} placeholder="Accounts Payable" onChange={event => patchScope(update, item.id, { name: event.target.value })} />
               <Input value={item.module} placeholder="FI" onChange={event => patchScope(update, item.id, { module: event.target.value, processArea: event.target.value })} />
-              <Select value={(item as TechMoveScopeItem & { priority?: string }).priority || "Normal"} onValueChange={value => patchScope(update, item.id, { priority: value } as Partial<TechMoveScopeItem>)}>
+              <Input value={item.processArea || ""} placeholder="Processo" onChange={event => patchScope(update, item.id, { processArea: event.target.value })} />
+              <Select value={item.priority || "Normal"} onValueChange={value => patchScope(update, item.id, { priority: value })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Baixa">Baixa</SelectItem>
+                  <SelectItem value="Média">Média</SelectItem>
                   <SelectItem value="Normal">Normal</SelectItem>
                   <SelectItem value="Alta">Alta</SelectItem>
                 </SelectContent>
               </Select>
+              <Input value={item.status || ""} placeholder="Status" onChange={event => patchScope(update, item.id, { status: event.target.value })} />
               <Input value={item.documentRef || ""} placeholder="DDA, link, PDF ou observacao" onChange={event => patchScope(update, item.id, { documentRef: event.target.value })} />
               <Button variant="ghost" size="icon" onClick={() => update(current => ({ ...current, scopeItems: current.scopeItems.filter(scope => scope.id !== item.id) }))}><Trash2 className="h-4 w-4" /></Button>
             </div>

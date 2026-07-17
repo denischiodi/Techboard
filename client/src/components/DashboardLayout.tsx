@@ -85,7 +85,7 @@ export default function DashboardLayout({
   );
 }
 
-function EmailCodeLogin() {
+export function EmailCodeLogin() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);

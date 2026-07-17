@@ -182,6 +182,13 @@ export interface TechMoveScopeItem {
   code: string;
   name: string;
   processArea: string;
+  lob?: string;
+  priority?: string;
+  fitToStandard?: string;
+  userStory?: string;
+  status?: string;
+  sourceFile?: string;
+  importedAt?: string;
   description?: string;
   documentRef?: string;
   consultantId?: string;

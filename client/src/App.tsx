@@ -19,21 +19,25 @@ import TechMove from "./pages/TechMove";
 function AppRoutes() {
   return (
     <WouterRouter base={APP_BASE_PATH}>
-      <DashboardLayout>
-        <Switch>
-          <Route path={"/"} component={Dashboard} />
-          <Route path={"/cadastros"} component={Cadastros} />
-          <Route path={"/resources"} component={Resources} />
-          <Route path={"/projects"} component={Projects} />
-          <Route path={"/absences"} component={Absences} />
-          <Route path={"/planner"} component={Planner} />
-          <Route path={"/org-chart"} component={OrgChart} />
-          <Route path={"/techmove"} component={TechMove} />
-          <Route path={"/access"} component={Access} />
-          <Route path={"/404"} component={NotFound} />
-          <Route component={NotFound} />
-        </Switch>
-      </DashboardLayout>
+      <Switch>
+        <Route path={"/techmove"} component={TechMove} />
+        <Route>
+          <DashboardLayout>
+            <Switch>
+              <Route path={"/"} component={Dashboard} />
+              <Route path={"/cadastros"} component={Cadastros} />
+              <Route path={"/resources"} component={Resources} />
+              <Route path={"/projects"} component={Projects} />
+              <Route path={"/absences"} component={Absences} />
+              <Route path={"/planner"} component={Planner} />
+              <Route path={"/org-chart"} component={OrgChart} />
+              <Route path={"/access"} component={Access} />
+              <Route path={"/404"} component={NotFound} />
+              <Route component={NotFound} />
+            </Switch>
+          </DashboardLayout>
+        </Route>
+      </Switch>
     </WouterRouter>
   );
 }
