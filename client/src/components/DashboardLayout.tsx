@@ -66,10 +66,9 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  // LOGIN TEMPORARIAMENTE DESATIVADO PARA VISUALIZAÇÃO
-  // if (!user) {
-  //   return <EmailCodeLogin />;
-  // }
+  if (!user) {
+    return <EmailCodeLogin />;
+  }
 
   return (
     <SidebarProvider
