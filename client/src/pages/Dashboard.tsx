@@ -112,17 +112,18 @@ export default function Dashboard() {
     nextWeek.setDate(nextWeek.getDate() + 7);
     const firstGap = gapInfo || item.gaps?.[0];
     const front = firstGap?.front || item.missingFronts[0] || '';
-    const startDate = firstGap ? ('gapStart' in firstGap ? firstGap.gapStart : firstGap.impactStart) : today.toISOString().split('T')[0];
+    const startDate = (firstGap ? ('gapStart' in firstGap ? firstGap.gapStart : firstGap.impactStart) : today.toISOString().split('T')[0]) || today.toISOString().split('T')[0];
     const endDate = firstGap
       ? ('gapEnd' in firstGap
         ? getResolvedGapEnd(item, firstGap)
         : maxIsoDate(firstGap.impactEnd, firstGap.projectEnd, getProjectEndForAllocation(item.projectId)))
       : nextWeek.toISOString().split('T')[0];
+    const resolvedEndDate = endDate || startDate;
     setAllocForm({
-      resourceId: findSuggestedResourceId(item.projectId, front, startDate, endDate),
+      resourceId: findSuggestedResourceId(item.projectId, front, startDate, resolvedEndDate),
       front,
       startDate,
-      endDate,
+      endDate: resolvedEndDate,
       hoursPerDay: 8,
     });
     setAllocModalOpen(true);
@@ -518,7 +519,7 @@ export default function Dashboard() {
                       onClick={() => {
                         const gap = selectedProject.gaps.find(g => g.front === f);
                         const startDate = gap?.gapStart || allocForm.startDate;
-                        const endDate = gap ? getResolvedGapEnd(selectedProject, gap) : allocForm.endDate;
+                        const endDate = (gap ? getResolvedGapEnd(selectedProject, gap) : allocForm.endDate) || startDate;
                         setAllocForm(prev => ({
                           ...prev,
                           front: f,

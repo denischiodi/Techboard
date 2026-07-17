@@ -736,7 +736,7 @@ function AnnualResourceGanttRow({ resource, allocations, projects, absences, wee
       const project = projects.find(p => p.id === allocation.projectId);
       return { allocation, project, span };
     })
-    .filter((item): item is { allocation: Allocation; project?: Project; span: NonNullable<ReturnType<typeof getAnnualWeekRange>> } => Boolean(item));
+    .filter((item): item is { allocation: Allocation; project: Project | undefined; span: NonNullable<ReturnType<typeof getAnnualWeekRange>> } => Boolean(item));
 
   const rows: typeof bars[] = [];
   bars

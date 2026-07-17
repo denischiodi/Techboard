@@ -32,7 +32,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
   viewer: 'bg-gray-100 text-gray-800 border-gray-200',
 };
 
-const TAB_LABELS: Record<string, string> = {
+const TAB_LABELS = {
   dashboard: 'Dashboard',
   resources: 'Recursos',
   projects: 'Projetos',
@@ -41,9 +41,9 @@ const TAB_LABELS: Record<string, string> = {
   organogram: 'Organograma',
   techmove: 'TechMove',
   access: 'Gestão de Acesso',
-};
+} as const;
 
-type AccessTab = keyof typeof TAB_LABELS & keyof UserPermissions;
+type AccessTab = keyof typeof TAB_LABELS;
 type AccessLevelMatrix = Record<AccessTab, Record<AccessAction, boolean>>;
 type RoleFilter = 'all' | UserRole;
 
