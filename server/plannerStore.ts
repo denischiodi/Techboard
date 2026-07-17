@@ -40,7 +40,7 @@ function getPool() {
   return getPgPool();
 }
 
-async function query<T = any>(sql: string, params: unknown[] = []) {
+async function query<T = any>(sql: string, params: unknown[] = []): Promise<{ rows: T[]; rowCount?: number | null } | null> {
   const db = getPool();
   if (!db) return null;
   return db.query<T>(sql, params);

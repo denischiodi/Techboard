@@ -250,7 +250,8 @@ export default function TechMove() {
     if (!data || !projectId || hydratedProject.current !== projectId) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      save.mutate({ projectId, data: { ...data, updatedAt: new Date().toISOString() } });
+      const payload = normalizeData(projectId, { ...data, updatedAt: new Date().toISOString() });
+      save.mutate({ projectId, data: payload as Parameters<typeof save.mutate>[0]["data"] });
     }, 700);
     return () => clearTimeout(saveTimer.current);
   }, [data, projectId]);
@@ -956,7 +957,7 @@ function makeWorkshop(project: Project, scopes: TechMoveScopeItem[]): TechMoveWo
   return {
     id: uid("workshop"),
     module,
-    fronts: [...new Set(scopes.map(scope => scope.module))],
+    fronts: Array.from(new Set(scopes.map(scope => scope.module))),
     scopeItemCodes: scopeCodes,
     title: `Workshop ${module} - ${scopeCodes.length ? scopeCodes.join(", ") : "Fit-to-Standard"}`,
     date: "",

@@ -86,12 +86,14 @@ function formatDisplayDate(date?: string) {
   return year && month && day ? `${day}/${month}/${year}` : date;
 }
 
-function maxIsoDate(...dates: Array<string | undefined>) {
-  return dates.filter(Boolean).reduce((max, date) => !max || (date as string) > max ? date as string : max, '');
+function maxIsoDate(...dates: Array<string | undefined>): string {
+  const validDates = dates.filter((date): date is string => Boolean(date));
+  return validDates.reduce((max, date) => (!max || date > max ? date : max), '');
 }
 
-function minIsoDate(...dates: Array<string | undefined>) {
-  return dates.filter(Boolean).reduce((min, date) => !min || (date as string) < min ? date as string : min, '');
+function minIsoDate(...dates: Array<string | undefined>): string {
+  const validDates = dates.filter((date): date is string => Boolean(date));
+  return validDates.reduce((min, date) => (!min || date < min ? date : min), '');
 }
 
 function shouldExtendGapToProjectEnd(reason?: string) {
@@ -1080,8 +1082,8 @@ export default function Planner() {
         ? maxIsoDate(firstGap.impactEnd, firstGap.projectEnd, getProjectEndForQuickAllocation(item.projectId))
         : '';
       const front = firstGap.front;
-      const startDate = frontRange?.startDate || ('gapStart' in firstGap ? firstGap.gapStart : firstGap.impactStart);
-      const endDate = frontRange?.endDate || ('gapEnd' in firstGap ? getResolvedGapEnd(item, firstGap) : impactEnd);
+      const startDate = frontRange?.startDate || ('gapStart' in firstGap ? firstGap.gapStart : firstGap.impactStart) || new Date().toISOString().slice(0, 10);
+      const endDate = frontRange?.endDate || ('gapEnd' in firstGap ? getResolvedGapEnd(item, firstGap) : impactEnd) || startDate;
       setQuickAllocForm({
         resourceId: findSuggestedQuickResourceId(item.projectId, front, startDate, endDate),
         front,
@@ -1427,8 +1429,10 @@ export default function Planner() {
 
     if (showProjectTimeline) {
       filteredTimelineProjects.forEach(project => {
-        if (rangesOverlap(project.startDate, project.endDate, yearStart, yearEnd)) {
-          dates.push(maxIsoDate(project.startDate, yearStart));
+        const projectStartDate = project.startDate || yearStart;
+        const projectEndDate = project.endDate || yearEnd;
+        if (rangesOverlap(projectStartDate, projectEndDate, yearStart, yearEnd)) {
+          dates.push(maxIsoDate(projectStartDate, yearStart));
         }
         phases
           .filter(phase => phase.projectId === project.id && rangesOverlap(phase.startDate, phase.endDate, yearStart, yearEnd))
@@ -1439,8 +1443,10 @@ export default function Planner() {
     if (showResourceTimeline) {
       filteredAllocations.forEach(allocation => {
         if (filterResources.length > 0 && !filterResources.includes(allocation.resourceId)) return;
-        if (!rangesOverlap(allocation.startDate, allocation.endDate, yearStart, yearEnd)) return;
-        dates.push(maxIsoDate(allocation.startDate, yearStart));
+        const allocationStartDate = allocation.startDate || yearStart;
+        const allocationEndDate = allocation.endDate || yearEnd;
+        if (!rangesOverlap(allocationStartDate, allocationEndDate, yearStart, yearEnd)) return;
+        dates.push(maxIsoDate(allocationStartDate, yearStart));
       });
     }
 
