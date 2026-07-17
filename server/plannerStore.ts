@@ -23,6 +23,8 @@ let schemaReady = false;
 let lookupsSeeded = false;
 let appUsersSeeded = false;
 const memoryTechMove = new Map<string, TechMoveData>();
+const bootstrapAdminEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL || "denis_chiodi@hotmail.com").trim().toLowerCase();
+const bootstrapAdminName = process.env.BOOTSTRAP_ADMIN_NAME || "Denis Chiodi";
 
 function hasDatabase() {
   return Boolean(process.env.DATABASE_URL);
@@ -132,6 +134,27 @@ function toLookup(row: any): LookupItem {
   return { id: row.id, value: row.value, active: row.active };
 }
 
+function getBootstrapAdminUser(): AppUser | null {
+  if (!bootstrapAdminEmail) return null;
+  return {
+    id: "u-bootstrap-admin",
+    name: bootstrapAdminName,
+    email: bootstrapAdminEmail,
+    role: "admin",
+    permissions: normalizePermissions(DEFAULT_PERMISSIONS.admin, "admin"),
+    active: true,
+    resourceId: "",
+    teamFronts: [],
+  };
+}
+
+function withBootstrapAdmin(users: AppUser[]) {
+  const bootstrapAdmin = getBootstrapAdminUser();
+  if (!bootstrapAdmin) return users;
+  const exists = users.some(user => user.email.toLowerCase() === bootstrapAdmin.email.toLowerCase());
+  return exists ? users : [...users, bootstrapAdmin];
+}
+
 function rowsByCategory(rows: any[]): LookupConfig {
   const grouped: LookupConfig = {
     profiles: [],
@@ -174,6 +197,7 @@ async function seedAppUsersIfNeeded() {
   if (!hasDatabase() || appUsersSeeded) return;
   const existing = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM "app_users"');
   if (!existing || Number(existing.rows[0]?.count ?? 0) > 0) {
+    await upsertBootstrapAdmin();
     appUsersSeeded = true;
     return;
   }
@@ -184,7 +208,17 @@ async function seedAppUsersIfNeeded() {
       [user.id, user.name, user.email, user.role, JSON.stringify(user.permissions), user.active, user.resourceId || "", JSON.stringify(user.teamFronts || [])],
     );
   }
+  await upsertBootstrapAdmin();
   appUsersSeeded = true;
+}
+
+async function upsertBootstrapAdmin() {
+  const bootstrapAdmin = getBootstrapAdminUser();
+  if (!bootstrapAdmin) return;
+  await query(
+    'INSERT INTO "app_users" ("id", "name", "email", "role", "permissions", "active", "resourceId", "teamFronts") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT ("email") DO UPDATE SET "name" = EXCLUDED."name", "role" = EXCLUDED."role", "permissions" = EXCLUDED."permissions", "active" = true, "resourceId" = COALESCE(NULLIF("app_users"."resourceId", \'\'), EXCLUDED."resourceId"), "teamFronts" = EXCLUDED."teamFronts"',
+    [bootstrapAdmin.id, bootstrapAdmin.name, bootstrapAdmin.email, bootstrapAdmin.role, JSON.stringify(bootstrapAdmin.permissions), bootstrapAdmin.active, bootstrapAdmin.resourceId || "", JSON.stringify(bootstrapAdmin.teamFronts || [])],
+  );
 }
 
 async function updateById<T>(table: string, id: string, values: Record<string, unknown>, columns: string[], mapper: (row: any) => T) {
@@ -556,7 +590,7 @@ export async function deleteLookup(id: string) {
 export async function listAppUsers() {
   await seedAppUsersIfNeeded();
   const result = await query('SELECT * FROM "app_users" ORDER BY "name"');
-  return result ? result.rows.map(toAppUser) : memoryAppUsers.map(user => ({
+  return result ? result.rows.map(toAppUser) : withBootstrapAdmin(memoryAppUsers).map(user => ({
     ...user,
     permissions: normalizePermissions(user.permissions, user.role),
   }));
@@ -567,7 +601,7 @@ export async function getAppUserByEmail(email: string) {
   const result = await query('SELECT * FROM "app_users" WHERE lower("email") = lower($1)', [email]);
   const normalized = email.trim().toLowerCase();
   if (result) return result.rows[0] ? toAppUser(result.rows[0]) : null;
-  const user = memoryAppUsers.find(u => u.email.toLowerCase() === normalized);
+  const user = withBootstrapAdmin(memoryAppUsers).find(u => u.email.toLowerCase() === normalized);
   return user ? { ...user, permissions: normalizePermissions(user.permissions, user.role) } : null;
 }
 
