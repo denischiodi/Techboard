@@ -22,6 +22,7 @@ export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
+  email?: string | null;
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -191,6 +192,7 @@ class SDKServer {
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
+      email: payload.email ?? undefined,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
@@ -199,7 +201,7 @@ class SDKServer {
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; email?: string | null } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -210,7 +212,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, email } = payload as Record<string, unknown>;
 
       if (
         !isNonEmptyString(openId) ||
@@ -225,6 +227,7 @@ class SDKServer {
         openId,
         appId,
         name,
+        email: typeof email === "string" && email.length > 0 ? email : null,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -289,27 +292,56 @@ class SDKServer {
     const sessionUserId = session.openId;
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
+    const emailFromSession =
+      typeof session.email === "string" && session.email.length > 0
+        ? session.email
+        : session.openId.startsWith("email:")
+          ? session.openId.slice("email:".length)
+          : null;
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+      if (emailFromSession) {
         await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          openId: session.openId,
+          name: session.name || null,
+          email: emailFromSession,
+          loginMethod: "email-code",
           lastSignedIn: signedInAt,
         });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+        user = await db.getUserByOpenId(session.openId);
+      } else {
+        try {
+          const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+          await db.upsertUser({
+            openId: userInfo.openId,
+            name: userInfo.name || null,
+            email: userInfo.email ?? null,
+            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+            lastSignedIn: signedInAt,
+          });
+          user = await db.getUserByOpenId(userInfo.openId);
+        } catch (error) {
+          console.error("[Auth] Failed to sync user from OAuth:", error);
+          throw ForbiddenError("Failed to sync user info");
+        }
       }
     }
 
     if (!user) {
       throw ForbiddenError("User not found");
+    }
+
+    if ((!user.email || !user.name) && emailFromSession) {
+      await db.upsertUser({
+        openId: user.openId,
+        name: user.name || session.name || null,
+        email: user.email || emailFromSession,
+        loginMethod: user.loginMethod || "email-code",
+        lastSignedIn: signedInAt,
+        role: user.role,
+      });
+      user = await db.getUserByOpenId(user.openId) ?? user;
     }
 
     if (

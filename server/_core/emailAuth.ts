@@ -226,6 +226,7 @@ export async function establishEmailSession(appUser: AppUser, res: Response, req
     openId,
     appId: "techboard-email-auth",
     name: appUser.name,
+    email: appUser.email,
   });
 
   res.cookie(COOKIE_NAME, token, {

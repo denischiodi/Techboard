@@ -105,14 +105,17 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
+    const shouldUpdateRole = user.role !== undefined || user.openId === ENV.ownerOpenId;
+    const roleValue = values.role ?? "user";
+
     await pool.query(
       `INSERT INTO "users" ("openId", "name", "email", "loginMethod", "role", "lastSignedIn")
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT ("openId") DO UPDATE SET
-         "name" = EXCLUDED."name",
-         "email" = EXCLUDED."email",
-         "loginMethod" = EXCLUDED."loginMethod",
-         "role" = EXCLUDED."role",
+         "name" = COALESCE(EXCLUDED."name", "users"."name"),
+         "email" = COALESCE(EXCLUDED."email", "users"."email"),
+         "loginMethod" = COALESCE(EXCLUDED."loginMethod", "users"."loginMethod"),
+         "role" = CASE WHEN $7 THEN EXCLUDED."role" ELSE "users"."role" END,
          "lastSignedIn" = EXCLUDED."lastSignedIn",
          "updatedAt" = now()`,
       [
@@ -120,8 +123,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
         values.name ?? null,
         values.email ?? null,
         values.loginMethod ?? null,
-        values.role ?? "user",
+        roleValue,
         values.lastSignedIn ?? new Date(),
+        shouldUpdateRole,
       ],
     );
   } catch (error) {

@@ -235,10 +235,17 @@ function DashboardLayoutContent({
     { enabled: !!user?.email }
   );
 
-  // Owner (first admin) gets full access; unknown users get restricted access
-  const isOwner = user?.role === 'admin' || user?.email === 'defechi@gmail.com' || user?.openId === (typeof window !== 'undefined' ? '' : '');
-  // TEMPORARIO: acesso total sem login para visualização
-  const userPermissions = appUser?.permissions || { dashboard: true, resources: true, projects: true, absences: true, planner: true, organogram: true, techmove: true, access: true, settings: true };
+  const userPermissions = appUser?.permissions || (user as any)?.permissions || {
+    dashboard: false,
+    resources: false,
+    projects: false,
+    absences: false,
+    planner: false,
+    organogram: false,
+    techmove: false,
+    access: false,
+    settings: false,
+  };
 
   // Filter menu items based on permissions
   const visibleMenuItems = menuItems.filter(item => userPermissions[item.permKey]);

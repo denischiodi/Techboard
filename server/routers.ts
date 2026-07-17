@@ -603,7 +603,7 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(async opts => {
       const user = opts.ctx.user;
-      if (!user?.email) return user;
+      if (!user?.email) return null;
 
       const appUser = await store.getAppUserByEmail(user.email);
       if (!appUser?.active) return null;

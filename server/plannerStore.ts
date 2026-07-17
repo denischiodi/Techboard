@@ -52,7 +52,7 @@ export async function ensureDatabaseSchema() {
   if (!hasDatabase() || schemaReady) return;
   if (
     process.env.NODE_ENV === "production" &&
-    process.env.RUN_MIGRATIONS_ON_START !== "true"
+    process.env.RUN_MIGRATIONS_ON_START === "false"
   ) {
     schemaReady = true;
     return;
