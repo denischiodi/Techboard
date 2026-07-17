@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
-import mysql from "mysql2/promise";
+import pg from "pg";
 
 type Session = {
   userId: string;
@@ -18,14 +18,15 @@ type UploadedFile = {
 };
 
 const sessions = new Map<string, Session>();
-const mysqlPool = mysql.createPool(process.env.DATABASE_URL!);
-// pg-compatible wrapper: converts $N params to ? and returns { rows }
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 5,
+  ssl: { rejectUnauthorized: false },
+});
 const pool = {
   async query(sql: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
-    const converted = sql.replace(/\$(\d+)/g, '?');
-    const [rows] = await mysqlPool.query(converted, params);
-    const arr = Array.isArray(rows) ? rows : [];
-    return { rows: arr, rowCount: arr.length };
+    const result = await pgPool.query(sql, params);
+    return { rows: result.rows, rowCount: result.rowCount ?? result.rows.length };
   }
 };
 const publicDir = path.resolve(process.cwd(), "techeduca", "public");

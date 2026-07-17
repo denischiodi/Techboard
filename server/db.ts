@@ -1,69 +1,38 @@
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-import mysql from "mysql2/promise";
-import { InsertUser, users } from "../drizzle/schema";
+import pg from "pg";
+import type { InsertUser, User } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: any = null;
-let _pool: mysql.Pool | null = null;
+let _pool: pg.Pool | null = null;
 
-function getMysqlPool() {
+function getPostgresPool() {
   if (!process.env.DATABASE_URL) return null;
   if (!_pool) {
-    _pool = mysql.createPool({
-      uri: process.env.DATABASE_URL,
-      waitForConnections: true,
-      connectionLimit: 10,
-      ssl: { rejectUnauthorized: true },
+    _pool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+      ssl: { rejectUnauthorized: false },
     });
   }
   return _pool;
 }
 
 /**
- * getPgPool - returns a pg-compatible pool wrapper over mysql2
- * plannerStore.ts uses pool.query(sql, params) with $1,$2 placeholders and expects { rows: T[] }
+ * getPgPool - returns the shared PostgreSQL pool.
+ * plannerStore.ts uses pool.query(sql, params) with $1,$2 placeholders and expects { rows: T[] }.
  */
 export function getPgPool() {
-  const pool = getMysqlPool();
+  const pool = getPostgresPool();
   if (!pool) return null;
-  return {
-    query: async <T = any>(sql: string, params: unknown[] = []): Promise<{ rows: T[] }> => {
-      // Convert PostgreSQL-style $1, $2 placeholders to MySQL ? placeholders
-      let idx = 0;
-      const mysqlSql = sql.replace(/\$(\d+)/g, () => {
-        idx++;
-        return '?';
-      });
-      // Convert PostgreSQL-style quoted identifiers and casting
-      const cleanSql = mysqlSql
-        .replace(/::text/g, '')
-        .replace(/RETURNING \*/g, '')
-        .replace(/"(\w+)"/g, '`$1`');
-      
-      const [rows] = await pool.query(cleanSql, params);
-      return { rows: rows as T[] };
-    },
-    end: () => pool.end(),
-  };
+  return pool;
 }
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  const pool = getMysqlPool();
-  if (!_db && pool) {
-    try {
-      _db = drizzle(pool);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
+  console.warn("[Database] Drizzle/MySQL access is disabled; use getPgPool() for PostgreSQL queries.");
+  return null;
 }
 
 export async function checkDatabaseReadiness() {
-  const pool = getMysqlPool();
+  const pool = getPostgresPool();
   if (!pool) {
     return {
       ok: false,
@@ -91,8 +60,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     throw new Error("User openId is required for upsert");
   }
 
-  const db = await getDb();
-  if (!db) {
+  const pool = getPostgresPool();
+  if (!pool) {
     console.warn("[Database] Cannot upsert user: database not available");
     return;
   }
@@ -136,9 +105,25 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    await pool.query(
+      `INSERT INTO "users" ("openId", "name", "email", "loginMethod", "role", "lastSignedIn")
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT ("openId") DO UPDATE SET
+         "name" = EXCLUDED."name",
+         "email" = EXCLUDED."email",
+         "loginMethod" = EXCLUDED."loginMethod",
+         "role" = EXCLUDED."role",
+         "lastSignedIn" = EXCLUDED."lastSignedIn",
+         "updatedAt" = now()`,
+      [
+        values.openId,
+        values.name ?? null,
+        values.email ?? null,
+        values.loginMethod ?? null,
+        values.role ?? "user",
+        values.lastSignedIn ?? new Date(),
+      ],
+    );
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -146,15 +131,18 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
+  const pool = getPostgresPool();
+  if (!pool) {
     console.warn("[Database] Cannot get user: database not available");
     return undefined;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await pool.query<User>(
+    `SELECT * FROM "users" WHERE "openId" = $1 LIMIT 1`,
+    [openId],
+  );
 
-  return result.length > 0 ? result[0] : undefined;
+  return result.rows.length > 0 ? result.rows[0] : undefined;
 }
 
 // TODO: add feature queries here as your schema grows.
