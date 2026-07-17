@@ -48,6 +48,13 @@ async function query<T = any>(sql: string, params: unknown[] = []): Promise<{ ro
 
 export async function ensureDatabaseSchema() {
   if (!hasDatabase() || schemaReady) return;
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.RUN_MIGRATIONS_ON_START !== "true"
+  ) {
+    schemaReady = true;
+    return;
+  }
 
   const migrationsDir = join(process.cwd(), "drizzle");
   const migrationFiles = (await readdir(migrationsDir))
