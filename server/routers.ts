@@ -130,7 +130,7 @@ function countUsedVacationDaysForPeriod(absences: Absence[], resource: Resource,
     }, 0);
 }
 
-function assertVacationBalance(resource: Resource, absences: Absence[], input: Pick<Absence, "type" | "startDate" | "endDate"> & { daysCount?: number }, excludeAbsenceId?: string) {
+function assertVacationBalance(resource: Resource, absences: Absence[], input: Pick<Absence, "type" | "startDate" | "endDate"> & { daysCount?: number | null }, excludeAbsenceId?: string) {
   const contractType = (resource as any).contractType || "CLT";
   const period = getVacationPeriod(resource);
   if (!period.available) {

@@ -527,7 +527,7 @@ export async function updateLookup(input: LookupItem) {
     }
     throw new Error("Lookup item not found");
   }
-  return updateById("lookups", input.id, input, ["value", "active"], toLookup);
+  return updateById("lookups", input.id, { ...input }, ["value", "active"], toLookup);
 }
 
 export async function deleteLookup(id: string) {
