@@ -1,4 +1,13 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean as mysqlBoolean, json } from "drizzle-orm/mysql-core";
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  boolean as mysqlBoolean,
+  json,
+} from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -33,9 +42,13 @@ export const resources = mysqlTable("resources", {
   birthDate: varchar("birthDate", { length: 10 }).default(""),
   startDate: varchar("startDate", { length: 10 }).default(""),
   endDate: varchar("endDate", { length: 10 }).default(""),
-  contractType: varchar("contractType", { length: 64 }).notNull().default("CLT"),
+  contractType: varchar("contractType", { length: 64 })
+    .notNull()
+    .default("CLT"),
   vacationDaysEntitled: int("vacationDaysEntitled").notNull().default(30),
-  skipAllocationCheck: mysqlBoolean("skipAllocationCheck").notNull().default(false),
+  skipAllocationCheck: mysqlBoolean("skipAllocationCheck")
+    .notNull()
+    .default(false),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -103,7 +116,9 @@ export const allocations = mysqlTable("allocations", {
   startDate: varchar("startDate", { length: 10 }).notNull(),
   endDate: varchar("endDate", { length: 10 }).notNull(),
   hoursPerDay: int("hoursPerDay").notNull().default(8),
-  allocationType: varchar("allocationType", { length: 64 }).notNull().default("Projeto"),
+  allocationType: varchar("allocationType", { length: 64 })
+    .notNull()
+    .default("Projeto"),
   status: varchar("status", { length: 64 }).notNull().default("Confirmada"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -118,21 +133,30 @@ export const appUsers = mysqlTable("app_users", {
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 320 }).notNull(),
   role: varchar("role", { length: 32 }).notNull().default("viewer"),
-  permissions: json("permissions").$type<{
-    dashboard: boolean;
-    resources: boolean;
-    projects: boolean;
-    absences: boolean;
-    planner: boolean;
-    activities: boolean;
-    gpChecklist: boolean;
-    organogram: boolean;
-    techmove: boolean;
-    access: boolean;
-    settings: boolean;
-    products?: Partial<Record<"techboard" | "techlead" | "techmove" | "techtask" | "admin", boolean>>;
-    actions?: Partial<Record<string, { view: boolean; create: boolean; modify: boolean }>>;
-  }>().notNull(),
+  permissions: json("permissions")
+    .$type<{
+      dashboard: boolean;
+      resources: boolean;
+      projects: boolean;
+      absences: boolean;
+      planner: boolean;
+      activities: boolean;
+      gpChecklist: boolean;
+      organogram: boolean;
+      techmove: boolean;
+      access: boolean;
+      settings: boolean;
+      products?: Partial<
+        Record<
+          "techboard" | "techlead" | "techmove" | "techtask" | "admin",
+          boolean
+        >
+      >;
+      actions?: Partial<
+        Record<string, { view: boolean; create: boolean; modify: boolean }>
+      >;
+    }>()
+    .notNull(),
   active: int("active").notNull().default(1),
   resourceId: varchar("resourceId", { length: 64 }).default(""),
   teamFronts: json("teamFronts").$type<string[]>().default([]),
@@ -172,7 +196,9 @@ export const activities = mysqlTable("activities", {
   description: text("description"),
   status: varchar("status", { length: 32 }).notNull().default("A fazer"),
   priority: varchar("priority", { length: 16 }).notNull().default("Média"),
-  assigneeUserId: varchar("assigneeUserId", { length: 64 }).notNull().default(""),
+  assigneeUserId: varchar("assigneeUserId", { length: 64 })
+    .notNull()
+    .default(""),
   creatorUserId: varchar("creatorUserId", { length: 64 }).notNull(),
   dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
   sourceType: varchar("sourceType", { length: 64 }).notNull().default("manual"),
@@ -195,7 +221,9 @@ export const activityChecklistItems = mysqlTable("activity_checklist_items", {
   id: varchar("id", { length: 64 }).primaryKey(),
   activityId: varchar("activityId", { length: 64 }).notNull(),
   description: text("description").notNull(),
-  assigneeUserId: varchar("assigneeUserId", { length: 64 }).notNull().default(""),
+  assigneeUserId: varchar("assigneeUserId", { length: 64 })
+    .notNull()
+    .default(""),
   dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
   required: mysqlBoolean("required").notNull().default(true),
   completed: mysqlBoolean("completed").notNull().default(false),
@@ -243,7 +271,9 @@ export const activityNotifications = mysqlTable("activity_notifications", {
   title: text("title").notNull(),
   message: text("message"),
   readAt: timestamp("readAt"),
-  emailStatus: varchar("emailStatus", { length: 16 }).notNull().default("pending"),
+  emailStatus: varchar("emailStatus", { length: 16 })
+    .notNull()
+    .default("pending"),
   emailAttempts: int("emailAttempts").notNull().default(0),
   lastEmailError: text("lastEmailError"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -454,6 +484,25 @@ export const workflowTestCases = mysqlTable("workflow_test_cases", {
   responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   evidence: text("evidence"),
   status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Executable steps of an E2E test scenario, independently assigned to key users. */
+export const workflowTestSteps = mysqlTable("workflow_test_steps", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  testCaseId: varchar("testCaseId", { length: 64 }).notNull(),
+  position: int("position").notNull().default(1),
+  title: varchar("title", { length: 512 }).notNull(),
+  instruction: text("instruction"),
+  expectedResult: text("expectedResult"),
+  actualResult: text("actualResult"),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  evidences: json("evidences")
+    .$type<Array<{ name: string; url: string; contentType: string }>>()
+    .default([]),
   executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
