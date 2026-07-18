@@ -1,5 +1,7 @@
 import { Resource, Project, Phase, Absence, Allocation, LookupItem } from '../shared/types';
-import { addDays, format, startOfWeek } from 'date-fns';
+import { addDays } from 'date-fns/addDays';
+import { format } from 'date-fns/format';
+import { startOfWeek } from 'date-fns/startOfWeek';
 import type { AppUser } from '../shared/types';
 
 // Use current week's Monday so data appears immediately
@@ -85,11 +87,11 @@ let allocationCounter = allocations.length + 1;
 
 // ===== APP USERS (Access Control) =====
 export let appUsers: AppUser[] = [
-  { id: 'u1', name: 'Denis Chiodi', email: 'defechi@gmail.com', role: 'admin', permissions: { dashboard: true, resources: true, projects: true, absences: true, planner: true, organogram: true, techmove: true, access: true, settings: true }, active: true, resourceId: '', teamFronts: [] },
-  { id: 'u2', name: 'Ana Costa', email: 'ana.costa@consultoria.com', role: 'manager', permissions: { dashboard: true, resources: true, projects: true, absences: true, planner: true, organogram: true, techmove: true, access: false, settings: true }, active: true, resourceId: 'r4', teamFronts: [] },
-  { id: 'u3', name: 'Pedro Silva', email: 'pedro.silva@consultoria.com', role: 'consultant', permissions: { dashboard: false, resources: true, projects: false, absences: true, planner: true, organogram: false, techmove: true, access: false, settings: false }, active: true, resourceId: 'r1', teamFronts: [] },
-  { id: 'u4', name: 'Maria Santos', email: 'maria.santos@consultoria.com', role: 'consultant', permissions: { dashboard: false, resources: true, projects: false, absences: true, planner: true, organogram: false, techmove: true, access: false, settings: false }, active: true, resourceId: 'r2', teamFronts: [] },
-  { id: 'u5', name: 'João Oliveira', email: 'joao.oliveira@consultoria.com', role: 'technical_lead', permissions: { dashboard: false, resources: true, projects: false, absences: true, planner: true, organogram: true, techmove: true, access: false, settings: false }, active: true, resourceId: 'r3', teamFronts: ['BTP', 'Integrações'] },
+  { id: 'u1', name: 'Denis Chiodi', email: 'defechi@gmail.com', role: 'admin', permissions: { dashboard: true, resources: true, projects: true, absences: true, planner: true, activities: true, gpChecklist: true, organogram: true, techmove: true, access: true, settings: true }, active: true, resourceId: '', teamFronts: [] },
+  { id: 'u2', name: 'Ana Costa', email: 'ana.costa@consultoria.com', role: 'manager', permissions: { dashboard: true, resources: true, projects: true, absences: true, planner: true, activities: true, gpChecklist: true, organogram: true, techmove: true, access: false, settings: true }, active: true, resourceId: 'r4', teamFronts: [] },
+  { id: 'u3', name: 'Pedro Silva', email: 'pedro.silva@consultoria.com', role: 'consultant', permissions: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: false, techmove: true, access: false, settings: false }, active: true, resourceId: 'r1', teamFronts: [] },
+  { id: 'u4', name: 'Maria Santos', email: 'maria.santos@consultoria.com', role: 'consultant', permissions: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: false, techmove: true, access: false, settings: false }, active: true, resourceId: 'r2', teamFronts: [] },
+  { id: 'u5', name: 'João Oliveira', email: 'joao.oliveira@consultoria.com', role: 'technical_lead', permissions: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: true, techmove: true, access: false, settings: false }, active: true, resourceId: 'r3', teamFronts: ['BTP', 'Integrações'] },
 ];
 
 let userCounter = 6;

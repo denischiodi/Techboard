@@ -63,7 +63,7 @@ export interface Project {
   notes: string;
 }
 
-export type GpChecklistStatus = 'Pendente' | 'Em andamento' | 'Concluído' | 'Bloqueado' | 'Não aplicável';
+export type GpChecklistStatus = 'Pendente' | 'Em andamento' | 'Em validação' | 'Concluído' | 'Bloqueado' | 'Não aplicável';
 export type GpChecklistItemType = 'Atividade' | 'Quality Gate';
 
 export interface GpChecklistItem {
@@ -151,7 +151,11 @@ export interface Allocation {
 
 // ===== Access Control Types =====
 
-export type AppTab = 'dashboard' | 'resources' | 'projects' | 'absences' | 'planner' | 'organogram' | 'techmove' | 'access' | 'settings';
+export type AppTab = 'dashboard' | 'resources' | 'projects' | 'absences' | 'planner' | 'activities' | 'gpChecklist' | 'organogram' | 'techmove' | 'access' | 'settings';
+
+export type AppProduct = 'techboard' | 'techlead' | 'techmove' | 'techtask' | 'admin';
+export type PermissionAction = 'view' | 'create' | 'modify';
+export type ModuleActionPermissions = Partial<Record<AppTab, Record<PermissionAction, boolean>>>;
 
 export type UserRole = 'admin' | 'manager' | 'technical_lead' | 'consultant' | 'viewer';
 
@@ -161,10 +165,16 @@ export interface UserPermissions {
   projects: boolean;
   absences: boolean;
   planner: boolean;
+  activities: boolean;
+  gpChecklist: boolean;
   organogram: boolean;
   techmove: boolean;
   access: boolean; // only admin can manage access
   settings: boolean;
+  /** Explicit product access. Missing values are derived from legacy module flags. */
+  products?: Partial<Record<AppProduct, boolean>>;
+  /** Fine-grained actions. Missing values preserve the legacy role-based behavior. */
+  actions?: ModuleActionPermissions;
 }
 
 export interface AppUser {
@@ -214,12 +224,106 @@ export interface ResourceEndDateAlert {
 }
 
 export const DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
-  admin: { dashboard: true, resources: true, projects: true, absences: true, planner: true, organogram: true, techmove: true, access: true, settings: true },
-  manager: { dashboard: true, resources: true, projects: true, absences: true, planner: true, organogram: true, techmove: true, access: false, settings: true },
-  technical_lead: { dashboard: false, resources: true, projects: false, absences: true, planner: true, organogram: true, techmove: true, access: false, settings: false },
-  consultant: { dashboard: false, resources: true, projects: false, absences: true, planner: true, organogram: false, techmove: true, access: false, settings: false },
-  viewer: { dashboard: true, resources: false, projects: false, absences: false, planner: true, organogram: true, techmove: false, access: false, settings: false },
+  admin: { dashboard: true, resources: true, projects: true, absences: true, planner: true, activities: true, gpChecklist: true, organogram: true, techmove: true, access: true, settings: true },
+  manager: { dashboard: true, resources: true, projects: true, absences: true, planner: true, activities: true, gpChecklist: true, organogram: true, techmove: true, access: false, settings: true },
+  technical_lead: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: true, techmove: true, access: false, settings: false },
+  consultant: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: false, techmove: true, access: false, settings: false },
+  viewer: { dashboard: true, resources: false, projects: false, absences: false, planner: true, activities: false, gpChecklist: false, organogram: true, techmove: false, access: false, settings: false },
 };
+
+// ===== Activities / Kanban =====
+
+export type ActivityStatus = 'A fazer' | 'Em andamento' | 'Bloqueada' | 'Em validação' | 'Concluída';
+export type ActivityPriority = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
+export type ActivityScope = 'project' | 'internal';
+export type ActivitySourceType = 'manual' | 'gp_checklist' | 'gp_fit_step' | 'techmove_question' | 'techmove_gap' | 'techmove_configuration' | 'allocation_missing_front' | 'allocation_overallocated' | 'allocation_end_date' | 'allocation_unallocated' | 'techlead';
+
+export interface ActivityChecklistItem {
+  id: string;
+  activityId: string;
+  description: string;
+  assigneeUserId: string;
+  assigneeName: string;
+  dueDate: string;
+  required: boolean;
+  completed: boolean;
+  position: number;
+  createdByUserId: string;
+  completedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActivityComment {
+  id: string;
+  activityId: string;
+  authorUserId: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ActivityAttachment {
+  id: string;
+  activityId: string;
+  fileName: string;
+  contentType: string;
+  url: string;
+  uploadedByUserId: string;
+  uploadedByName: string;
+  createdAt: string;
+}
+
+export interface ActivityHistoryEvent {
+  id: string;
+  activityId: string;
+  actorUserId: string;
+  actorName: string;
+  action: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface Activity {
+  id: string;
+  scope: ActivityScope;
+  projectId: string;
+  projectName: string;
+  title: string;
+  description: string;
+  status: ActivityStatus;
+  priority: ActivityPriority;
+  assigneeUserId: string;
+  assigneeName: string;
+  creatorUserId: string;
+  creatorName: string;
+  participantUserIds: string[];
+  participants: Pick<AppUser, 'id' | 'name' | 'email'>[];
+  dueDate: string;
+  sourceType: ActivitySourceType;
+  sourceKey: string;
+  sourceUrl: string;
+  sourceResolved: boolean;
+  archivedAt: string;
+  completedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  checklist: ActivityChecklistItem[];
+  comments: ActivityComment[];
+  attachments: ActivityAttachment[];
+  history: ActivityHistoryEvent[];
+}
+
+export interface ActivityNotification {
+  id: string;
+  userId: string;
+  activityId: string;
+  eventType: string;
+  title: string;
+  message: string;
+  readAt: string;
+  createdAt: string;
+}
 
 export type TechMovePhase = 'prepare' | 'explore';
 export type TechMoveQuestionLevel = 'L2 Cliente' | 'L3 Consultor';
@@ -290,7 +394,7 @@ export interface TechMoveGap {
   description: string;
   impact: string;
   severity: 'Baixo' | 'Medio' | 'Alto' | 'Critico';
-  status: 'Aberto' | 'Em analise' | 'Aprovado' | 'Rejeitado';
+  status: 'Aberto' | 'Em analise' | 'Aprovado' | 'Rejeitado' | 'Resolvido';
   resolutionType?: string;
   resolution?: string;
   effort?: string;

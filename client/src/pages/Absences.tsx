@@ -290,20 +290,20 @@ export default function Absences() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Férias e Ausências</h1>
           <p className="text-muted-foreground text-sm mt-1">Controle de férias, folgas e ausências</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={downloadTemplate} className="gap-2">
+        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap sm:justify-end">
+          <Button variant="outline" onClick={downloadTemplate} className="w-full gap-2 sm:w-auto">
             <Download className="h-4 w-4" /> Modelo Excel
           </Button>
-          {canEdit && <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
+          {canEdit && <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full gap-2 sm:w-auto">
             <Upload className="h-4 w-4" /> Importar Excel
           </Button>}
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleBulkImport} />
-          {canEdit && <Button onClick={openCreate} className="gap-2">
+          {canEdit && <Button onClick={openCreate} className="w-full gap-2 min-[420px]:col-span-2 sm:w-auto">
             <Plus className="h-4 w-4" /> Nova Ausência
           </Button>}
         </div>
@@ -401,7 +401,7 @@ export default function Absences() {
                 </span>
               </div>
             )}
-            <div className={isSoldVacationDays(form.type) ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : "grid grid-cols-2 gap-4"}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label>{isSoldVacationDays(form.type) ? 'Data da Venda' : 'Data Início'}</Label>
                 <Input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value, endDate: isSoldVacationDays(form.type) ? e.target.value : form.endDate })} />

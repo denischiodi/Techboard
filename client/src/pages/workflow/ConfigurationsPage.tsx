@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Search, Settings2, BrainCircuit, RotateCcw, Pencil } from "lucide-react";
+import { Plus, Trash2, Search, Settings2, BrainCircuit, RotateCcw, Pencil, Sparkles } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 import { useWorkflowProject } from "./useWorkflowProject";
@@ -27,9 +27,13 @@ export default function ConfigurationsPage() {
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkResponsible, setBulkResponsible] = useState("");
   const [editingPrompt, setEditingPrompt] = useState<any>(null);
+  const [sourceDcdId, setSourceDcdId] = useState("");
 
   const { data: configs = [], refetch } = trpc.workflow.configurations.list.useQuery({ projectId: PROJECT_ID });
   const { data: resources = [] } = trpc.resources.list.useQuery();
+  const { data: dcds = [] } = trpc.workflow.dcd.list.useQuery({ projectId: PROJECT_ID });
+  const { data: lookups } = trpc.settings.getLookups.useQuery();
+  const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
   const { data: prompts = [], refetch: refetchPrompts } = trpc.workflow.prompts.list.useQuery();
   const { data: llmModels = [] } = trpc.workflow.prompts.models.useQuery(undefined, { enabled: isAdmin });
   const createMut = trpc.workflow.configurations.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("Configuração criada"); } });
@@ -38,6 +42,7 @@ export default function ConfigurationsPage() {
   const bulkUpdate = trpc.workflow.configurations.bulkUpdate.useMutation({ onSuccess: data => { refetch(); setSelectedIds([]); toast.success(`${data.updated} configurações atualizadas`); }, onError: error => toast.error(error.message) });
   const updatePrompt = trpc.workflow.prompts.update.useMutation({ onSuccess: () => { refetchPrompts(); setEditingPrompt(null); toast.success("Prompt atualizado"); }, onError: error => toast.error(error.message) });
   const resetPrompt = trpc.workflow.prompts.reset.useMutation({ onSuccess: () => { refetchPrompts(); setEditingPrompt(null); toast.success("Prompt padrão restaurado"); }, onError: error => toast.error(error.message) });
+  const generateFromDcd = trpc.workflow.configurations.generateFromDcd.useMutation({ onSuccess: data => { refetch(); toast.success(`${data.added} configurações extraídas${data.ignored ? ` · ${data.ignored} já existentes` : ""}`); }, onError: error => toast.error(error.message) });
 
   const filtered = configs.filter((c: any) => c.description?.toLowerCase().includes(search.toLowerCase()) || c.category?.toLowerCase().includes(search.toLowerCase()) || c.module?.toLowerCase().includes(search.toLowerCase()));
   const doneCount = configs.filter((c: any) => c.status === "Concluído").length;
@@ -50,20 +55,24 @@ export default function ConfigurationsPage() {
   };
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 p-3 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Configurações</h1>
           <p className="text-muted-foreground text-sm">Checklist de configurações a executar no sistema</p>
         </div>
-        <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Nova Configuração</Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Select value={sourceDcdId} onValueChange={setSourceDcdId}><SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Selecione um DCD" /></SelectTrigger><SelectContent>{dcds.map((dcd: any) => <SelectItem key={dcd.id} value={dcd.id}>{dcd.title}</SelectItem>)}</SelectContent></Select>
+          <Button variant="outline" onClick={() => generateFromDcd.mutate({ projectId: PROJECT_ID, dcdId: sourceDcdId })} disabled={!sourceDcdId || generateFromDcd.isPending}><Sparkles className="mr-2 h-4 w-4" />{generateFromDcd.isPending ? "Extraindo..." : "Gerar do DCD"}</Button>
+          <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Nova Configuração</Button>
+        </div>
       </div>
 
       {selectedIds.length > 0 && <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-3"><Badge>{selectedIds.length} selecionadas</Badge><div><Label className="text-xs">Novo status</Label><Select value={bulkStatus || "keep"} onValueChange={value => setBulkStatus(value === "keep" ? "" : value)}><SelectTrigger className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="keep">Manter status</SelectItem><SelectItem value="Pendente">Pendente</SelectItem><SelectItem value="Em Progresso">Em Progresso</SelectItem><SelectItem value="Concluído">Concluído</SelectItem><SelectItem value="Bloqueado">Bloqueado</SelectItem></SelectContent></Select></div><div><Label className="text-xs">Responsável</Label><Select value={bulkResponsible || "keep"} onValueChange={value => setBulkResponsible(value === "keep" ? "" : value)}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="keep">Manter responsável</SelectItem><SelectItem value="unassigned">Sem responsável</SelectItem>{resources.map((resource: any) => <SelectItem key={resource.id} value={resource.name}>{resource.name}</SelectItem>)}</SelectContent></Select></div><Button onClick={applyBulk} disabled={bulkUpdate.isPending}>Aplicar em lote</Button></div>}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Search className="h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Buscar configurações..." value={search} onChange={e => setSearch(e.target.value)} className="max-w-sm" />
+        <Input placeholder="Buscar configurações..." value={search} onChange={e => setSearch(e.target.value)} className="min-w-0 flex-1 basis-full sm:max-w-sm sm:basis-auto" />
         <Badge variant="secondary">{filtered.length} itens</Badge>
         <Badge variant="outline" className="bg-green-50 text-green-700">{doneCount}/{configs.length} concluídos</Badge>
       </div>
@@ -71,7 +80,7 @@ export default function ConfigurationsPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><BrainCircuit className="h-5 w-5" />Prompts de IA</CardTitle>
-          <p className="text-sm text-muted-foreground">Instruções usadas na agenda, atas, DCDs, refinamento e extração de gaps.</p>
+          <p className="text-sm text-muted-foreground">Instruções usadas na agenda, atas, DCDs, refinamento e extrações estruturadas.</p>
         </CardHeader>
         <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {prompts.map((prompt: any) => (
@@ -140,7 +149,7 @@ export default function ConfigurationsPage() {
           <DialogHeader><DialogTitle>Nova Configuração</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div><Label>Descrição *</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label>Categoria</Label>
                 <Select value={form.category} onValueChange={(v: string) => setForm(f => ({ ...f, category: v }))}>
@@ -153,7 +162,7 @@ export default function ConfigurationsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Módulo</Label><Input value={form.module} onChange={e => setForm(f => ({ ...f, module: e.target.value }))} placeholder="MM, SD, FI..." /></div>
+              <div><Label>Frente/Módulo</Label><Select value={form.module || "unassigned"} onValueChange={module => setForm(current => ({ ...current, module: module === "unassigned" ? "" : module }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sem frente definida</SelectItem>{modules.map((module: string) => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div><Label>Responsável</Label><Select value={form.responsible || "unassigned"} onValueChange={responsible => setForm(current => ({ ...current, responsible: responsible === "unassigned" ? "" : responsible }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sem responsável</SelectItem>{resources.map((resource: any) => <SelectItem key={resource.id} value={resource.name}>{resource.name}</SelectItem>)}</SelectContent></Select></div>
           </div>

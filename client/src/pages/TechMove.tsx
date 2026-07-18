@@ -1049,7 +1049,7 @@ function GapsStep({ data, update }: StepProps) {
               </Select>
               <Select value={gap.status} onValueChange={value => patchGap(update, gap.id, { status: value as TechMoveGap["status"] })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="Aberto">Aberto</SelectItem><SelectItem value="Em analise">Em analise</SelectItem><SelectItem value="Aprovado">Aprovado</SelectItem><SelectItem value="Rejeitado">Rejeitado</SelectItem></SelectContent>
+                <SelectContent><SelectItem value="Aberto">Aberto</SelectItem><SelectItem value="Em analise">Em analise</SelectItem><SelectItem value="Aprovado">Aprovado</SelectItem><SelectItem value="Resolvido">Resolvido</SelectItem><SelectItem value="Rejeitado">Rejeitado</SelectItem></SelectContent>
               </Select>
               <Button variant="ghost" size="icon" onClick={() => update(current => ({ ...current, gaps: current.gaps.filter(item => item.id !== gap.id) }))}><Trash2 className="h-4 w-4" /></Button>
             </div>

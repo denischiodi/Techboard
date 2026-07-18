@@ -24,25 +24,15 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderKanban, CalendarOff, CalendarRange, ShieldCheck, Lock, Database, KeyRound, Mail, Network, Workflow, ClipboardCheck } from "lucide-react";
+import { LogOut, PanelLeft, Lock, KeyRound, Mail, Bell, Grid2X2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { canAccessPath, canViewTab, productForPath, PRODUCTS } from "@/lib/productCatalog";
+import { DEFAULT_PERMISSIONS } from "../../../shared/types";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/", permKey: "dashboard" as const },
-  { icon: Database, label: "Cadastros", path: "/cadastros", permKey: "settings" as const },
-  { icon: Users, label: "Recursos", path: "/resources", permKey: "resources" as const },
-  { icon: FolderKanban, label: "Projetos", path: "/projects", permKey: "projects" as const },
-  { icon: CalendarOff, label: "Férias/Ausências", path: "/absences", permKey: "absences" as const },
-  { icon: CalendarRange, label: "Planner Gantt", path: "/planner", permKey: "planner" as const },
-  { icon: ClipboardCheck, label: "Trilha do GP", path: "/gp-checklist", permKey: "projects" as const },
-  { icon: Workflow, label: "Workflow", path: "/workflow", permKey: "projects" as const },
-  { icon: Network, label: "Organograma", path: "/org-chart", permKey: "organogram" as const },
-  { icon: Workflow, label: "TechMove", path: "/techmove", permKey: "techmove" as const },
-  { icon: ShieldCheck, label: "Gestão de Acesso", path: "/access", permKey: "access" as const },
-];
+const menuItems = PRODUCTS.flatMap(product => product.menus.map(item => ({ ...item, productId: product.id, permKey: item.permission })));
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -228,7 +218,9 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  const activeProduct = productForPath(location);
+  const ActiveProductIcon = activeProduct?.icon;
+  const activeMenuItem = menuItems.filter(item => location === item.path || location.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
   const isMobile = useIsMobile();
 
   // Fetch user permissions based on email
@@ -237,32 +229,43 @@ function DashboardLayoutContent({
     { enabled: !!user?.email }
   );
 
-  const userPermissions = appUser?.permissions || (user as any)?.permissions || {
-    dashboard: false,
-    resources: false,
-    projects: false,
-    absences: false,
-    planner: false,
-    organogram: false,
-    techmove: false,
-    access: false,
-    settings: false,
-  };
+  const userPermissions = appUser?.permissions || (user as any)?.permissions || DEFAULT_PERMISSIONS.viewer;
+  const notificationsQuery = trpc.activities.notifications.useQuery(undefined, {
+    enabled: Boolean(appUser?.permissions.activities),
+    refetchInterval: 60_000,
+  });
+  const markNotificationsRead = trpc.activities.markNotificationsRead.useMutation({
+    onSuccess: () => notificationsQuery.refetch(),
+  });
+  const notifications = notificationsQuery.data || [];
+  const unreadNotifications = notifications.filter(notification => !notification.readAt);
+
+  const notificationButton = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="relative" aria-label={`${unreadNotifications.length} notificações não lidas`}>
+          <Bell className="h-4 w-4" />
+          {unreadNotifications.length > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">{unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}</span>}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-96 w-80 overflow-y-auto">
+        <div className="flex items-center justify-between px-2 py-1.5"><span className="text-sm font-semibold">Notificações</span>{unreadNotifications.length > 0 && <Button variant="ghost" size="sm" onClick={() => markNotificationsRead.mutate({})}>Marcar lidas</Button>}</div>
+        {notifications.slice(0, 20).map(notification => <DropdownMenuItem key={notification.id} className={`block cursor-pointer whitespace-normal ${notification.readAt ? "opacity-60" : "bg-muted/50"}`} onClick={() => { markNotificationsRead.mutate({ id: notification.id }); setLocation(`/techtask/board?activityId=${encodeURIComponent(notification.activityId)}`); }}><p className="text-sm font-medium">{notification.title}</p><p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{notification.message}</p></DropdownMenuItem>)}
+        {notifications.length === 0 && <p className="p-4 text-center text-sm text-muted-foreground">Nenhuma notificação.</p>}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   // Filter menu items based on permissions
-  const visibleMenuItems = menuItems.filter(item => userPermissions[item.permKey]);
+  const visibleMenuItems = activeProduct?.menus.filter(item => canViewTab(item.permission, userPermissions)) || [];
 
   // Check if current page is blocked
-  const currentMenuItem = menuItems.find(item => item.path === location);
-  const isBlocked = currentMenuItem && !userPermissions[currentMenuItem.permKey];
+  const isBlocked = location !== "/" && !canAccessPath(location, userPermissions);
 
   // Auto-redirect to first allowed page when blocked
   useEffect(() => {
     if (isBlocked && !permLoading) {
-      const firstAllowed = visibleMenuItems[0];
-      if (firstAllowed) {
-        setLocation(firstAllowed.path);
-      }
+      setLocation("/");
     }
   }, [isBlocked, permLoading, visibleMenuItems, setLocation]);
 
@@ -321,23 +324,27 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex min-w-0 flex-1 items-center">
-                  <img
-                    src={assetPath("/techboard-logo.png")}
-                    alt="TechBoard"
-                    className="h-9 w-auto max-w-[185px] object-contain"
-                  />
+                  <button onClick={() => setLocation("/")} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 hover:bg-accent">
+                    {ActiveProductIcon ? <ActiveProductIcon className="h-5 w-5 shrink-0" /> : <Grid2X2 className="h-5 w-5 shrink-0" />}
+                    <span className="truncate font-semibold">{activeProduct?.name || "Portal Tech"}</span>
+                  </button>
                 </div>
               ) : null}
             </div>
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
+            <div className="px-2 pb-2">
+              <Button variant="ghost" className="w-full justify-start gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2" onClick={() => setLocation("/")} title="Todas as ferramentas">
+                <Grid2X2 className="h-4 w-4" /><span className="group-data-[collapsible=icon]:hidden">Todas as ferramentas</span>
+              </Button>
+            </div>
             <SidebarMenu className="px-2 py-1">
               {visibleMenuItems.map(item => {
-                const isActive = location === item.path;
-                const label = appUser?.role === 'consultant' && item.path === '/resources'
+                const isActive = location === item.path || (item.path !== activeProduct?.homePath && location.startsWith(`${item.path}/`));
+                const label = appUser?.role === 'consultant' && item.path === '/techboard/resources'
                   ? 'Meu Cadastro'
-                  : appUser?.role === 'consultant' && item.path === '/absences'
+                  : appUser?.role === 'consultant' && item.path === '/techboard/absences'
                   ? 'Minhas Férias'
                   : item.label;
                 return (
@@ -413,8 +420,10 @@ function DashboardLayoutContent({
                 </div>
               </div>
             </div>
+            {appUser?.permissions.activities && notificationButton}
           </div>
         )}
+        {!isMobile && appUser?.permissions.activities && <div className="flex h-12 items-center justify-end border-b px-4">{notificationButton}</div>}
         <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-4">
           {isBlocked ? (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">

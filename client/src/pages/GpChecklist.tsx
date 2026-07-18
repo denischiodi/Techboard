@@ -17,7 +17,7 @@ import { AlertTriangle, ExternalLink, Filter, Flag, Loader2, Plus, Search, Setti
 import { toast } from "sonner";
 
 const PHASES = ["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"] as const;
-const STATUSES = ["Pendente", "Em andamento", "Concluído", "Bloqueado", "Não aplicável"] as const;
+const STATUSES = ["Pendente", "Em andamento", "Em validação", "Concluído", "Bloqueado", "Não aplicável"] as const;
 
 type EditForm = {
   status: typeof STATUSES[number];
@@ -75,13 +75,13 @@ export default function GpChecklist() {
   useEffect(() => {
     if (!selectedProjectId && projects.length > 0) {
       setSelectedProjectId(projects[0].id);
-      setLocation(`/gp-checklist?projectId=${encodeURIComponent(projects[0].id)}`, { replace: true });
+      setLocation(`/techlead/gp-track?projectId=${encodeURIComponent(projects[0].id)}`, { replace: true });
     }
   }, [projects, selectedProjectId, setLocation]);
 
   const selectProject = (projectId: string) => {
     setSelectedProjectId(projectId);
-    setLocation(`/gp-checklist?projectId=${encodeURIComponent(projectId)}`);
+    setLocation(`/techlead/gp-track?projectId=${encodeURIComponent(projectId)}`);
   };
 
   const refresh = async () => {
@@ -222,7 +222,7 @@ export default function GpChecklist() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_260px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_260px]">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Label htmlFor="gp-checklist-search" className="sr-only">Buscar atividades</Label>

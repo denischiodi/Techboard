@@ -358,10 +358,12 @@ function completion(course: any, progress: any) {
 }
 
 export async function registerTechEduca(app: Express) {
-  try {
-    await ensureTechEducaSchema();
-  } catch (e: any) {
-    console.warn("TechEduca schema setup skipped (tables may already exist):", e?.message);
+  if (process.env.DATABASE_URL) {
+    try {
+      await ensureTechEducaSchema();
+    } catch (e: any) {
+      console.warn("TechEduca schema setup skipped (tables may already exist):", e?.message);
+    }
   }
 
   app.use("/techeduca", express.static(publicDir));

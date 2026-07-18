@@ -8,6 +8,10 @@ vi.mock("./routers/workflowDb", () => ({
   deleteScopeItem: vi.fn().mockResolvedValue(undefined),
   listBdcqQuestions: vi.fn().mockResolvedValue([]),
   createBdcqQuestion: vi.fn().mockResolvedValue({ id: "q-1" }),
+  listBdcqTemplateLibrary: vi.fn().mockResolvedValue([]),
+  createBdcqTemplate: vi.fn().mockResolvedValue({ id: "template-1" }),
+  updateBdcqTemplate: vi.fn().mockResolvedValue(undefined),
+  deleteBdcqTemplate: vi.fn().mockResolvedValue(undefined),
   deleteBdcqQuestion: vi.fn().mockResolvedValue(undefined),
   listBdcqAnswers: vi.fn().mockResolvedValue([]),
   createBdcqAnswer: vi.fn().mockResolvedValue({ id: "a-1" }),
@@ -49,6 +53,11 @@ vi.mock("./routers/workflowDb", () => ({
   bulkUpdateDcdDocuments: vi.fn().mockResolvedValue(0),
   bulkUpdateGaps: vi.fn().mockResolvedValue(0),
   bulkUpdateConfigurations: vi.fn().mockResolvedValue(0),
+  listWorkflowTestCases: vi.fn().mockResolvedValue([]),
+  createWorkflowTestCase: vi.fn().mockResolvedValue({ id: "test-1" }),
+  updateWorkflowTestCase: vi.fn().mockResolvedValue(undefined),
+  deleteWorkflowTestCase: vi.fn().mockResolvedValue(undefined),
+  bulkUpdateWorkflowTestCases: vi.fn().mockResolvedValue(0),
 }));
 
 describe("workflow router module structure", () => {
@@ -71,6 +80,7 @@ describe("workflow router module structure", () => {
     expect(db.deleteScopeItem).toBeDefined();
     expect(db.listBdcqQuestions).toBeDefined();
     expect(db.createBdcqQuestion).toBeDefined();
+    expect(db.listBdcqTemplateLibrary).toBeDefined();
     expect(db.updateBdcqAnswerWithHistory).toBeDefined();
     expect(db.listBdcqAnswerHistory).toBeDefined();
     expect(db.listWorkshops).toBeDefined();
@@ -94,9 +104,28 @@ describe("workflow router module structure", () => {
     expect(db.listConfigurations).toBeDefined();
     expect(db.createConfiguration).toBeDefined();
     expect(db.updateConfiguration).toBeDefined();
+    expect(db.listWorkflowTestCases).toBeDefined();
+    expect(db.createWorkflowTestCase).toBeDefined();
+    expect(db.updateWorkflowTestCase).toBeDefined();
     expect(db.listWorkflowPrompts).toBeDefined();
     expect(db.getWorkflowPrompt).toBeDefined();
     expect(db.upsertWorkflowPrompt).toBeDefined();
     expect(db.deleteWorkflowPrompt).toBeDefined();
+  });
+
+  it("applies a custom BDCQ template to matching scope items", async () => {
+    const db = await import("./routers/workflowDb");
+    vi.mocked(db.listBdcqQuestions).mockResolvedValueOnce([]);
+    vi.mocked(db.listScopeItems).mockResolvedValueOnce([{ id: "scope-mm", projectId: "project-1", code: "J45", name: "Compras", module: "MM" } as any]);
+    vi.mocked(db.listBdcqTemplateLibrary).mockResolvedValueOnce([{ id: "template-1", question: "Como aprovar compras?", category: "Aprovação", modules: ["MM"], scopeItemKeys: ["J45"], active: 1 } as any]);
+    const create = vi.mocked(db.createBdcqQuestion);
+    create.mockClear();
+    const { ensureBdcqTemplates } = await import("./routers/workflow");
+
+    await ensureBdcqTemplates("project-1", ["MM"]);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1", templateId: "template-1", module: "MM", scopeItemIds: ["scope-mm"], question: "Como aprovar compras?",
+    }));
   });
 });

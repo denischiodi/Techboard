@@ -1,22 +1,25 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
-import { FileSpreadsheet, MessageSquare, Users, FileText, AlertTriangle, Settings2, ArrowRight, History, Search } from "lucide-react";
+import { FileSpreadsheet, MessageSquare, Users, FileText, AlertTriangle, Settings2, ArrowRight, History, Search, Download, DatabaseZap, FlaskConical } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWorkflowProject } from "./useWorkflowProject";
 import { ProjectName } from "@/components/ProjectLogo";
 import { useEffect, useState } from "react";
 
 const steps = [
-  { id: "scope-items", title: "DDA / Scope Items", description: "Upload e gestão dos scope items do projeto", icon: FileSpreadsheet, path: "/workflow/scope-items", color: "bg-blue-500" },
-  { id: "bdcq", title: "BDCQ", description: "Perguntas de levantamento e respostas do cliente", icon: MessageSquare, path: "/workflow/bdcq", color: "bg-purple-500" },
-  { id: "workshops", title: "Workshops", description: "Agendamento, transcrições e atas automáticas", icon: Users, path: "/workflow/workshops", color: "bg-green-500" },
-  { id: "dcd", title: "DCD (IA)", description: "Documento de configuração detalhada gerado por IA", icon: FileText, path: "/workflow/dcd", color: "bg-orange-500" },
-  { id: "gaps", title: "Gaps", description: "Lista de gaps extraída automaticamente do DCD", icon: AlertTriangle, path: "/workflow/gaps", color: "bg-red-500" },
-  { id: "configurations", title: "Configurações", description: "Checklist de configurações a executar", icon: Settings2, path: "/workflow/configurations", color: "bg-teal-500" },
+  { id: "scope-items", title: "DDA / Scope Items", description: "Upload e gestão dos scope items do projeto", icon: FileSpreadsheet, path: "/techmove/scope-items", color: "bg-blue-500" },
+  { id: "bdcq", title: "BDCQ", description: "Perguntas de levantamento e respostas do cliente", icon: MessageSquare, path: "/techmove/bdcq", color: "bg-purple-500" },
+  { id: "workshops", title: "Workshops", description: "Agendamento, transcrições e atas automáticas", icon: Users, path: "/techmove/workshops", color: "bg-green-500" },
+  { id: "dcd", title: "DCD (IA)", description: "Documento de configuração detalhada gerado por IA", icon: FileText, path: "/techmove/dcd", color: "bg-orange-500" },
+  { id: "gaps", title: "Gaps", description: "Lista de gaps extraída automaticamente do DCD", icon: AlertTriangle, path: "/techmove/gaps", color: "bg-red-500" },
+  { id: "configurations", title: "Configurações", description: "Checklist de configurações a executar", icon: Settings2, path: "/techmove/configurations", color: "bg-teal-500" },
+  { id: "tests", title: "Testes", description: "Testes unitários e integrados com evidências e rastreabilidade", icon: FlaskConical, path: "/techmove/tests", color: "bg-indigo-500" },
 ];
 
 export default function ProjectWorkflow() {
@@ -25,6 +28,7 @@ export default function ProjectWorkflow() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const { data: projects = [] } = trpc.projects.list.useQuery();
+  const utils = trpc.useUtils();
   const hasSelectedProject = projects.some((project: any) => project.id === projectId);
   const { data: progress } = trpc.workflow.progress.useQuery({ projectId }, { enabled: Boolean(projectId && hasSelectedProject) });
   const { data: auditEntries = [] } = trpc.workflow.audit.list.useQuery(
@@ -35,8 +39,29 @@ export default function ProjectWorkflow() {
     { projectId, query: debouncedSearch, limit: 50 },
     { enabled: Boolean(projectId && hasSelectedProject && debouncedSearch.length >= 2) },
   );
+  const { data: legacyPreview } = trpc.workflow.legacy.preview.useQuery(
+    { projectId },
+    { enabled: Boolean(projectId && hasSelectedProject) },
+  );
+  const importLegacy = trpc.workflow.legacy.import.useMutation({
+    onSuccess: async result => {
+      const imported = Object.entries(result).filter(([key]) => key !== "ignored").reduce((sum, [, value]) => sum + value, 0);
+      toast.success(imported ? `${imported} registros legados incorporados ao TechMove` : "Os dados legados já estavam consolidados");
+      await utils.workflow.invalidate();
+    },
+    onError: error => toast.error(error.message || "Erro ao importar dados legados"),
+  });
+  const consolidatedReport = trpc.workflow.reports.consolidatedPdf.useMutation({
+    onSuccess: data => {
+      const bytes = Uint8Array.from(window.atob(data.base64), character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: data.contentType }));
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = data.filename; anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000); toast.success("Relatório consolidado exportado");
+    },
+    onError: error => toast.error(error.message || "Erro ao exportar relatório"),
+  });
   const progressByStep = new Map((progress?.steps || []).map(step => [step.id, step]));
-  const selectProject = (value: string) => { rememberProject(value); setLocation(`/workflow?projectId=${encodeURIComponent(value)}`); };
+  const selectProject = (value: string) => { rememberProject(value); setLocation(`/techmove?projectId=${encodeURIComponent(value)}`); };
   useEffect(() => {
     if (projects.length && !hasSelectedProject) selectProject((projects[0] as any).id);
   }, [projects, hasSelectedProject]);
@@ -51,14 +76,33 @@ export default function ProjectWorkflow() {
           <h1 className="text-2xl font-bold">Trilha do Projeto</h1>
           <p className="text-muted-foreground mt-1">Fluxo completo de implementação SAP S/4HANA - do escopo à configuração</p>
         </div>
-        <Select value={hasSelectedProject ? projectId : undefined} onValueChange={selectProject}>
-          <SelectTrigger className="w-full sm:w-72"><SelectValue placeholder="Selecione o projeto" /></SelectTrigger>
-          <SelectContent>{projects.map((project: any) => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}</SelectContent>
-        </Select>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <Select value={hasSelectedProject ? projectId : undefined} onValueChange={selectProject}>
+            <SelectTrigger className="w-full sm:w-72"><SelectValue placeholder="Selecione o projeto" /></SelectTrigger>
+            <SelectContent>{projects.map((project: any) => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}</SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => consolidatedReport.mutate({ projectId })} disabled={!hasSelectedProject || consolidatedReport.isPending}><Download className="mr-2 h-4 w-4" />{consolidatedReport.isPending ? "Gerando..." : "Relatório consolidado"}</Button>
+        </div>
       </div>
+      {(legacyPreview?.total || 0) > 0 && (
+        <Card className="border-amber-300 bg-amber-50/60 dark:bg-amber-950/20">
+          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <DatabaseZap className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div>
+                <h2 className="font-semibold">Dados da versão anterior encontrados</h2>
+                <p className="text-sm text-muted-foreground">Há {legacyPreview?.total} registros no TechMove legado. A importação é segura e ignora itens já consolidados.</p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => importLegacy.mutate({ projectId })} disabled={importLegacy.isPending}>
+              {importLegacy.isPending ? "Consolidando..." : "Consolidar dados agora"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" placeholder="Buscar em todo o Workflow..." value={search} onChange={event => setSearch(event.target.value)} />
+        <Input className="pl-9" placeholder="Buscar em todo o TechMove..." value={search} onChange={event => setSearch(event.target.value)} />
       </div>
       {debouncedSearch.length >= 2 && (
         <Card>
@@ -87,10 +131,10 @@ export default function ProjectWorkflow() {
               <div className={`p-3 rounded-lg ${step.color} text-white`}>
                 <step.icon className="h-6 w-6" />
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">{index + 1}</Badge>
-                  <h3 className="font-semibold">{step.title}</h3>
+                  <h3 className="min-w-0 break-words font-semibold">{step.title}</h3>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">{step.description}</p>
                 <div className="mt-3 flex items-center gap-3">
@@ -110,7 +154,7 @@ export default function ProjectWorkflow() {
             <History className="h-5 w-5 text-muted-foreground" />
             <div>
               <h2 className="font-semibold">Atividades recentes</h2>
-              <p className="text-xs text-muted-foreground">Histórico de geração, aprovação e alterações relevantes do Workflow</p>
+              <p className="text-xs text-muted-foreground">Histórico de geração, aprovação e alterações relevantes do TechMove</p>
             </div>
           </div>
           {auditEntries.length === 0 ? (
@@ -149,6 +193,7 @@ function formatAuditAction(action: string) {
     bulk_updated: "alterou em lote",
     cache_reused: "reutilizou a versão em cache de",
     DCD_GENERATED: "gerou",
+    DCD_GENERATED_STREAM: "gerou com acompanhamento",
     DCD_APPROVED: "aprovou",
     DCD_UPDATED: "alterou",
     DCD_CACHE_REUSED: "reutilizou a versão em cache de",
@@ -160,6 +205,9 @@ function formatAuditAction(action: string) {
     GAP_UPDATED: "alterou",
     GAPS_BULK_UPDATED: "alterou em lote",
     CONFIGURATIONS_BULK_UPDATED: "alterou em lote",
+    WORKSHOP_AUDIO_TRANSCRIBED: "transcreveu áudio de",
+    WORKFLOW_REPORT_EXPORTED: "exportou o relatório de",
+    TECHMOVE_LEGACY_IMPORTED: "consolidou dados legados em",
   };
   return labels[action] || action;
 }
@@ -172,6 +220,8 @@ function formatEntityType(entityType: string) {
     configuration: "uma configuração",
     configurations: "configurações",
     client_requirement: "um requisito do cliente",
+    workshop: "um workshop",
+    project: "um projeto",
   };
   return labels[entityType] || entityType.replaceAll("_", " ");
 }

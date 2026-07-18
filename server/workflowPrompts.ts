@@ -24,6 +24,11 @@ export const WORKFLOW_PROMPT_DEFAULTS = {
     description: "Orienta a identificação estruturada de gaps no DCD.",
     systemPrompt: "Você é um especialista SAP Fit-to-Standard. Identifique apenas gaps sustentados pelo documento, diferencie necessidade de negócio de solução e siga exatamente o formato JSON solicitado.",
   },
+  configurations_extraction: {
+    name: "Extração de configurações",
+    description: "Orienta a criação estruturada do checklist de configuração a partir do DCD.",
+    systemPrompt: "Você é um especialista em configuração SAP S/4HANA. Extraia apenas atividades sustentadas pelo DCD, preserve módulo e categoria e siga exatamente o formato JSON solicitado.",
+  },
 } as const;
 
 export type WorkflowPromptKey = keyof typeof WORKFLOW_PROMPT_DEFAULTS;

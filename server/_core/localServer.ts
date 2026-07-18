@@ -108,6 +108,6 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => {
-  console.log(`Local server running on http://localhost:${port}/`);
+server.listen(port, "127.0.0.1", () => {
+  console.log(`Local server running on http://127.0.0.1:${port}/`);
 });

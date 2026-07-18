@@ -105,13 +105,13 @@ export default function GapsPage() {
   };
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 p-3 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Gaps</h1>
           <p className="text-muted-foreground text-sm">Funcionalidades não cobertas pelo padrão SAP</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 min-[420px]:flex-row sm:flex-wrap sm:justify-end">
           {dcds.length > 0 && (
             <Button variant="outline" onClick={() => setShowExtract(true)}>
               <Sparkles className="h-4 w-4 mr-2" />Extrair do DCD (IA)
@@ -121,11 +121,11 @@ export default function GapsPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Search className="h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Buscar gaps..." value={search} onChange={e => setSearch(e.target.value)} className="max-w-sm" />
+        <Input placeholder="Buscar gaps..." value={search} onChange={e => setSearch(e.target.value)} className="min-w-0 flex-1 basis-full sm:max-w-sm sm:basis-auto" />
         <Badge variant="secondary">{filtered.length} gaps</Badge>
-        <div className="ml-auto flex rounded-md border p-1">
+        <div className="flex w-full rounded-md border p-1 sm:ml-auto sm:w-auto">
           <Button size="sm" variant={view === "kanban" ? "secondary" : "ghost"} onClick={() => setView("kanban")}><Columns3 className="mr-2 h-4 w-4" />Kanban</Button>
           <Button size="sm" variant={view === "table" ? "secondary" : "ghost"} onClick={() => setView("table")}><Table2 className="mr-2 h-4 w-4" />Tabela</Button>
         </div>
@@ -188,7 +188,7 @@ export default function GapsPage() {
           <DialogHeader><DialogTitle>Novo Gap</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div><Label>Descrição *</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div><Label>Módulo</Label><Input value={form.module} onChange={e => setForm(f => ({ ...f, module: e.target.value }))} placeholder="SD, MM, FI..." /></div>
               <div><Label>Impacto</Label><Select value={form.impact} onValueChange={(impact: "Alto" | "Médio" | "Baixo") => setForm(f => ({ ...f, impact }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Alto">Alto</SelectItem><SelectItem value="Médio">Médio</SelectItem><SelectItem value="Baixo">Baixo</SelectItem></SelectContent></Select></div>
             </div>
@@ -204,7 +204,7 @@ export default function GapsPage() {
           <p className="text-sm text-muted-foreground">Selecione um DCD para a IA extrair automaticamente os gaps.</p>
           <div className="grid gap-2">
             {dcds.map((doc: any) => (
-              <Button key={doc.id} variant="outline" className="justify-start" onClick={() => extractMut.mutate({ projectId: PROJECT_ID, dcdId: doc.id, dcdContent: doc.content || "" })} disabled={extractMut.isPending}>
+              <Button key={doc.id} variant="outline" className="justify-start" onClick={() => extractMut.mutate({ projectId: PROJECT_ID, dcdId: doc.id })} disabled={extractMut.isPending}>
                 {doc.title}
               </Button>
             ))}

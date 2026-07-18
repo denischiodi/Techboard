@@ -124,8 +124,14 @@ export const appUsers = mysqlTable("app_users", {
     projects: boolean;
     absences: boolean;
     planner: boolean;
+    activities: boolean;
+    gpChecklist: boolean;
+    organogram: boolean;
+    techmove: boolean;
     access: boolean;
     settings: boolean;
+    products?: Partial<Record<"techboard" | "techlead" | "techmove" | "techtask" | "admin", boolean>>;
+    actions?: Partial<Record<string, { view: boolean; create: boolean; modify: boolean }>>;
   }>().notNull(),
   active: int("active").notNull().default(1),
   resourceId: varchar("resourceId", { length: 64 }).default(""),
@@ -157,6 +163,92 @@ export const techmoveProjects = mysqlTable("techmove_projects", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** Activities - kanban unificado e colaborativo. */
+export const activities = mysqlTable("activities", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  scope: varchar("scope", { length: 16 }).notNull().default("project"),
+  projectId: varchar("projectId", { length: 64 }).notNull().default(""),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 32 }).notNull().default("A fazer"),
+  priority: varchar("priority", { length: 16 }).notNull().default("Média"),
+  assigneeUserId: varchar("assigneeUserId", { length: 64 }).notNull().default(""),
+  creatorUserId: varchar("creatorUserId", { length: 64 }).notNull(),
+  dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
+  sourceType: varchar("sourceType", { length: 64 }).notNull().default("manual"),
+  sourceKey: varchar("sourceKey", { length: 255 }).notNull().default(""),
+  sourceUrl: text("sourceUrl"),
+  sourceResolved: mysqlBoolean("sourceResolved").notNull().default(false),
+  archivedAt: timestamp("archivedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const activityParticipants = mysqlTable("activity_participants", {
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  userId: varchar("userId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const activityChecklistItems = mysqlTable("activity_checklist_items", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  description: text("description").notNull(),
+  assigneeUserId: varchar("assigneeUserId", { length: 64 }).notNull().default(""),
+  dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
+  required: mysqlBoolean("required").notNull().default(true),
+  completed: mysqlBoolean("completed").notNull().default(false),
+  position: int("position").notNull().default(0),
+  createdByUserId: varchar("createdByUserId", { length: 64 }).notNull(),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const activityComments = mysqlTable("activity_comments", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  authorUserId: varchar("authorUserId", { length: 64 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const activityAttachments = mysqlTable("activity_attachments", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  fileName: text("fileName").notNull(),
+  contentType: varchar("contentType", { length: 255 }).notNull(),
+  url: text("url").notNull(),
+  uploadedByUserId: varchar("uploadedByUserId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const activityHistory = mysqlTable("activity_history", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  actorUserId: varchar("actorUserId", { length: 64 }).notNull().default(""),
+  actorName: varchar("actorName", { length: 255 }).notNull().default("Sistema"),
+  action: varchar("action", { length: 128 }).notNull(),
+  details: json("details").$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const activityNotifications = mysqlTable("activity_notifications", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: varchar("userId", { length: 64 }).notNull(),
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  eventKey: varchar("eventKey", { length: 255 }).notNull(),
+  eventType: varchar("eventType", { length: 64 }).notNull(),
+  title: text("title").notNull(),
+  message: text("message"),
+  readAt: timestamp("readAt"),
+  emailStatus: varchar("emailStatus", { length: 16 }).notNull().default("pending"),
+  emailAttempts: int("emailAttempts").notNull().default(0),
+  lastEmailError: text("lastEmailError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 // ===== WORKFLOW MODULE TABLES =====
 
 /**
@@ -184,8 +276,22 @@ export const bdcqQuestions = mysqlTable("bdcq_questions", {
   module: varchar("module", { length: 128 }).notNull(),
   category: varchar("category", { length: 256 }).notNull().default(""),
   question: text("question").notNull(),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
   isDefault: int("isDefault").notNull().default(0),
   sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const workflowBdcqTemplates = mysqlTable("workflow_bdcq_templates", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  question: text("question").notNull(),
+  category: varchar("category", { length: 256 }).notNull().default(""),
+  modules: json("modules").$type<string[]>().default([]),
+  scopeItemKeys: json("scopeItemKeys").$type<string[]>().default([]),
+  active: int("active").notNull().default(1),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -325,6 +431,30 @@ export const configurations = mysqlTable("configurations", {
   responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Pendente"),
   notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Test cases executed after configuration, covering unit and integrated validation. */
+export const workflowTestCases = mysqlTable("workflow_test_cases", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  type: varchar("type", { length: 32 }).notNull().default("Unitário"),
+  code: varchar("code", { length: 128 }).notNull().default(""),
+  title: varchar("title", { length: 512 }).notNull(),
+  description: text("description"),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  requirementId: varchar("requirementId", { length: 64 }).notNull().default(""),
+  scopeItemId: varchar("scopeItemId", { length: 64 }).notNull().default(""),
+  dcdId: varchar("dcdId", { length: 64 }).notNull().default(""),
+  preconditions: text("preconditions"),
+  steps: text("steps"),
+  expectedResult: text("expectedResult"),
+  actualResult: text("actualResult"),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  evidence: text("evidence"),
+  status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
