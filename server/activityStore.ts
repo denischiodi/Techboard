@@ -108,28 +108,43 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
     historyRows = history.rows;
   }
 
+  const groupByActivity = <T extends { activityId: string }>(items: T[]) => {
+    const grouped = new Map<string, T[]>();
+    for (const item of items) {
+      const group = grouped.get(item.activityId);
+      if (group) group.push(item);
+      else grouped.set(item.activityId, [item]);
+    }
+    return grouped;
+  };
+  const participantsByActivity = groupByActivity(participantRows);
+  const checklistByActivity = groupByActivity(checklistRows);
+  const commentsByActivity = groupByActivity(commentRows);
+  const attachmentsByActivity = groupByActivity(attachmentRows);
+  const historyByActivity = groupByActivity(historyRows);
+
   return rows.map(row => {
     const participantIds = db
-      ? participantRows.filter(item => item.activityId === row.id).map(item => item.userId)
+      ? (participantsByActivity.get(row.id) || []).map(item => item.userId)
       : [...(memoryParticipants.get(row.id) || new Set())];
     const checklist = db
-      ? checklistRows.filter(item => item.activityId === row.id).map(item => checklistFromDb(item, usersById))
+      ? (checklistByActivity.get(row.id) || []).map(item => checklistFromDb(item, usersById))
       : (memoryChecklist.get(row.id) || []).map(item => ({ ...item, assigneeName: usersById.get(item.assigneeUserId)?.name || "" }));
     const comments = db
-      ? commentRows.filter(item => item.activityId === row.id).map(item => ({
+      ? (commentsByActivity.get(row.id) || []).map(item => ({
           id: item.id, activityId: item.activityId, authorUserId: item.authorUserId,
           authorName: usersById.get(item.authorUserId)?.name || "Usuário", content: item.content, createdAt: iso(item.createdAt),
         }))
       : memoryComments.get(row.id) || [];
     const attachments = db
-      ? attachmentRows.filter(item => item.activityId === row.id).map(item => ({
+      ? (attachmentsByActivity.get(row.id) || []).map(item => ({
           id: item.id, activityId: item.activityId, fileName: item.fileName, contentType: item.contentType,
           url: item.url, uploadedByUserId: item.uploadedByUserId,
           uploadedByName: usersById.get(item.uploadedByUserId)?.name || "Usuário", createdAt: iso(item.createdAt),
         }))
       : memoryAttachments.get(row.id) || [];
     const history = db
-      ? historyRows.filter(item => item.activityId === row.id).map(item => ({
+      ? (historyByActivity.get(row.id) || []).map(item => ({
           id: item.id, activityId: item.activityId, actorUserId: item.actorUserId,
           actorName: item.actorName, action: item.action, details: item.details || {}, createdAt: iso(item.createdAt),
         }))

@@ -92,23 +92,45 @@ async function notify(activity: Activity, actor: AppUser, eventType: string, mes
 }
 
 async function syncAndList(user: AppUser) {
-  await syncActivitiesFromSources();
+  scheduleSourceSync();
   const activities = await activityStore.listActivities();
+  if (user.role === "admin") return activities;
+
+  const projectIds = new Set(activities.filter(activity => activity.scope === "project" && !involved(activity, user)).map(activity => activity.projectId));
+  const projects = projectIds.size ? (await plannerStore.listProjects()).filter(project => projectIds.has(project.id)) : [];
+  const visibleProjectIds = new Set<string>();
+  if (user.role === "technical_lead") for (const project of projects) visibleProjectIds.add(project.id);
+  else if (user.role === "manager") for (const project of projects) if (await managedProject(user, project)) visibleProjectIds.add(project.id);
+
   const visible: Activity[] = [];
-  for (const activity of activities) if (await canView(activity, user)) visible.push(activity);
+  for (const activity of activities) {
+    if (involved(activity, user)) visible.push(activity);
+    else if (activity.scope === "internal" && user.role === "manager") visible.push(activity);
+    else if (activity.scope === "project" && visibleProjectIds.has(activity.projectId)) visible.push(activity);
+  }
   return visible;
+}
+
+let sourceSync: Promise<void> | null = null;
+let lastSourceSyncAt = 0;
+const SOURCE_SYNC_INTERVAL_MS = 60_000;
+
+function scheduleSourceSync() {
+  if (sourceSync || Date.now() - lastSourceSyncAt < SOURCE_SYNC_INTERVAL_MS) return;
+  sourceSync = syncActivitiesFromSources()
+    .then(() => { lastSourceSyncAt = Date.now(); })
+    .catch(error => console.warn("Falha ao sincronizar fontes de atividades", error))
+    .finally(() => { sourceSync = null; });
 }
 
 export const activitiesRouter = router({
   list: activityViewProcedure.query(async ({ ctx }) => {
-    if (!ctx.appUser.permissions.activities) forbidden("Sem permissão para acessar atividades");
     return syncAndList(ctx.appUser);
   }),
 
   get: activityViewProcedure.input(z.object({ id: z.string().min(1) })).query(({ ctx, input }) => requireActivity(input.id, ctx.appUser)),
 
   eligibleUsers: activityViewProcedure.input(z.object({ scope: z.enum(["project", "internal"]), projectId: z.string().default("") })).query(async ({ ctx, input }) => {
-    if (!ctx.appUser.permissions.activities) forbidden();
     const users = (await plannerStore.listAppUsers()).filter(user => user.active);
     if (input.scope === "internal") return users;
     const project = await plannerStore.getProjectById(input.projectId);
@@ -122,7 +144,6 @@ export const activitiesRouter = router({
     description: z.string().max(10000).default(""), priority: prioritySchema.default("Média"),
     assigneeUserId: z.string().default(""), participantUserIds: z.array(z.string()).default([]), dueDate: isoDateSchema.default(""),
   })).mutation(async ({ ctx, input }) => {
-    if (!ctx.appUser.permissions.activities) forbidden();
     if (input.scope === "project") {
       const project = await plannerStore.getProjectById(input.projectId);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });

@@ -86,6 +86,10 @@ function KanbanColumn({ status, activities, onOpen }: { status: ActivityStatus; 
   );
 }
 
+function normalizeSearch(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
 export default function Activities() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -97,6 +101,8 @@ export default function Activities() {
   const [search, setSearch] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [dueFilter, setDueFilter] = useState<"all" | "overdue" | "not_overdue" | "no_due">("all");
   const [selectedId, setSelectedId] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("activityId"));
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", dueDate: "" });
@@ -114,9 +120,23 @@ export default function Activities() {
     if (view === "internal" && activity.scope !== "internal") return false;
     if (projectFilter !== "all" && activity.projectId !== projectFilter) return false;
     if (priorityFilter !== "all" && activity.priority !== priorityFilter) return false;
-    const term = search.trim().toLowerCase();
-    return !term || [activity.title, activity.description, activity.assigneeName, activity.projectName].some(value => value.toLowerCase().includes(term));
-  }), [activities, appUser, view, projectFilter, priorityFilter, search]);
+    if (assigneeFilter === "none" && activity.assigneeUserId) return false;
+    if (assigneeFilter !== "all" && assigneeFilter !== "none" && activity.assigneeUserId !== assigneeFilter) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    const overdue = Boolean(activity.dueDate && activity.status !== "Concluída" && activity.dueDate < today);
+    if (dueFilter === "overdue" && !overdue) return false;
+    if (dueFilter === "not_overdue" && (!activity.dueDate || overdue)) return false;
+    if (dueFilter === "no_due" && activity.dueDate) return false;
+    const term = normalizeSearch(search);
+    const searchable = [
+      activity.title, activity.description, activity.assigneeName, activity.creatorName, activity.projectName,
+      activity.status, activity.priority, activity.dueDate, activity.scope === "project" ? "projeto" : "operacao interna",
+      ...activity.participants.flatMap(participant => [participant.name, participant.email]),
+    ];
+    return !term || searchable.some(value => normalizeSearch(value || "").includes(term));
+  }), [activities, appUser, view, projectFilter, priorityFilter, assigneeFilter, dueFilter, search]);
+
+  const assignees = useMemo(() => [...new Map(activities.filter(activity => activity.assigneeUserId).map(activity => [activity.assigneeUserId, activity.assigneeName || "Usuário sem nome"])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [activities]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const activity = activities.find(item => item.id === event.active.id);
@@ -131,10 +151,12 @@ export default function Activities() {
         <div><h1 className="text-2xl font-bold">Atividades</h1><p className="text-sm text-muted-foreground">Tarefas manuais e pendências integradas dos projetos.</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova atividade</Button>
       </div>
-      <Card><CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:items-center">
+      <Card><CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:flex-wrap lg:items-center">
         <div className="flex gap-1 rounded-lg bg-muted p-1">{(["mine", "projects", "internal"] as const).map(key => <Button key={key} size="sm" variant={view === key ? "default" : "ghost"} onClick={() => setView(key)}>{key === "mine" ? "Minhas" : key === "projects" ? "Projetos" : "Operação interna"}</Button>)}</div>
-        <div className="relative min-w-48 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar atividade..." className="pl-9" /></div>
+        <div className="relative min-w-64 flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar em título, projeto, pessoas, status..." className="pl-9" /></div>
         <Select value={projectFilter} onValueChange={setProjectFilter}><SelectTrigger className="w-full lg:w-52"><SelectValue placeholder="Projeto" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os projetos</SelectItem>{[...new Map(activities.filter(item => item.projectId).map(item => [item.projectId, item.projectName])).entries()].map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select>
+        <Select value={assigneeFilter} onValueChange={setAssigneeFilter}><SelectTrigger className="w-full lg:w-52"><SelectValue placeholder="Responsável" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os responsáveis</SelectItem><SelectItem value="none">Sem responsável</SelectItem>{assignees.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select>
+        <Select value={dueFilter} onValueChange={value => setDueFilter(value as typeof dueFilter)}><SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Prazo" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os prazos</SelectItem><SelectItem value="overdue">Atrasadas</SelectItem><SelectItem value="not_overdue">Não atrasadas</SelectItem><SelectItem value="no_due">Sem prazo</SelectItem></SelectContent></Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}><SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Prioridade" /></SelectTrigger><SelectContent><SelectItem value="all">Prioridades</SelectItem>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select>
       </CardContent></Card>
       {activitiesQuery.isLoading ? <div className="p-12 text-center text-muted-foreground">Sincronizando atividades...</div> :

@@ -25,6 +25,16 @@ describe("kanban de atividades", () => {
     expect((await caller.activities.list()).some(item => item.id === created.id)).toBe(true);
   });
 
+  it("mostra para o admin uma atividade criada por outro usuário", async () => {
+    const creator = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    const created = await creator.activities.create({
+      scope: "project", projectId: "p1", title: "Atividade visível para admin", description: "",
+      priority: "Média", assigneeUserId: "u3", participantUserIds: [], dueDate: "",
+    });
+    const admin = appRouter.createCaller(context("defechi@gmail.com"));
+    expect((await admin.activities.list()).some(item => item.id === created.id)).toBe(true);
+  });
+
   it("bloqueia conclusão enquanto houver checklist obrigatório pendente", async () => {
     const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const activity = await caller.activities.create({
