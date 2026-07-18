@@ -308,8 +308,21 @@ export const bdcqQuestions = mysqlTable("bdcq_questions", {
   question: text("question").notNull(),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
+  consultantResourceId: varchar("consultantResourceId", { length: 64 }).notNull().default(""),
+  keyUserId: varchar("keyUserId", { length: 64 }).notNull().default(""),
   isDefault: int("isDefault").notNull().default(0),
   sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const workflowProjectKeyUsers = mysqlTable("workflow_project_key_users", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull().default(""),
+  role: varchar("role", { length: 255 }).notNull().default(""),
+  active: int("active").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
