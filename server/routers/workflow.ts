@@ -1673,6 +1673,20 @@ export const workflowRouter = router({
           added: await ensureBdcqTemplates(input.projectId, input.modules),
         })),
     }),
+    keyUsers: router({
+      list: workflowProjectProcedure()
+        .input(z.object({ projectId: z.string() }))
+        .query(({ input }) => wdb.listProjectKeyUsers(input.projectId)),
+      create: workflowProjectProcedure(true)
+        .input(z.object({ projectId: z.string(), name: z.string().trim().min(1).max(255), email: z.string().trim().email().max(320), role: z.string().trim().max(255).optional() }))
+        .mutation(({ input }) => wdb.createProjectKeyUser({ id: nanoid(), projectId: input.projectId, name: input.name, email: input.email.toLowerCase(), role: input.role || "", active: 1 })),
+      update: workflowEntityProcedure("workflow_project_key_users", true)
+        .input(z.object({ id: z.string(), data: z.object({ name: z.string().trim().min(1).max(255).optional(), email: z.string().trim().email().max(320).optional(), role: z.string().trim().max(255).optional(), active: z.number().int().min(0).max(1).optional() }) }))
+        .mutation(({ input }) => wdb.updateProjectKeyUser(input.id, { ...input.data, email: input.data.email?.toLowerCase() })),
+      delete: workflowEntityProcedure("workflow_project_key_users", true)
+        .input(z.object({ id: z.string() }))
+        .mutation(({ input }) => wdb.deleteProjectKeyUser(input.id)),
+    }),
     questions: router({
       list: workflowProjectProcedure()
         .input(z.object({ projectId: z.string(), ...paginationInput }))
@@ -1685,11 +1699,17 @@ export const workflowRouter = router({
             category: z.string().optional(),
             question: z.string(),
             scopeItemIds: z.array(z.string()).max(200).optional(),
+            consultantResourceId: z.string().max(64).optional(),
+            keyUserId: z.string().max(64).optional(),
             isDefault: z.number().optional(),
             sortOrder: z.number().optional(),
           })
         )
         .mutation(async ({ input }) => {
+          if (input.consultantResourceId && !(await plannerStore.getResourceById(input.consultantResourceId)))
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
+          if (input.keyUserId && await wdb.getWorkflowEntityProjectId("workflow_project_key_users", input.keyUserId) !== input.projectId)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Key user não pertence ao projeto" });
           if (input.scopeItemIds?.length)
             await assertEntitiesBelongToProject(
               "scope_items",
@@ -1704,6 +1724,8 @@ export const workflowRouter = router({
             question: input.question,
             category: input.category || "",
             scopeItemIds: input.scopeItemIds || [],
+            consultantResourceId: input.consultantResourceId || "",
+            keyUserId: input.keyUserId || "",
             isDefault: input.isDefault ?? 0,
             sortOrder: input.sortOrder ?? 0,
           });
@@ -1712,10 +1734,26 @@ export const workflowRouter = router({
         .input(
           z.object({
             id: z.string(),
-            data: z.record(z.string(), z.any()),
+            data: z.object({
+              module: z.string().optional(), category: z.string().optional(), question: z.string().optional(),
+              scopeItemIds: z.array(z.string()).max(200).optional(), consultantResourceId: z.string().max(64).optional(),
+              keyUserId: z.string().max(64).optional(), sortOrder: z.number().optional(),
+            }),
           })
         )
-        .mutation(({ input }) => wdb.updateBdcqQuestion(input.id, input.data)),
+        .mutation(async ({ input }) => {
+          if (input.data.consultantResourceId && !(await plannerStore.getResourceById(input.data.consultantResourceId)))
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
+          if (input.data.keyUserId) {
+            const [questionProjectId, keyUserProjectId] = await Promise.all([
+              wdb.getWorkflowEntityProjectId("bdcq_questions", input.id),
+              wdb.getWorkflowEntityProjectId("workflow_project_key_users", input.data.keyUserId),
+            ]);
+            if (!questionProjectId || keyUserProjectId !== questionProjectId)
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Key user não pertence ao projeto" });
+          }
+          return wdb.updateBdcqQuestion(input.id, input.data);
+        }),
       delete: workflowEntityProcedure("bdcq_questions", true)
         .input(z.object({ id: z.string() }))
         .mutation(({ input }) => wdb.deleteBdcqQuestion(input.id)),

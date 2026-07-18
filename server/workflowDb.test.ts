@@ -39,6 +39,22 @@ describe("workflow PostgreSQL persistence", () => {
     expect(query.mock.calls[0][1]).toEqual(["project-1", ["q-1", "q-2"]]);
   });
 
+  it("lists key users only for the selected project", async () => {
+    const db = await import("./routers/workflowDb");
+    await db.listProjectKeyUsers("project-1");
+    expect(query.mock.calls[0][0]).toContain('FROM "workflow_project_key_users" WHERE "projectId" = $1');
+    expect(query.mock.calls[0][1]).toEqual(["project-1"]);
+  });
+
+  it("clears BDCQ assignments when deleting a project key user", async () => {
+    const db = await import("./routers/workflowDb");
+    clientQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+    await db.deleteProjectKeyUser("key-user-1");
+    expect(clientQuery.mock.calls.some(call => String(call[0]).includes('UPDATE "bdcq_questions" SET "keyUserId"'))).toBe(true);
+    expect(clientQuery.mock.calls.some(call => String(call[0]).includes('DELETE FROM "workflow_project_key_users"'))).toBe(true);
+    expect(release).toHaveBeenCalled();
+  });
+
   it("serializes JSON columns when creating a workshop", async () => {
     const db = await import("./routers/workflowDb");
     query.mockResolvedValueOnce({ rows: [{ id: "workshop-1" }] });

@@ -4,6 +4,7 @@ import {
   bdcqQuestions,
   bdcqAnswers,
   bdcqAnswerHistory,
+  workflowProjectKeyUsers,
   workshops,
   workshopTranscripts,
   meetingMinutes,
@@ -127,6 +128,7 @@ const directProjectTables = new Set([
   "scope_items",
   "bdcq_questions",
   "bdcq_answers",
+  "workflow_project_key_users",
   "workshops",
   "client_requirements",
   "dcd_documents",
@@ -282,11 +284,40 @@ export async function updateBdcqQuestion(
       "question",
       "templateId",
       "scopeItemIds",
+      "consultantResourceId",
+      "keyUserId",
       "isDefault",
       "sortOrder",
     ],
     ["scopeItemIds"]
   );
+}
+
+export async function listProjectKeyUsers(projectId: string) {
+  return listRows("workflow_project_key_users", "projectId", projectId) as Promise<Array<typeof workflowProjectKeyUsers.$inferSelect>>;
+}
+export async function createProjectKeyUser(data: typeof workflowProjectKeyUsers.$inferInsert) {
+  return insertRow("workflow_project_key_users", data);
+}
+export async function updateProjectKeyUser(id: string, data: Partial<typeof workflowProjectKeyUsers.$inferInsert>) {
+  return updateRow("workflow_project_key_users", id, data, ["name", "email", "role", "active"]);
+}
+export async function deleteProjectKeyUser(id: string) {
+  const pool = getPgPool();
+  if (!pool) return false;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query('UPDATE "bdcq_questions" SET "keyUserId" = \'\', "updatedAt" = now() WHERE "keyUserId" = $1', [id]);
+    const result = await client.query('DELETE FROM "workflow_project_key_users" WHERE "id" = $1', [id]);
+    await client.query("COMMIT");
+    return (result.rowCount || 0) > 0;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listBdcqTemplateLibrary() {
