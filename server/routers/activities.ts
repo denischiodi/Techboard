@@ -11,6 +11,12 @@ import { storagePut } from "../storage";
 const statusSchema = z.enum(["A fazer", "Em andamento", "Bloqueada", "Em validação", "Concluída"]);
 const prioritySchema = z.enum(["Baixa", "Média", "Alta", "Crítica"]);
 const isoDateSchema = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
+const importRowSchema = z.object({
+  rowNumber: z.number().int().positive(), id: z.string().default(""), scope: z.enum(["project", "internal"]),
+  projectId: z.string().default(""), title: z.string().trim().min(1).max(500), description: z.string().max(10000).default(""),
+  status: statusSchema.default("A fazer"), priority: prioritySchema.default("Média"), assigneeUserId: z.string().default(""),
+  participantUserIds: z.array(z.string()).default([]), dueDate: isoDateSchema.default(""),
+});
 
 function forbidden(message = "Sem permissão para esta atividade"): never {
   throw new TRPCError({ code: "FORBIDDEN", message });
@@ -92,23 +98,45 @@ async function notify(activity: Activity, actor: AppUser, eventType: string, mes
 }
 
 async function syncAndList(user: AppUser) {
-  await syncActivitiesFromSources();
+  scheduleSourceSync();
   const activities = await activityStore.listActivities();
+  if (user.role === "admin") return activities;
+
+  const projectIds = new Set(activities.filter(activity => activity.scope === "project" && !involved(activity, user)).map(activity => activity.projectId));
+  const projects = projectIds.size ? (await plannerStore.listProjects()).filter(project => projectIds.has(project.id)) : [];
+  const visibleProjectIds = new Set<string>();
+  if (user.role === "technical_lead") for (const project of projects) visibleProjectIds.add(project.id);
+  else if (user.role === "manager") for (const project of projects) if (await managedProject(user, project)) visibleProjectIds.add(project.id);
+
   const visible: Activity[] = [];
-  for (const activity of activities) if (await canView(activity, user)) visible.push(activity);
+  for (const activity of activities) {
+    if (involved(activity, user)) visible.push(activity);
+    else if (activity.scope === "internal" && user.role === "manager") visible.push(activity);
+    else if (activity.scope === "project" && visibleProjectIds.has(activity.projectId)) visible.push(activity);
+  }
   return visible;
+}
+
+let sourceSync: Promise<void> | null = null;
+let lastSourceSyncAt = 0;
+const SOURCE_SYNC_INTERVAL_MS = 60_000;
+
+function scheduleSourceSync() {
+  if (sourceSync || Date.now() - lastSourceSyncAt < SOURCE_SYNC_INTERVAL_MS) return;
+  sourceSync = syncActivitiesFromSources()
+    .then(() => { lastSourceSyncAt = Date.now(); })
+    .catch(error => console.warn("Falha ao sincronizar fontes de atividades", error))
+    .finally(() => { sourceSync = null; });
 }
 
 export const activitiesRouter = router({
   list: activityViewProcedure.query(async ({ ctx }) => {
-    if (!ctx.appUser.permissions.activities) forbidden("Sem permissão para acessar atividades");
     return syncAndList(ctx.appUser);
   }),
 
   get: activityViewProcedure.input(z.object({ id: z.string().min(1) })).query(({ ctx, input }) => requireActivity(input.id, ctx.appUser)),
 
   eligibleUsers: activityViewProcedure.input(z.object({ scope: z.enum(["project", "internal"]), projectId: z.string().default("") })).query(async ({ ctx, input }) => {
-    if (!ctx.appUser.permissions.activities) forbidden();
     const users = (await plannerStore.listAppUsers()).filter(user => user.active);
     if (input.scope === "internal") return users;
     const project = await plannerStore.getProjectById(input.projectId);
@@ -122,7 +150,6 @@ export const activitiesRouter = router({
     description: z.string().max(10000).default(""), priority: prioritySchema.default("Média"),
     assigneeUserId: z.string().default(""), participantUserIds: z.array(z.string()).default([]), dueDate: isoDateSchema.default(""),
   })).mutation(async ({ ctx, input }) => {
-    if (!ctx.appUser.permissions.activities) forbidden();
     if (input.scope === "project") {
       const project = await plannerStore.getProjectById(input.projectId);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
@@ -138,6 +165,52 @@ export const activitiesRouter = router({
     const current = await activityStore.getActivity(created.id) as Activity;
     await notify(current, ctx.appUser, "assigned", `${ctx.appUser.name} criou e atribuiu uma atividade.`);
     return current;
+  }),
+
+  importExcel: activityCreateProcedure.input(z.object({ rows: z.array(importRowSchema).min(1).max(1000) })).mutation(async ({ ctx, input }) => {
+    const results: Array<{ rowNumber: number; id?: string; action?: "created" | "updated"; error?: string }> = [];
+    for (const row of input.rows) {
+      try {
+        const participantUserIds = [...new Set(row.participantUserIds.filter(Boolean))];
+        if (row.scope === "project") {
+          const project = await plannerStore.getProjectById(row.projectId);
+          if (!project) throw new Error("Projeto não encontrado");
+          const members = await projectMemberIds(project);
+          if (ctx.appUser.role !== "admin" && !members.has(ctx.appUser.id)) throw new Error("Usuário não participa do projeto");
+          for (const userId of [row.assigneeUserId, ...participantUserIds]) if (userId && !members.has(userId)) throw new Error(`Usuário ${userId} não participa do projeto`);
+        } else {
+          for (const userId of [row.assigneeUserId, ...participantUserIds]) await assertEligibleUser({ scope: "internal", projectId: "" }, userId);
+        }
+
+        if (!row.id) {
+          const created = await activityStore.createActivity({ ...row, creatorUserId: ctx.appUser.id, participantUserIds });
+          if (!created) throw new Error("Não foi possível criar a atividade");
+          await activityStore.addHistory(created.id, ctx.appUser, "EXCEL_IMPORTED", { rowNumber: row.rowNumber });
+          results.push({ rowNumber: row.rowNumber, id: created.id, action: "created" });
+          continue;
+        }
+
+        const current = await requireActivity(row.id, ctx.appUser, true);
+        if (current.sourceType !== "manual") throw new Error("Atividades automáticas não podem ser alteradas por Excel");
+        if (current.scope !== row.scope || current.projectId !== row.projectId) throw new Error("Escopo e projeto não podem ser alterados por Excel");
+        if (row.status === "Concluída" && current.checklist.some(item => item.required && !item.completed)) throw new Error("Há itens obrigatórios pendentes no checklist");
+        const updated = await activityStore.updateActivity(row.id, {
+          title: row.title, description: row.description, status: row.status, priority: row.priority,
+          assigneeUserId: row.assigneeUserId, dueDate: row.dueDate,
+        });
+        if (!updated) throw new Error("Atividade não encontrada");
+        await activityStore.replaceParticipants(row.id, [...participantUserIds, current.creatorUserId, row.assigneeUserId]);
+        await activityStore.addHistory(row.id, ctx.appUser, "EXCEL_IMPORTED", { rowNumber: row.rowNumber });
+        results.push({ rowNumber: row.rowNumber, id: row.id, action: "updated" });
+      } catch (error) {
+        results.push({ rowNumber: row.rowNumber, error: error instanceof Error ? error.message : "Erro inesperado" });
+      }
+    }
+    return {
+      created: results.filter(result => result.action === "created").length,
+      updated: results.filter(result => result.action === "updated").length,
+      errors: results.filter(result => result.error).map(result => ({ rowNumber: result.rowNumber, message: result.error as string })),
+    };
   }),
 
   update: activityModifyProcedure.input(z.object({
