@@ -742,6 +742,15 @@ export async function listWorkflowTestSteps(testCaseId: string) {
   )) as Array<typeof workflowTestSteps.$inferSelect>;
   return rows.sort((a, b) => a.position - b.position);
 }
+export async function listWorkflowTestStepsByProject(projectId: string) {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const result = await pool.query(
+    `SELECT s.* FROM "workflow_test_steps" s JOIN "workflow_test_cases" t ON t."id" = s."testCaseId" WHERE t."projectId" = $1 ORDER BY t."createdAt", s."position"`,
+    [projectId]
+  );
+  return result.rows as Array<typeof workflowTestSteps.$inferSelect>;
+}
 export async function createWorkflowTestStep(
   data: typeof workflowTestSteps.$inferInsert
 ) {

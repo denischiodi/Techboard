@@ -24,11 +24,13 @@ import {
 import {
   CheckCircle2,
   ChevronRight,
+  Download,
   FileImage,
   FlaskConical,
   Paperclip,
   Plus,
   Trash2,
+  Upload,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -476,6 +478,10 @@ export default function TestsPage() {
   });
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
+  const exportQuery = trpc.workflow.tests.exportData.useQuery(
+    { projectId },
+    { enabled: false }
+  );
   const modules = (lookups?.fronts || [])
     .filter((item: any) => item.active)
     .map((item: any) => item.value);
@@ -489,6 +495,139 @@ export default function TestsPage() {
     },
     onError: error => toast.error(error.message),
   });
+  const importData = trpc.workflow.tests.importData.useMutation({
+    onSuccess: result => {
+      refetch();
+      toast.success(
+        `Carga concluída: ${result.scenariosCreated} cenário(s) e ${result.stepsCreated} etapa(s).`
+      );
+    },
+    onError: error => toast.error(error.message),
+  });
+  const writeWorkbook = async (
+    rows: Record<string, unknown>[],
+    name: string
+  ) => {
+    const XLSX = await import("xlsx");
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    sheet["!cols"] = [
+      12, 28, 35, 16, 30, 20, 10, 30, 40, 35, 22, 16, 35, 14,
+    ].map(width => ({ wch: width }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Carga E2E");
+    XLSX.writeFile(workbook, name);
+  };
+  const downloadTemplate = () =>
+    writeWorkbook(
+      [
+        {
+          "Código cenário": "E2E-001",
+          "Nome cenário": "Order to Cash completo",
+          "Descrição cenário": "Validar o processo ponta a ponta",
+          Módulo: "SD",
+          "Pré-condições": "Cliente e materiais cadastrados",
+          "Líder cenário": "Key User Líder",
+          "Ordem etapa": 1,
+          "Nome etapa": "Criar pedido de venda",
+          "Instrução etapa": "Criar o pedido com o cliente de teste",
+          "Resultado esperado": "Pedido criado sem erros",
+          "Key User etapa": "Key User SD",
+          Status: "Não iniciado",
+          "Resultado encontrado": "",
+          "Data execução": "",
+        },
+        {
+          "Código cenário": "E2E-001",
+          "Nome cenário": "Order to Cash completo",
+          "Descrição cenário": "Validar o processo ponta a ponta",
+          Módulo: "FI",
+          "Pré-condições": "Cliente e materiais cadastrados",
+          "Líder cenário": "Key User Líder",
+          "Ordem etapa": 2,
+          "Nome etapa": "Contabilizar faturamento",
+          "Instrução etapa": "Faturar e validar o documento contábil",
+          "Resultado esperado": "Documento contábil gerado",
+          "Key User etapa": "Key User FI",
+          Status: "Não iniciado",
+          "Resultado encontrado": "",
+          "Data execução": "",
+        },
+      ],
+      "modelo-carga-testes-e2e.xlsx"
+    );
+  const exportExisting = async () => {
+    const result = await exportQuery.refetch();
+    if (!result.data)
+      return toast.error("Não foi possível carregar os testes.");
+    const scenariosById = new Map(
+      result.data.scenarios.map((scenario: any) => [scenario.id, scenario])
+    );
+    const rows = result.data.steps.map((step: any) => {
+      const scenario: any = scenariosById.get(step.testCaseId);
+      return {
+        "Código cenário": scenario?.code || "",
+        "Nome cenário": scenario?.title || "",
+        "Descrição cenário": scenario?.description || "",
+        Módulo: scenario?.module || "",
+        "Pré-condições": scenario?.preconditions || "",
+        "Líder cenário": scenario?.responsible || "",
+        "Ordem etapa": step.position,
+        "Nome etapa": step.title,
+        "Instrução etapa": step.instruction || "",
+        "Resultado esperado": step.expectedResult || "",
+        "Key User etapa": step.responsible || "",
+        Status: step.status,
+        "Resultado encontrado": step.actualResult || "",
+        "Data execução": step.executedAt || "",
+      };
+    });
+    if (!rows.length)
+      return toast.info("Ainda não existem etapas para exportar.");
+    await writeWorkbook(rows, "testes-e2e-cadastrados.xlsx");
+  };
+  const handleImport = async (file?: File) => {
+    if (!file) return;
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: "",
+      });
+      const rows = raw.map((row, index) => {
+        const status = String(row["Status"] || "Não iniciado") as TestStatus;
+        if (!statuses.includes(status))
+          throw new Error(`Linha ${index + 2}: status inválido.`);
+        const scenarioTitle = String(row["Nome cenário"] || "").trim();
+        const stepTitle = String(row["Nome etapa"] || "").trim();
+        if (!scenarioTitle || !stepTitle)
+          throw new Error(
+            `Linha ${index + 2}: nome do cenário e nome da etapa são obrigatórios.`
+          );
+        return {
+          scenarioCode: String(row["Código cenário"] || "").trim(),
+          scenarioTitle,
+          scenarioDescription: String(row["Descrição cenário"] || ""),
+          module: String(row["Módulo"] || ""),
+          preconditions: String(row["Pré-condições"] || ""),
+          scenarioLeader: String(row["Líder cenário"] || ""),
+          stepPosition: Number(row["Ordem etapa"] || 1),
+          stepTitle,
+          instruction: String(row["Instrução etapa"] || ""),
+          expectedResult: String(row["Resultado esperado"] || ""),
+          keyUser: String(row["Key User etapa"] || ""),
+          status,
+          actualResult: String(row["Resultado encontrado"] || ""),
+          executedAt: String(row["Data execução"] || ""),
+        };
+      });
+      if (!rows.length)
+        throw new Error("O arquivo não possui linhas para importar.");
+      await importData.mutateAsync({ projectId, rows });
+    } catch (error: any) {
+      toast.error(error.message || "Arquivo de carga inválido.");
+    }
+  };
   const scenarios = useMemo(
     () => tests.filter((test: any) => test.type === "Integrado"),
     [tests]
@@ -516,10 +655,35 @@ export default function TestsPage() {
             evidências.
           </p>
         </div>
-        <Button onClick={() => setShowAdd(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo cenário E2E
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={downloadTemplate}>
+            <Download className="mr-2 h-4 w-4" />
+            Baixar modelo
+          </Button>
+          <Button variant="outline" onClick={exportExisting}>
+            <Download className="mr-2 h-4 w-4" />
+            Baixar cadastrados
+          </Button>
+          <Button variant="outline" asChild disabled={importData.isPending}>
+            <label className="cursor-pointer">
+              <Upload className="mr-2 h-4 w-4" />
+              Dar carga
+              <input
+                className="hidden"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={event => {
+                  handleImport(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </Button>
+          <Button onClick={() => setShowAdd(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo cenário E2E
+          </Button>
+        </div>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {scenarios.length === 0 ? (

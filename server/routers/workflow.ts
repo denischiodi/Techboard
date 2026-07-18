@@ -2875,6 +2875,99 @@ Retorne APENAS um JSON array com objetos no formato:
   }),
 
   tests: router({
+    exportData: workflowProjectProcedure()
+      .input(z.object({ projectId: z.string() }))
+      .query(async ({ input }) => {
+        const [scenarios, steps] = await Promise.all([
+          wdb.listWorkflowTestCases(input.projectId),
+          wdb.listWorkflowTestStepsByProject(input.projectId),
+        ]);
+        return {
+          scenarios: scenarios.filter(item => item.type === "Integrado"),
+          steps,
+        };
+      }),
+    importData: workflowProjectProcedure(true)
+      .input(
+        z.object({
+          projectId: z.string(),
+          rows: z
+            .array(
+              z.object({
+                scenarioCode: z.string(),
+                scenarioTitle: z.string().trim().min(1),
+                scenarioDescription: z.string().optional(),
+                module: z.string().optional(),
+                preconditions: z.string().optional(),
+                scenarioLeader: z.string().optional(),
+                stepPosition: z.number().int().min(1),
+                stepTitle: z.string().trim().min(1),
+                instruction: z.string().optional(),
+                expectedResult: z.string().optional(),
+                keyUser: z.string().optional(),
+                status: testStatusSchema.optional(),
+                actualResult: z.string().optional(),
+                executedAt: z.string().optional(),
+              })
+            )
+            .min(1)
+            .max(2000),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const existing = await wdb.listWorkflowTestCases(input.projectId);
+        const byCode = new Map<string, any>(
+          existing
+            .filter(item => item.type === "Integrado" && item.code)
+            .map(item => [item.code.trim().toLocaleLowerCase("pt-BR"), item])
+        );
+        let scenariosCreated = 0;
+        let stepsCreated = 0;
+        for (const row of input.rows) {
+          const key = (row.scenarioCode || row.scenarioTitle)
+            .trim()
+            .toLocaleLowerCase("pt-BR");
+          let scenario = byCode.get(key);
+          if (!scenario) {
+            scenario = await wdb.createWorkflowTestCase({
+              id: nanoid(),
+              projectId: input.projectId,
+              type: "Integrado",
+              code: row.scenarioCode,
+              title: row.scenarioTitle,
+              description: row.scenarioDescription,
+              module: row.module || "",
+              preconditions: row.preconditions,
+              responsible: row.scenarioLeader || "",
+              status: "Não iniciado",
+            });
+            byCode.set(key, scenario);
+            scenariosCreated++;
+          }
+          await wdb.createWorkflowTestStep({
+            id: nanoid(),
+            testCaseId: scenario.id,
+            position: row.stepPosition,
+            title: row.stepTitle,
+            instruction: row.instruction,
+            expectedResult: row.expectedResult,
+            responsible: row.keyUser || "",
+            status: row.status || "Não iniciado",
+            actualResult: row.actualResult,
+            executedAt: row.executedAt || "",
+          });
+          stepsCreated++;
+        }
+        await recordWorkflowAudit(
+          ctx,
+          input.projectId,
+          "TEST_DATA_IMPORTED",
+          "test_cases",
+          input.projectId,
+          { scenariosCreated, stepsCreated }
+        );
+        return { scenariosCreated, stepsCreated };
+      }),
     list: workflowProjectProcedure()
       .input(
         z.object({
