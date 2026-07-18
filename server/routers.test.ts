@@ -456,6 +456,25 @@ describe("dashboard router", () => {
     expect(stats.totalResources).toBeGreaterThan(0);
   });
 
+  it("does not report resources marked to skip allocation checks as unallocated", async () => {
+    const ctx = createMockContext();
+    const caller = appRouter.createCaller(ctx);
+    const resource = await caller.resources.create({
+      name: "Ignored Allocation Check Resource",
+      profile: "Funcional",
+      fronts: ["QA-SKIP"],
+      dailyCapacity: 8,
+      status: "Ativo",
+      skipAllocationCheck: true,
+    });
+
+    const stats = await caller.dashboard.stats();
+
+    expect(stats.unallocatedResources).not.toContainEqual(
+      expect.objectContaining({ id: resource.id }),
+    );
+  });
+
   it("reports a project front gap when allocation ends before project end", async () => {
     const ctx = createMockContext();
     const caller = appRouter.createCaller(ctx);

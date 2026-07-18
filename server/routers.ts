@@ -1492,6 +1492,7 @@ export const appRouter = router({
       // Unallocated resources (active, not on leave, with zero hours this week)
       const unallocatedResources: { id: string; name: string }[] = [];
       activeResources.forEach(resource => {
+        if (resource.skipAllocationCheck) return;
         if (onLeave.has(resource.id)) return;
         let hasAllocation = false;
         weekDays.forEach(day => {
