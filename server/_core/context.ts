@@ -46,7 +46,7 @@ function shouldUseDemoAuth(req: DemoRequest) {
 }
 
 export async function createContext(
-  opts: CreateExpressContextOptions
+  opts: Pick<CreateExpressContextOptions, "req" | "res">
 ): Promise<TrpcContext> {
   let user: User | null = null;
 

@@ -53,6 +53,8 @@ export default function DCDPage() {
   const streamRef = useRef<EventSource | null>(null);
 
   const { data: documents = [], refetch } = trpc.workflow.dcd.list.useQuery({ projectId: PROJECT_ID });
+  const { data: lookups } = trpc.settings.getLookups.useQuery();
+  const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
   const { data: generationStatus, isFetching: checkingCache } = trpc.workflow.dcd.generationStatus.useQuery(
     { projectId: PROJECT_ID, module: front || undefined },
     { enabled: showGenerate && Boolean(PROJECT_ID) },
@@ -218,7 +220,7 @@ export default function DCDPage() {
         <DialogContent className="max-w-4xl">
           <DialogHeader><DialogTitle>Gerar DCD via IA</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">A IA irá consolidar scope items, respostas do BDCQ e atas de workshop para gerar o documento.</p>
-          <div><Label>Frente/Módulo (opcional)</Label><Input value={front} onChange={e => setFront(e.target.value)} placeholder="Ex: SD, MM, FI..." /></div>
+          <div><Label>Frente/Módulo (opcional)</Label><Select value={front || "all"} onValueChange={value => setFront(value === "all" ? "" : value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Geral / todas as frentes</SelectItem>{modules.map((module: string) => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
           {checkingCache && <p className="text-sm text-muted-foreground">Verificando versões existentes...</p>}
           {generationStatus?.cached && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><strong>Os dados não mudaram.</strong> A versão v{generationStatus.cached.version} pode ser reutilizada sem custo de IA.</div>}
           {!generationStatus?.cached && generationStatus && <p className="text-sm text-muted-foreground">A próxima geração criará a versão v{generationStatus.nextVersion}.</p>}

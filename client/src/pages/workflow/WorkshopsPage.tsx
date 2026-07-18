@@ -9,9 +9,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Trash2, FileText, Sparkles, Upload, Calendar, Lightbulb, ClipboardList, CheckCircle2, GanttChart, LayoutGrid, Users, UserCheck } from "lucide-react";
+import { Plus, Trash2, FileText, Sparkles, Upload, Calendar, Lightbulb, ClipboardList, CheckCircle2, GanttChart, LayoutGrid, Users, UserCheck, AudioLines } from "lucide-react";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+
+type SupportedAudioType = "audio/mpeg" | "audio/mp3" | "audio/wav" | "audio/wave" | "audio/webm" | "audio/ogg" | "audio/mp4" | "audio/m4a";
+
+function normalizeAudioType(file: File): SupportedAudioType | null {
+  const byExtension: Record<string, SupportedAudioType> = { mp3: "audio/mpeg", wav: "audio/wav", webm: "audio/webm", ogg: "audio/ogg", m4a: "audio/m4a", mp4: "audio/mp4" };
+  if (["audio/mpeg", "audio/mp3", "audio/wav", "audio/wave", "audio/webm", "audio/ogg", "audio/mp4", "audio/m4a"].includes(file.type)) return file.type as SupportedAudioType;
+  return byExtension[file.name.split(".").pop()?.toLowerCase() || ""] || null;
+}
 
 export default function WorkshopsPage() {
   const { projectId: PROJECT_ID } = useWorkflowProject();
@@ -26,6 +34,8 @@ export default function WorkshopsPage() {
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: allocations = [] } = trpc.allocations.list.useQuery();
   const { data: absences = [] } = trpc.absences.list.useQuery();
+  const { data: lookups } = trpc.settings.getLookups.useQuery();
+  const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
   const createWs = trpc.workflow.workshops.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("Workshop criado"); } });
   const deleteWs = trpc.workflow.workshops.delete.useMutation({ onSuccess: () => { refetch(); toast.success("Removido"); } });
   const suggestAgenda = trpc.workflow.workshops.suggestAgenda.useMutation({
@@ -41,13 +51,13 @@ export default function WorkshopsPage() {
   const toggleParticipant = (name: string) => setForm(current => ({ ...current, participants: current.participants.includes(name) ? current.participants.filter(item => item !== name) : [...current.participants, name] }));
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 p-3 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Workshops</h1>
           <p className="text-muted-foreground text-sm">Gestão de workshops de levantamento</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 min-[420px]:flex-row sm:flex-wrap sm:justify-end">
           <Button variant="outline" onClick={() => suggestAgenda.mutate({ projectId: PROJECT_ID })} disabled={suggestAgenda.isPending}>
             <Lightbulb className="h-4 w-4 mr-2" />{suggestAgenda.isPending ? "Gerando..." : "Sugerir Agenda (IA)"}
           </Button>
@@ -91,8 +101,8 @@ export default function WorkshopsPage() {
           <DialogHeader><DialogTitle>Novo Workshop</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div><Label>Título *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
-            <div><Label>Módulo/Frente</Label><Input value={form.module} onChange={e => setForm(f => ({ ...f, module: e.target.value, participants: [] }))} placeholder="Ex: MM, SD, FI" /></div>
-            <div className="grid grid-cols-3 gap-3">
+            <div><Label>Frente/Módulo</Label><Select value={form.module} onValueChange={module => setForm(current => ({ ...current, module, participants: [] }))}><SelectTrigger><SelectValue placeholder="Selecione uma frente" /></SelectTrigger><SelectContent>{modules.map((module: string) => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><Label>Data</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value, participants: [] }))} /></div>
               <div><Label>Início</Label><Input type="time" value={form.startTime} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))} /></div>
               <div><Label>Fim</Label><Input type="time" value={form.endTime} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))} /></div>
@@ -120,6 +130,7 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
   const { projectId } = useWorkflowProject();
   const [transcriptContent, setTranscriptContent] = useState("");
   const [transcriptTitle, setTranscriptTitle] = useState("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [requirementForm, setRequirementForm] = useState<{
     title: string; description: string; module: string;
     category: "Funcional" | "Não funcional" | "Integração" | "Relatório" | "Migração";
@@ -128,10 +139,16 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
   const { data: transcripts = [], refetch: refetchT } = trpc.workflow.workshops.transcripts.list.useQuery({ workshopId: ws.id });
   const { data: minutes, refetch: refetchMinutes } = trpc.workflow.workshops.minutes.get.useQuery({ workshopId: ws.id });
   const createT = trpc.workflow.workshops.transcripts.create.useMutation({ onSuccess: () => { refetchT(); setTranscriptContent(""); setTranscriptTitle(""); toast.success("Transcrição adicionada"); } });
+  const transcribeAudio = trpc.workflow.workshops.transcripts.transcribe.useMutation({
+    onSuccess: data => { refetchT(); setAudioFile(null); toast.success(`Áudio transcrito${data.duration ? ` (${Math.round(data.duration / 60)} min)` : ""}`); },
+    onError: error => toast.error(error.message || "Erro ao transcrever áudio"),
+  });
   const generateMinutes = trpc.workflow.workshops.minutes.generate.useMutation({ onSuccess: () => { refetchMinutes(); toast.success("Ata gerada com sucesso!"); } });
   const updateWorkshop = trpc.workflow.workshops.update.useMutation({ onSuccess: (_result, variables) => { onUpdated(variables.data); toast.success("Workshop atualizado"); }, onError: error => toast.error(error.message) });
   const { data: requirements = [], refetch: refetchRequirements } = trpc.workflow.requirements.list.useQuery({ projectId, workshopId: ws.id });
   const { data: resources = [] } = trpc.resources.list.useQuery();
+  const { data: lookups } = trpc.settings.getLookups.useQuery();
+  const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
   const createRequirement = trpc.workflow.requirements.create.useMutation({
     onSuccess: () => {
       refetchRequirements();
@@ -142,6 +159,14 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
   });
   const updateRequirement = trpc.workflow.requirements.update.useMutation({ onSuccess: () => refetchRequirements(), onError: error => toast.error(error.message) });
   const deleteRequirement = trpc.workflow.requirements.delete.useMutation({ onSuccess: () => { refetchRequirements(); toast.success("Requisito removido"); } });
+  const submitAudio = async () => {
+    if (!audioFile) return;
+    if (audioFile.size > 16 * 1024 * 1024) { toast.error("O áudio deve ter no máximo 16 MB"); return; }
+    const contentType = normalizeAudioType(audioFile);
+    if (!contentType) { toast.error("Formato de áudio não suportado"); return; }
+    const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(audioFile); });
+    transcribeAudio.mutate({ workshopId: ws.id, fileName: audioFile.name, contentType, base64: dataUrl.split(",")[1] || "", language: "pt" });
+  };
 
   return (
     <Card className="mt-4">
@@ -187,7 +212,7 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
           <div className="grid gap-3 border-t pt-3">
             <div className="grid gap-3 md:grid-cols-2">
               <div><Label>Título do requisito *</Label><Input value={requirementForm.title} onChange={e => setRequirementForm(form => ({ ...form, title: e.target.value }))} placeholder="Ex: Aprovação de pedidos por alçada" /></div>
-              <div><Label>Módulo</Label><Input value={requirementForm.module} onChange={e => setRequirementForm(form => ({ ...form, module: e.target.value }))} placeholder="Ex: MM" /></div>
+              <div><Label>Frente/Módulo</Label><Select value={requirementForm.module || "unassigned"} onValueChange={module => setRequirementForm(form => ({ ...form, module: module === "unassigned" ? "" : module }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sem frente definida</SelectItem>{modules.map((module: string) => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div><Label>Descrição *</Label><Textarea value={requirementForm.description} onChange={e => setRequirementForm(form => ({ ...form, description: e.target.value }))} placeholder="Descreva o que o cliente precisa e o contexto de negócio" /></div>
             <div><Label>Critérios de aceite</Label><Textarea value={requirementForm.acceptanceCriteria} onChange={e => setRequirementForm(form => ({ ...form, acceptanceCriteria: e.target.value }))} placeholder="Como saberemos que o requisito foi atendido?" rows={2} /></div>
@@ -215,6 +240,11 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
             <Button variant="outline" onClick={() => createT.mutate({ workshopId: ws.id, content: transcriptContent || transcriptTitle })} disabled={!transcriptContent}>
               <Upload className="h-4 w-4 mr-2" />Adicionar Transcrição
             </Button>
+            <div className="grid gap-2 rounded-md border border-dashed p-3">
+              <div><Label>Transcrição automática de áudio</Label><p className="text-xs text-muted-foreground">MP3, WAV, WebM, OGG ou M4A, até 16 MB.</p></div>
+              <Input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/webm,audio/ogg,audio/mp4,audio/m4a" onChange={event => setAudioFile(event.target.files?.[0] || null)} />
+              <Button variant="outline" onClick={() => void submitAudio()} disabled={!audioFile || transcribeAudio.isPending}><AudioLines className="mr-2 h-4 w-4" />{transcribeAudio.isPending ? "Enviando e transcrevendo..." : "Transcrever áudio"}</Button>
+            </div>
           </div>
         </div>
         <div>

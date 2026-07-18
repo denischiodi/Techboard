@@ -25,6 +25,20 @@ describe("workflow PostgreSQL persistence", () => {
     );
   });
 
+  it("applies bounded offset pagination when requested", async () => {
+    const db = await import("./routers/workflowDb");
+    await db.listGaps("project-1", { limit: 50, offset: 100 });
+    expect(query.mock.calls[0][0]).toContain("LIMIT $2 OFFSET $3");
+    expect(query.mock.calls[0][1]).toEqual(["project-1", 50, 100]);
+  });
+
+  it("loads BDCQ answers only for the questions visible on the current page", async () => {
+    const db = await import("./routers/workflowDb");
+    await db.listBdcqAnswersForQuestions("project-1", ["q-1", "q-2"]);
+    expect(query.mock.calls[0][0]).toContain('"questionId" = ANY($2::varchar[])');
+    expect(query.mock.calls[0][1]).toEqual(["project-1", ["q-1", "q-2"]]);
+  });
+
   it("serializes JSON columns when creating a workshop", async () => {
     const db = await import("./routers/workflowDb");
     query.mockResolvedValueOnce({ rows: [{ id: "workshop-1" }] });

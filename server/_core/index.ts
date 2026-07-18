@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import { ensureDatabaseSchema } from "../plannerStore";
 import { checkDatabaseReadiness } from "../db";
 import { registerTechEduca } from "../techeduca";
+import { registerWorkflowStream } from "../workflowStream";
 
 function isAllowedOrigin(req: express.Request) {
   const origin = req.headers.origin;
@@ -57,6 +58,7 @@ async function startServer() {
   });
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerWorkflowStream(app);
   app.use("/api/trpc", (req, res, next) => {
     if (req.method !== "GET" && !isAllowedOrigin(req)) {
       res.status(403).json({ error: "Origem da requisicao nao permitida" });
@@ -81,9 +83,10 @@ async function startServer() {
   }
 
   const port = parseInt(process.env.PORT || "3000", 10);
+  const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, host, () => {
+    console.log(`Server running on http://${host}:${port}/`);
   });
 }
 

@@ -12,13 +12,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ChevronDown, ChevronLeft, ChevronRight, Download, AlertTriangle, Upload, Calendar, CalendarDays, CalendarRange, ArrowUpDown, ArrowUp, ArrowDown, FolderSearch, UserX, UserMinus } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Download, AlertTriangle, Upload, Calendar, CalendarDays, CalendarRange, ArrowUpDown, ArrowUp, ArrowDown, FolderSearch, UserX, UserMinus, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInDays, getDay, startOfYear, addMonths, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, useDraggable, useDroppable, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import type { Allocation, Resource, Project, Phase, Absence, ResourceFront, AllocationType, AllocationStatus, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateImpact } from "../../../shared/types";
 import * as XLSX from "xlsx";
+import { useLocation } from "wouter";
 
 const FRONTS_FALLBACK: ResourceFront[] = ['FI', 'CO', 'MM', 'SD', 'PP', 'QM', 'EWM', 'BTP', 'Integrações', 'Dados', 'Testes', 'PMO'];
 const ALLOCATION_TYPES: AllocationType[] = ['Projeto', 'Interna', 'Suporte', 'Treinamento'];
@@ -263,11 +264,13 @@ function getProjectTimelineItems(project: Project, phases: Phase[], days: Date[]
   return { projectBar, phaseBars };
 }
 
-function ProjectTimelineRow({ project, phases, days, projects }: {
+function ProjectTimelineRow({ project, phases, days, projects, workflowStage, onOpenWorkflow }: {
   project: Project;
   phases: Phase[];
   days: Date[];
   projects: Project[];
+  workflowStage?: string;
+  onOpenWorkflow: (projectId: string) => void;
 }) {
   const { projectBar, phaseBars } = getProjectTimelineItems(project, phases, days);
   const totalDays = days.length;
@@ -281,6 +284,7 @@ function ProjectTimelineRow({ project, phases, days, projects }: {
       <td className="sticky left-0 z-10 min-w-[132px] border-r bg-slate-50 p-2 sm:min-w-[180px]">
         <ProjectName project={project} className="text-xs font-semibold leading-tight text-slate-900 sm:text-sm" />
         <div className="text-[10px] text-muted-foreground">Projeto · {project.startDate} a {project.endDate}</div>
+        {workflowStage && <button type="button" className="mt-1 inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-100" onClick={() => onOpenWorkflow(project.id)} title="Abrir trilha do Workflow"><Workflow className="h-3 w-3" />Workflow · {workflowStage}</button>}
       </td>
       <td className="relative p-0" colSpan={totalDays}>
         <div className="flex w-full" style={{ minHeight: `${rowHeight}px` }}>
@@ -643,10 +647,12 @@ function getAnnualWeekRange(startDate: string, endDate: string, weeks: AnnualWee
   };
 }
 
-function AnnualProjectTimelineRow({ project, phases, weeks }: {
+function AnnualProjectTimelineRow({ project, phases, weeks, workflowStage, onOpenWorkflow }: {
   project: Project;
   phases: Phase[];
   weeks: AnnualWeek[];
+  workflowStage?: string;
+  onOpenWorkflow: (projectId: string) => void;
 }) {
   const projectPhases = phases
     .filter(phase => phase.projectId === project.id)
@@ -672,6 +678,7 @@ function AnnualProjectTimelineRow({ project, phases, weeks }: {
       <td className="sticky left-0 z-20 min-w-[180px] border-r bg-slate-50 p-2">
         <ProjectName project={project} className="text-sm font-semibold text-slate-900" />
         <div className="text-[10px] text-muted-foreground">Projeto · {project.startDate} a {project.endDate}</div>
+        {workflowStage && <button type="button" className="mt-1 inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-100" onClick={() => onOpenWorkflow(project.id)} title="Abrir trilha do Workflow"><Workflow className="h-3 w-3" />Workflow · {workflowStage}</button>}
       </td>
       <td colSpan={weeks.length} className="relative p-0">
         <div className="relative" style={{ minHeight }}>
@@ -845,6 +852,7 @@ function AnnualResourceGanttRow({ resource, allocations, projects, absences, wee
 // ===== MAIN PLANNER COMPONENT =====
 export default function Planner() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: projects = [] } = trpc.projects.list.useQuery();
@@ -852,6 +860,9 @@ export default function Planner() {
   const { data: absences = [] } = trpc.absences.list.useQuery();
   const { data: allAllocations = [] } = trpc.allocations.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
+  const { data: workflowIndicators = [] } = trpc.workflow.projectIndicators.useQuery();
+  const workflowStageByProject = useMemo(() => new Map(workflowIndicators.map(indicator => [indicator.projectId, indicator.stage])), [workflowIndicators]);
+  const openProjectWorkflow = useCallback((projectId: string) => setLocation(`/techmove?projectId=${encodeURIComponent(projectId)}`), [setLocation]);
   const FRONTS = (lookups?.fronts?.filter((i: any) => i.active).map((i: any) => i.value) || FRONTS_FALLBACK) as ResourceFront[];
   const { data: appUser } = trpc.access.getByEmail.useQuery(
     { email: user?.email || '' },
@@ -2280,8 +2291,10 @@ export default function Planner() {
                         key={`project-${project.id}`}
                         project={project}
                         phases={phases}
-                        days={weekDays}
-                        projects={projects}
+                      days={weekDays}
+                      projects={projects}
+                      workflowStage={workflowStageByProject.get(project.id)}
+                      onOpenWorkflow={openProjectWorkflow}
                       />
                     ))}
                     {showResourceTimeline && filteredResources.map(resource => (
@@ -2377,6 +2390,8 @@ export default function Planner() {
                       phases={phases}
                       days={monthDays}
                       projects={projects}
+                      workflowStage={workflowStageByProject.get(project.id)}
+                      onOpenWorkflow={openProjectWorkflow}
                     />
                   ))}
                   {showResourceTimeline && filteredResources.map(resource => (
@@ -2446,6 +2461,8 @@ export default function Planner() {
                       project={project}
                       phases={phases}
                       weeks={yearWeeks}
+                      workflowStage={workflowStageByProject.get(project.id)}
+                      onOpenWorkflow={openProjectWorkflow}
                     />
                   ))}
                   {showResourceTimeline && filteredResources.map(resource => (

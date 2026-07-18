@@ -38,9 +38,12 @@ const TAB_LABELS = {
   projects: 'Projetos',
   absences: 'Férias/Ausências',
   planner: 'Planner Gantt',
+  activities: 'Atividades',
+  gpChecklist: 'Trilha do GP',
   organogram: 'Organograma',
   techmove: 'TechMove',
   access: 'Gestão de Acesso',
+  settings: 'Cadastros e Configurações',
 } as const;
 
 type AccessTab = keyof typeof TAB_LABELS;
@@ -60,9 +63,12 @@ const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
     projects: { view: true, modify: true, create: true },
     absences: { view: true, modify: true, create: true },
     planner: { view: true, modify: true, create: true },
+    activities: { view: true, modify: true, create: true },
+    gpChecklist: { view: true, modify: true, create: true },
     organogram: { view: true, modify: true, create: true },
     techmove: { view: true, modify: true, create: true },
     access: { view: true, modify: true, create: true },
+    settings: { view: true, modify: true, create: true },
   },
   manager: {
     dashboard: { view: true, modify: false, create: false },
@@ -70,9 +76,12 @@ const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
     projects: { view: true, modify: true, create: true },
     absences: { view: true, modify: true, create: true },
     planner: { view: true, modify: true, create: true },
+    activities: { view: true, modify: true, create: true },
+    gpChecklist: { view: true, modify: true, create: true },
     organogram: { view: true, modify: false, create: false },
     techmove: { view: true, modify: true, create: true },
     access: { view: false, modify: false, create: false },
+    settings: { view: true, modify: true, create: true },
   },
   technical_lead: {
     dashboard: { view: true, modify: false, create: false },
@@ -80,9 +89,12 @@ const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
     projects: { view: false, modify: false, create: false },
     absences: { view: true, modify: true, create: true },
     planner: { view: true, modify: true, create: true },
+    activities: { view: true, modify: true, create: true },
+    gpChecklist: { view: false, modify: false, create: false },
     organogram: { view: true, modify: false, create: false },
     techmove: { view: true, modify: true, create: true },
     access: { view: false, modify: false, create: false },
+    settings: { view: false, modify: false, create: false },
   },
   consultant: {
     dashboard: { view: false, modify: false, create: false },
@@ -90,9 +102,12 @@ const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
     projects: { view: false, modify: false, create: false },
     absences: { view: true, modify: false, create: false },
     planner: { view: true, modify: false, create: false },
+    activities: { view: true, modify: true, create: true },
+    gpChecklist: { view: false, modify: false, create: false },
     organogram: { view: false, modify: false, create: false },
     techmove: { view: true, modify: true, create: true },
     access: { view: false, modify: false, create: false },
+    settings: { view: false, modify: false, create: false },
   },
   viewer: {
     dashboard: { view: true, modify: false, create: false },
@@ -100,9 +115,12 @@ const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
     projects: { view: false, modify: false, create: false },
     absences: { view: false, modify: false, create: false },
     planner: { view: true, modify: false, create: false },
+    activities: { view: false, modify: false, create: false },
+    gpChecklist: { view: false, modify: false, create: false },
     organogram: { view: true, modify: false, create: false },
     techmove: { view: false, modify: false, create: false },
     access: { view: false, modify: false, create: false },
+    settings: { view: false, modify: false, create: false },
   },
 };
 
@@ -111,17 +129,26 @@ const ACCESS_TABS = Object.keys(TAB_LABELS) as AccessTab[];
 function levelsFromPermissions(role: UserRole, permissions: UserPermissions): AccessLevelMatrix {
   return ACCESS_TABS.reduce((acc, tab) => {
     acc[tab] = permissions[tab]
-      ? { ...DEFAULT_ACCESS_LEVELS[role][tab], view: true }
+      ? { ...(permissions.actions?.[tab] || DEFAULT_ACCESS_LEVELS[role][tab]), view: true }
       : { view: false, modify: false, create: false };
     return acc;
   }, {} as AccessLevelMatrix);
 }
 
 function permissionsFromLevels(levels: AccessLevelMatrix, previous: UserPermissions): UserPermissions {
-  return ACCESS_TABS.reduce((acc, tab) => {
+  const permissions = ACCESS_TABS.reduce((acc, tab) => {
     acc[tab] = levels[tab].view || levels[tab].modify || levels[tab].create;
     return acc;
   }, { ...previous });
+  permissions.actions = Object.fromEntries(ACCESS_TABS.map(tab => [tab, { ...levels[tab] }]));
+  permissions.products = {
+    techboard: permissions.dashboard || permissions.resources || permissions.projects || permissions.absences || permissions.planner || permissions.organogram,
+    techlead: permissions.gpChecklist,
+    techmove: permissions.techmove,
+    techtask: permissions.activities,
+    admin: permissions.access || permissions.settings,
+  };
+  return permissions;
 }
 
 function cloneAccessLevels(levels: AccessLevelMatrix): AccessLevelMatrix {
@@ -351,12 +378,12 @@ export default function Access() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Gestão de Acesso</h1>
           <p className="text-muted-foreground text-sm mt-1">Controle por grupo, usuário e nível de ação por aba</p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
+        <Button onClick={openCreate} className="w-full gap-2 sm:w-auto">
           <Plus className="h-4 w-4" /> Adicionar Pessoa
         </Button>
       </div>
@@ -465,14 +492,7 @@ export default function Access() {
                 <TableHead>Nome</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Grupo de acesso</TableHead>
-                <TableHead className="text-center">Dashboard</TableHead>
-                <TableHead className="text-center">Recursos</TableHead>
-                <TableHead className="text-center">Projetos</TableHead>
-                <TableHead className="text-center">Férias</TableHead>
-                <TableHead className="text-center">Planner</TableHead>
-                <TableHead className="text-center">Organograma</TableHead>
-                <TableHead className="text-center">TechMove</TableHead>
-                <TableHead className="text-center">Acesso</TableHead>
+                {ACCESS_TABS.map(tab => <TableHead key={tab} className="min-w-[120px] text-center">{TAB_LABELS[tab]}</TableHead>)}
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="w-20">Ações</TableHead>
               </TableRow>

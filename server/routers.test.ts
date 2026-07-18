@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 import * as store from "./plannerStore";
+import { DEFAULT_PERMISSIONS } from "../shared/types";
 
 function createMockContext(role: "admin" | "user" = "admin", email = "defechi@gmail.com"): TrpcContext {
   return {
@@ -56,6 +57,51 @@ describe("security", () => {
   it("uses current app permissions instead of the JWT role", async () => {
     const caller = appRouter.createCaller(createMockContext("admin", "pedro.silva@consultoria.com"));
     await expect(caller.dashboard.stats()).rejects.toThrow(/sem permissao/i);
+  });
+
+  it("enforces product and action permissions on the server", async () => {
+    const email = "granular-permissions@example.com";
+    await store.createAppUser({
+      name: "Granular Permissions",
+      email,
+      role: "manager",
+      permissions: {
+        ...DEFAULT_PERMISSIONS.manager,
+        products: { techboard: false, admin: true },
+        actions: { settings: { view: true, create: false, modify: false } },
+      },
+    });
+    const caller = appRouter.createCaller(createMockContext("user", email));
+    await expect(caller.dashboard.stats()).rejects.toThrow(/sem permissao/i);
+    await expect(caller.settings.getLookups()).resolves.toBeDefined();
+    await expect(caller.settings.addLookup({ category: "fronts", value: "Blocked" })).rejects.toThrow(/sem permissao/i);
+  });
+
+  it("enforces the dedicated GP checklist permission independently from Projects", async () => {
+    const blockedEmail = "gp-checklist-blocked@example.com";
+    await store.createAppUser({
+      name: "GP Checklist Blocked",
+      email: blockedEmail,
+      role: "manager",
+      permissions: { ...DEFAULT_PERMISSIONS.manager, gpChecklist: false },
+    });
+    const blockedCaller = appRouter.createCaller(createMockContext("user", blockedEmail));
+    await expect(blockedCaller.gpChecklist.list({ projectId: "p1" })).rejects.toThrow(/sem permissao/i);
+
+    const allowedEmail = "gp-checklist-allowed@example.com";
+    await store.createAppUser({
+      name: "GP Checklist Allowed",
+      email: allowedEmail,
+      role: "manager",
+      permissions: { ...DEFAULT_PERMISSIONS.manager, projects: false, planner: false, gpChecklist: true },
+    });
+    const allowedCaller = appRouter.createCaller(createMockContext("user", allowedEmail));
+    const projects = await allowedCaller.projects.list();
+    const checklist = await allowedCaller.gpChecklist.list({ projectId: "p1" });
+
+    expect(projects.length).toBeGreaterThan(0);
+    expect(checklist.project.id).toBe("p1");
+    expect(checklist.items.length).toBeGreaterThan(0);
   });
 
   it("scopes consultant access to their own records and blocks writes", async () => {

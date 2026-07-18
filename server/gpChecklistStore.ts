@@ -251,6 +251,7 @@ function aggregateCycleStatus(steps: GpFitToStandardStep[]): GpChecklistStatus {
   if (steps.some(step => step.status === "Bloqueado")) return "Bloqueado";
   if (steps.length > 0 && applicable.length === 0) return "Não aplicável";
   if (applicable.length > 0 && applicable.every(step => step.status === "Concluído")) return "Concluído";
+  if (steps.some(step => step.status === "Em validação")) return "Em validação";
   if (steps.some(step => step.status === "Em andamento" || step.status === "Concluído")) return "Em andamento";
   return "Pendente";
 }

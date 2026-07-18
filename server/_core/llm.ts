@@ -420,6 +420,74 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return (await response.json()) as InvokeResult;
 }
 
+export async function invokeLLMStream(
+  params: InvokeParams,
+  onDelta: (text: string) => void | Promise<void>,
+): Promise<{ content: string; model?: string }> {
+  assertApiKey();
+  const normalizedResponseFormat = normalizeResponseFormat(params);
+  const payload: Record<string, unknown> = {
+    messages: params.messages.map(normalizeMessage),
+    stream: true,
+  };
+  if (params.model) payload.model = params.model;
+  if (params.tools?.length) payload.tools = params.tools;
+  const normalizedToolChoice = normalizeToolChoice(params.toolChoice || params.tool_choice, params.tools);
+  if (normalizedToolChoice) payload.tool_choice = normalizedToolChoice;
+  const maxTokens = params.max_tokens ?? params.maxTokens;
+  if (typeof maxTokens === "number") payload.max_tokens = maxTokens;
+  if (params.thinking) payload.thinking = params.thinking;
+  if (params.reasoning) payload.reasoning = params.reasoning;
+  if (normalizedResponseFormat) payload.response_format = normalizedResponseFormat;
+
+  const response = await fetchWithBackoff(resolveApiUrl(), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ENV.forgeApiKey}`, accept: "text/event-stream" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`LLM stream failed: ${response.status} ${response.statusText} - ${await response.text()}`);
+  if (!response.body) throw new Error("LLM stream returned no response body");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let model: string | undefined;
+  const consume = async (block: string) => {
+    const parsed = parseLLMStreamBlock(block);
+    model ||= parsed.model;
+    for (const delta of parsed.deltas) { content += delta; await onDelta(delta); }
+  };
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done }).replace(/\r\n/g, "\n");
+    let boundary: number;
+    while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+      await consume(block);
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) await consume(buffer);
+  return { content, model };
+}
+
+export function parseLLMStreamBlock(block: string) {
+  const deltas: string[] = [];
+  let model: string | undefined;
+  for (const line of block.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    const chunk = JSON.parse(data) as { model?: string; choices?: Array<{ delta?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+    model ||= chunk.model;
+    const deltaContent = chunk.choices?.[0]?.delta?.content;
+    const delta = typeof deltaContent === "string" ? deltaContent : Array.isArray(deltaContent) ? deltaContent.map(part => part.text || "").join("") : "";
+    if (delta) deltas.push(delta);
+  }
+  return { deltas, model };
+}
+
 export type ModelInfo = {
   id: string;
   object: string;

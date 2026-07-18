@@ -430,20 +430,20 @@ export default function Projects() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Projetos</h1>
           <p className="text-muted-foreground text-sm mt-1">Gerenciamento de projetos, clientes e fases</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={downloadTemplate} className="gap-2">
+        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap sm:justify-end">
+          <Button variant="outline" onClick={downloadTemplate} className="w-full gap-2 sm:w-auto">
             <Download className="h-4 w-4" /> Modelo Excel
           </Button>
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full gap-2 sm:w-auto">
             <Upload className="h-4 w-4" /> Importar Excel
           </Button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleBulkImport} />
-          <Button onClick={openCreate} className="gap-2">
+          <Button onClick={openCreate} className="w-full gap-2 min-[420px]:col-span-2 sm:w-auto">
             <Plus className="h-4 w-4" /> Novo Projeto
           </Button>
         </div>
@@ -452,12 +452,12 @@ export default function Projects() {
       <Card>
         <CardHeader className="pb-3 space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Buscar por nome ou cliente..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -473,7 +473,7 @@ export default function Projects() {
               </SelectContent>
             </Select>
             <Select value={filterFront} onValueChange={setFilterFront}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder="Frente" />
               </SelectTrigger>
               <SelectContent>
@@ -481,10 +481,10 @@ export default function Projects() {
                 {ALL_FRONTS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
               </SelectContent>
             </Select>
-            <div className="flex items-center gap-2">
-              <Input type="date" className="w-[140px] h-9" placeholder="Início de" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} />
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:w-auto">
+              <Input type="date" className="h-9 min-w-0 sm:w-[140px]" placeholder="Início de" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} />
               <span className="text-muted-foreground text-xs">até</span>
-              <Input type="date" className="w-[140px] h-9" placeholder="Fim até" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} />
+              <Input type="date" className="h-9 min-w-0 sm:w-[140px]" placeholder="Fim até" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} />
             </div>
             {activeFiltersCount > 0 && (
               <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground gap-1">
@@ -551,14 +551,14 @@ export default function Projects() {
 
       {/* Project Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)]">
+          <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
             <DialogTitle>{editing ? 'Editar Projeto' : 'Novo Projeto'}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3">
+          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 min-[420px]:flex-row min-[420px]:items-center">
               <ProjectLogo project={{ name: form.name || "projeto", logoUrl: form.logoUrl }} className="h-16 w-16 rounded-lg" />
-              <div className="flex flex-wrap gap-2">
+              <div className="min-w-0 flex-1 flex flex-wrap gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()}><ImagePlus className="mr-2 h-4 w-4" />Subir logotipo</Button>
                 {form.logoUrl && <Button type="button" variant="ghost" size="sm" onClick={() => setForm(current => ({ ...current, logoUrl: "" }))}><X className="mr-2 h-4 w-4" />Remover</Button>}
                 <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
@@ -569,7 +569,7 @@ export default function Projects() {
               <Label>Nome do Projeto</Label>
               <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label>Cliente</Label>
                 <Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} />
@@ -589,7 +589,7 @@ export default function Projects() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="grid gap-2">
                 <Label>Data Início</Label>
                 <Input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
@@ -632,7 +632,7 @@ export default function Projects() {
               <Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background px-4 py-4 sm:px-6">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSave}>{editing ? 'Salvar' : 'Criar'}</Button>
           </DialogFooter>

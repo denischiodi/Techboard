@@ -1,7 +1,8 @@
 import { getPgPool } from "../db";
 import {
   scopeItems, bdcqQuestions, bdcqAnswers, bdcqAnswerHistory, workshops,
-  workshopTranscripts, meetingMinutes, clientRequirements, dcdDocuments, gaps, configurations, workflowAuditLog, workflowPrompts
+  workshopTranscripts, meetingMinutes, clientRequirements, dcdDocuments, gaps, configurations, workflowAuditLog, workflowPrompts,
+  workflowBdcqTemplates as bdcqTemplateLibrary, workflowTestCases
 } from "../../drizzle/schema";
 
 const identifierPattern = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -11,10 +12,13 @@ function quoteIdentifier(value: string) {
   return `"${value}"`;
 }
 
-async function listRows(table: string, column: string, value: string) {
+export type WorkflowPagination = { offset?: number; limit?: number };
+
+async function listRows(table: string, column: string, value: string, pagination?: WorkflowPagination) {
   const pool = getPgPool();
   if (!pool) return [];
-  const result = await pool.query(`SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(column)} = $1 ORDER BY "createdAt" DESC`, [value]);
+  const hasLimit = typeof pagination?.limit === "number";
+  const result = await pool.query(`SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(column)} = $1 ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`, hasLimit ? [value, pagination!.limit, pagination?.offset || 0] : [value]);
   return result.rows;
 }
 
@@ -57,7 +61,7 @@ async function bulkUpdateRows(table: string, ids: string[], data: object, allowe
   return result.rowCount || 0;
 }
 
-const directProjectTables = new Set(["scope_items", "bdcq_questions", "bdcq_answers", "workshops", "client_requirements", "dcd_documents", "gaps", "configurations"]);
+const directProjectTables = new Set(["scope_items", "bdcq_questions", "bdcq_answers", "workshops", "client_requirements", "dcd_documents", "gaps", "configurations", "workflow_test_cases"]);
 
 export async function getWorkflowEntityProjectId(table: string, id: string) {
   const pool = getPgPool();
@@ -77,12 +81,13 @@ export async function getWorkflowEntityProjectId(table: string, id: string) {
 }
 
 // ===== Client Requirements =====
-export async function listClientRequirements(projectId: string, workshopId?: string) {
+export async function listClientRequirements(projectId: string, workshopId?: string, pagination?: WorkflowPagination) {
   const pool = getPgPool();
   if (!pool) return [];
+  const hasLimit = typeof pagination?.limit === "number";
   const result = workshopId
-    ? await pool.query(`SELECT * FROM "client_requirements" WHERE "projectId" = $1 AND "workshopId" = $2 ORDER BY "createdAt" DESC`, [projectId, workshopId])
-    : await pool.query(`SELECT * FROM "client_requirements" WHERE "projectId" = $1 ORDER BY "createdAt" DESC`, [projectId]);
+    ? await pool.query(`SELECT * FROM "client_requirements" WHERE "projectId" = $1 AND "workshopId" = $2 ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $3 OFFSET $4" : ""}`, hasLimit ? [projectId, workshopId, pagination!.limit, pagination?.offset || 0] : [projectId, workshopId])
+    : await pool.query(`SELECT * FROM "client_requirements" WHERE "projectId" = $1 ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`, hasLimit ? [projectId, pagination!.limit, pagination?.offset || 0] : [projectId]);
   return result.rows as Array<typeof clientRequirements.$inferSelect>;
 }
 
@@ -101,8 +106,8 @@ export async function deleteClientRequirement(id: string) {
 }
 
 // ===== Scope Items =====
-export async function listScopeItems(projectId: string) {
-  return listRows("scope_items", "projectId", projectId) as Promise<Array<typeof scopeItems.$inferSelect>>;
+export async function listScopeItems(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("scope_items", "projectId", projectId, pagination) as Promise<Array<typeof scopeItems.$inferSelect>>;
 }
 export async function createScopeItem(data: typeof scopeItems.$inferInsert) {
   return insertRow("scope_items", data);
@@ -115,22 +120,44 @@ export async function deleteScopeItem(id: string) {
 }
 
 // ===== BDCQ Questions =====
-export async function listBdcqQuestions(projectId: string) {
-  return listRows("bdcq_questions", "projectId", projectId) as Promise<Array<typeof bdcqQuestions.$inferSelect>>;
+export async function listBdcqQuestions(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("bdcq_questions", "projectId", projectId, pagination) as Promise<Array<typeof bdcqQuestions.$inferSelect>>;
 }
 export async function createBdcqQuestion(data: typeof bdcqQuestions.$inferInsert) {
-  return insertRow("bdcq_questions", data);
+  return insertRow("bdcq_questions", data, ["scopeItemIds"]);
 }
 export async function updateBdcqQuestion(id: string, data: Partial<typeof bdcqQuestions.$inferInsert>) {
-  return updateRow("bdcq_questions", id, data, ["module", "category", "question", "isDefault", "sortOrder"]);
+  return updateRow("bdcq_questions", id, data, ["module", "category", "question", "templateId", "scopeItemIds", "isDefault", "sortOrder"], ["scopeItemIds"]);
+}
+
+export async function listBdcqTemplateLibrary() {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const result = await pool.query(`SELECT * FROM "workflow_bdcq_templates" ORDER BY "category" ASC, "question" ASC`);
+  return result.rows as Array<typeof bdcqTemplateLibrary.$inferSelect>;
+}
+export async function createBdcqTemplate(data: typeof bdcqTemplateLibrary.$inferInsert) {
+  return insertRow("workflow_bdcq_templates", data, ["modules", "scopeItemKeys"]);
+}
+export async function updateBdcqTemplate(id: string, data: Partial<typeof bdcqTemplateLibrary.$inferInsert>) {
+  return updateRow("workflow_bdcq_templates", id, data, ["question", "category", "modules", "scopeItemKeys", "active"], ["modules", "scopeItemKeys"]);
+}
+export async function deleteBdcqTemplate(id: string) {
+  return deleteRow("workflow_bdcq_templates", id);
 }
 export async function deleteBdcqQuestion(id: string) {
   return deleteRow("bdcq_questions", id);
 }
 
 // ===== BDCQ Answers =====
-export async function listBdcqAnswers(projectId: string) {
-  return listRows("bdcq_answers", "projectId", projectId) as Promise<Array<typeof bdcqAnswers.$inferSelect>>;
+export async function listBdcqAnswers(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("bdcq_answers", "projectId", projectId, pagination) as Promise<Array<typeof bdcqAnswers.$inferSelect>>;
+}
+export async function listBdcqAnswersForQuestions(projectId: string, questionIds: string[]) {
+  const pool = getPgPool();
+  if (!pool || questionIds.length === 0) return [];
+  const result = await pool.query(`SELECT * FROM "bdcq_answers" WHERE "projectId" = $1 AND "questionId" = ANY($2::varchar[]) ORDER BY "createdAt" DESC`, [projectId, questionIds]);
+  return result.rows as Array<typeof bdcqAnswers.$inferSelect>;
 }
 export async function createBdcqAnswer(data: typeof bdcqAnswers.$inferInsert) {
   return insertRow("bdcq_answers", data, ["attachments"]);
@@ -180,8 +207,8 @@ export async function deleteBdcqAnswer(id: string) {
 }
 
 // ===== Workshops =====
-export async function listWorkshops(projectId: string) {
-  return listRows("workshops", "projectId", projectId) as Promise<Array<typeof workshops.$inferSelect>>;
+export async function listWorkshops(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("workshops", "projectId", projectId, pagination) as Promise<Array<typeof workshops.$inferSelect>>;
 }
 export async function createWorkshop(data: typeof workshops.$inferInsert) {
   return insertRow("workshops", data, ["participants", "agenda"]);
@@ -194,8 +221,8 @@ export async function deleteWorkshop(id: string) {
 }
 
 // ===== Workshop Transcripts =====
-export async function listTranscripts(workshopId: string) {
-  return listRows("workshop_transcripts", "workshopId", workshopId) as Promise<Array<typeof workshopTranscripts.$inferSelect>>;
+export async function listTranscripts(workshopId: string, pagination?: WorkflowPagination) {
+  return listRows("workshop_transcripts", "workshopId", workshopId, pagination) as Promise<Array<typeof workshopTranscripts.$inferSelect>>;
 }
 export async function createTranscript(data: typeof workshopTranscripts.$inferInsert) {
   return insertRow("workshop_transcripts", data);
@@ -223,11 +250,12 @@ export async function updateMinutes(id: string, data: Partial<typeof meetingMinu
 }
 
 // ===== DCD Documents =====
-export async function listDcdDocuments(projectId: string, includeContent = false) {
+export async function listDcdDocuments(projectId: string, includeContent = false, pagination?: WorkflowPagination) {
   const pool = getPgPool();
   if (!pool) return [];
   const columns = includeContent ? "*" : `"id", "projectId", "seriesId", "sourceHash", "module", "title", "version", "status", "createdAt", "updatedAt"`;
-  const result = await pool.query(`SELECT ${columns} FROM "dcd_documents" WHERE "projectId" = $1 ORDER BY "createdAt" DESC`, [projectId]);
+  const hasLimit = typeof pagination?.limit === "number";
+  const result = await pool.query(`SELECT ${columns} FROM "dcd_documents" WHERE "projectId" = $1 ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`, hasLimit ? [projectId, pagination!.limit, pagination?.offset || 0] : [projectId]);
   return result.rows as Array<typeof dcdDocuments.$inferSelect>;
 }
 export async function getDcdDocument(id: string) {
@@ -257,8 +285,8 @@ export async function deleteDcdDocument(id: string) {
 }
 
 // ===== Gaps =====
-export async function listGaps(projectId: string) {
-  return listRows("gaps", "projectId", projectId) as Promise<Array<typeof gaps.$inferSelect>>;
+export async function listGaps(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("gaps", "projectId", projectId, pagination) as Promise<Array<typeof gaps.$inferSelect>>;
 }
 export async function createGap(data: typeof gaps.$inferInsert) {
   return insertRow("gaps", data);
@@ -274,8 +302,8 @@ export async function bulkUpdateGaps(ids: string[], data: Partial<typeof gaps.$i
 }
 
 // ===== Configurations =====
-export async function listConfigurations(projectId: string) {
-  return listRows("configurations", "projectId", projectId) as Promise<Array<typeof configurations.$inferSelect>>;
+export async function listConfigurations(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("configurations", "projectId", projectId, pagination) as Promise<Array<typeof configurations.$inferSelect>>;
 }
 export async function createConfiguration(data: typeof configurations.$inferInsert) {
   return insertRow("configurations", data);
@@ -288,6 +316,21 @@ export async function deleteConfiguration(id: string) {
 }
 export async function bulkUpdateConfigurations(ids: string[], data: Partial<typeof configurations.$inferInsert>) {
   return bulkUpdateRows("configurations", ids, data, ["responsible", "status"]);
+}
+
+// ===== Unit and Integrated Tests =====
+export async function listWorkflowTestCases(projectId: string, pagination?: WorkflowPagination) {
+  return listRows("workflow_test_cases", "projectId", projectId, pagination) as Promise<Array<typeof workflowTestCases.$inferSelect>>;
+}
+export async function createWorkflowTestCase(data: typeof workflowTestCases.$inferInsert) {
+  return insertRow("workflow_test_cases", data);
+}
+export async function updateWorkflowTestCase(id: string, data: Partial<typeof workflowTestCases.$inferInsert>) {
+  return updateRow("workflow_test_cases", id, data, ["type", "code", "title", "description", "module", "requirementId", "scopeItemId", "dcdId", "preconditions", "steps", "expectedResult", "actualResult", "responsible", "evidence", "status", "executedAt"]);
+}
+export async function deleteWorkflowTestCase(id: string) { return deleteRow("workflow_test_cases", id); }
+export async function bulkUpdateWorkflowTestCases(ids: string[], data: Partial<typeof workflowTestCases.$inferInsert>) {
+  return bulkUpdateRows("workflow_test_cases", ids, data, ["responsible", "status", "executedAt"]);
 }
 
 export async function bulkUpdateDcdDocuments(ids: string[], data: Partial<typeof dcdDocuments.$inferInsert>) {

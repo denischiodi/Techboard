@@ -4,10 +4,21 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { workflowRouter } from "./routers/workflow";
+import { activitiesRouter } from "./routers/activities";
 import { z } from "zod";
 import type { Resource, Project, Phase, Absence, Allocation, ResourceFront, AppUser, UserRole, LookupItem, AppTab, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateAlert, ResourceEndDateImpact, TechMoveData } from "../shared/types";
 import { DEFAULT_PERMISSIONS } from "../shared/types";
-import { parseISO, startOfWeek, endOfWeek, eachDayOfInterval, differenceInCalendarDays, format, getMonth, getDate, addDays, addYears, isValid } from "date-fns";
+import { parseISO } from "date-fns/parseISO";
+import { startOfWeek } from "date-fns/startOfWeek";
+import { endOfWeek } from "date-fns/endOfWeek";
+import { eachDayOfInterval } from "date-fns/eachDayOfInterval";
+import { differenceInCalendarDays } from "date-fns/differenceInCalendarDays";
+import { format } from "date-fns/format";
+import { getMonth } from "date-fns/getMonth";
+import { getDate } from "date-fns/getDate";
+import { addDays } from "date-fns/addDays";
+import { addYears } from "date-fns/addYears";
+import { isValid } from "date-fns/isValid";
 import * as store from "./plannerStore";
 import * as gpChecklistStore from "./gpChecklistStore";
 import { LoginCodeRateLimitError, consumeLoginCode, establishEmailSession, issueLoginCode, normalizeLoginEmail } from "./_core/emailAuth";
@@ -490,13 +501,20 @@ async function assertPhaseCanBeDeleted(id: string) {
   if (allocations.some(a => a.phaseId === id)) badRequest("Nao e possivel excluir fase com alocacoes vinculadas");
 }
 
-const permissionProcedure = (tab: AppTab) =>
+const permissionProcedure = (tab: AppTab, action: "view" | "create" | "modify" = "view") =>
   protectedProcedure.use(async ({ ctx, next }) => {
     if (ctx.appUser?.role === "admin") {
       return next();
     }
 
-    if (ctx.appUser?.permissions[tab]) {
+    const moduleActions = ctx.appUser?.permissions.actions?.[tab];
+    const productByTab: Record<AppTab, "techboard" | "techlead" | "techmove" | "techtask" | "admin"> = {
+      dashboard: "techboard", resources: "techboard", projects: "techboard", absences: "techboard",
+      planner: "techboard", organogram: "techboard", gpChecklist: "techlead", techmove: "techmove",
+      activities: "techtask", access: "admin", settings: "admin",
+    };
+    const productAllowed = ctx.appUser?.permissions.products?.[productByTab[tab]];
+    if (productAllowed !== false && ctx.appUser?.permissions[tab] && (!moduleActions || moduleActions[action])) {
       return next();
     }
 
@@ -511,8 +529,22 @@ const resourcesProcedure = permissionProcedure("resources");
 const projectsProcedure = permissionProcedure("projects");
 const absencesProcedure = permissionProcedure("absences");
 const plannerProcedure = permissionProcedure("planner");
+const gpChecklistProcedure = permissionProcedure("gpChecklist");
 const techMoveProcedure = permissionProcedure("techmove");
 const settingsProcedure = permissionProcedure("settings");
+const resourcesCreateProcedure = permissionProcedure("resources", "create");
+const resourcesModifyProcedure = permissionProcedure("resources", "modify");
+const projectsCreateProcedure = permissionProcedure("projects", "create");
+const projectsModifyProcedure = permissionProcedure("projects", "modify");
+const absencesCreateProcedure = permissionProcedure("absences", "create");
+const absencesModifyProcedure = permissionProcedure("absences", "modify");
+const plannerCreateProcedure = permissionProcedure("planner", "create");
+const plannerModifyProcedure = permissionProcedure("planner", "modify");
+const gpChecklistCreateProcedure = permissionProcedure("gpChecklist", "create");
+const gpChecklistModifyProcedure = permissionProcedure("gpChecklist", "modify");
+const techMoveModifyProcedure = permissionProcedure("techmove", "modify");
+const settingsCreateProcedure = permissionProcedure("settings", "create");
+const settingsModifyProcedure = permissionProcedure("settings", "modify");
 
 function isReadOnlyScopedRole(appUser?: AppUser | null) {
   return appUser?.role === "consultant" || appUser?.role === "technical_lead";
@@ -599,7 +631,7 @@ async function filterProjectsForUser(projects: Project[], allocations: Allocatio
 }
 
 async function getVisibleProjectOrThrow(projectId: string, appUser?: AppUser | null) {
-  if (!appUser?.permissions.projects && !appUser?.permissions.planner) {
+  if (!appUser?.permissions.gpChecklist && !appUser?.permissions.projects && !appUser?.permissions.planner) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para acessar projetos" });
   }
   const project = await store.getProjectById(projectId);
@@ -612,9 +644,21 @@ async function getVisibleProjectOrThrow(projectId: string, appUser?: AppUser | n
   return project;
 }
 
+const userPermissionsSchema = z.object({
+  dashboard: z.boolean(), resources: z.boolean(), projects: z.boolean(), absences: z.boolean(),
+  planner: z.boolean(), activities: z.boolean(), gpChecklist: z.boolean(), organogram: z.boolean(),
+  techmove: z.boolean(), access: z.boolean(), settings: z.boolean(),
+  products: z.object({
+    techboard: z.boolean().optional(), techlead: z.boolean().optional(), techmove: z.boolean().optional(),
+    techtask: z.boolean().optional(), admin: z.boolean().optional(),
+  }).optional(),
+  actions: z.record(z.string(), z.object({ view: z.boolean(), create: z.boolean(), modify: z.boolean() })).optional(),
+});
+
 export const appRouter = router({
   system: systemRouter,
   workflow: workflowRouter,
+  activities: activitiesRouter,
   auth: router({
     me: publicProcedure.query(async opts => {
       const user = opts.ctx.user;
@@ -736,7 +780,7 @@ export const appRouter = router({
       }
       return resource;
     }),
-    create: resourcesProcedure.input(z.object({
+    create: resourcesCreateProcedure.input(z.object({
       name: z.string(),
       email: z.string().default(''),
       photoUrl: z.string().default(''),
@@ -767,7 +811,7 @@ export const appRouter = router({
       const fronts = input.fronts.length > 0 ? input.fronts : [input.front].filter(Boolean);
       return store.createResource({ ...input, front: fronts[0] || '', fronts } as Omit<Resource, "id">);
     }),
-    update: resourcesProcedure.input(z.object({
+    update: resourcesModifyProcedure.input(z.object({
       id: z.string(),
       name: z.string().optional(),
       email: z.string().optional(),
@@ -801,12 +845,12 @@ export const appRouter = router({
       if (input.name !== undefined) await assertUniqueResourceName(input.name, input.id);
       return store.updateResource(input);
     }),
-    delete: resourcesProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    delete: resourcesModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       assertCanWrite(ctx);
       await assertResourceCanBeDeleted(input.id);
       return store.deleteResource(input.id);
     }),
-    bulkImport: resourcesProcedure.input(z.union([z.array(z.object({
+    bulkImport: resourcesCreateProcedure.input(z.union([z.array(z.object({
         id: z.string().optional(),
         name: z.string(),
         email: z.string().default(''),
@@ -883,14 +927,14 @@ export const appRouter = router({
   // ===== PROJECTS =====
   projects: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
+      if (!ctx.appUser?.permissions.gpChecklist && !ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para acessar projetos" });
       }
       const [projects, allocations] = await Promise.all([store.listProjects(), store.listAllocations()]);
       return filterProjectsForUser(projects, allocations, ctx.appUser);
     }),
     getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
-      if (!ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
+      if (!ctx.appUser?.permissions.gpChecklist && !ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para acessar projetos" });
       }
       const project = await store.getProjectById(input.id);
@@ -902,7 +946,7 @@ export const appRouter = router({
       }
       return project;
     }),
-    create: projectsProcedure.input(z.object({
+    create: projectsCreateProcedure.input(z.object({
       name: z.string(),
       logoUrl: z.string().default(''),
       client: z.string(),
@@ -920,7 +964,7 @@ export const appRouter = router({
       await assertUniqueProjectName(input.name);
       return store.createProject(input as Omit<Project, "id">);
     }),
-    update: projectsProcedure.input(z.object({
+    update: projectsModifyProcedure.input(z.object({
       id: z.string(),
       name: z.string().optional(),
       logoUrl: z.string().optional(),
@@ -944,12 +988,12 @@ export const appRouter = router({
       if (input.name !== undefined) await assertUniqueProjectName(input.name, input.id);
       return store.updateProject(input);
     }),
-    delete: projectsProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    delete: projectsModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       assertCanWrite(ctx);
       await assertProjectCanBeDeleted(input.id);
       return store.deleteProject(input.id);
     }),
-    bulkImport: projectsProcedure.input(z.union([z.array(z.object({
+    bulkImport: projectsCreateProcedure.input(z.union([z.array(z.object({
         name: z.string(),
         logoUrl: z.string().default(''),
         client: z.string(),
@@ -990,7 +1034,7 @@ export const appRouter = router({
 
   // ===== TRILHA DO GP =====
   gpChecklist: router({
-    list: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
+    list: gpChecklistProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
       const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       const [items, cycles] = await Promise.all([
         gpChecklistStore.listProjectChecklist(project),
@@ -1004,16 +1048,16 @@ export const appRouter = router({
         progress: gpChecklistStore.calculateChecklistProgress(items),
       };
     }),
-    progress: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
+    progress: gpChecklistProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
       const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       const items = await gpChecklistStore.listProjectChecklist(project);
       return gpChecklistStore.calculateChecklistProgress(items);
     }),
-    updateItem: protectedProcedure.input(z.object({
+    updateItem: gpChecklistModifyProcedure.input(z.object({
       projectId: z.string().min(1),
       id: z.string().min(1),
       data: z.object({
-        status: z.enum(["Pendente", "Em andamento", "Concluído", "Bloqueado", "Não aplicável"]).optional(),
+        status: z.enum(["Pendente", "Em andamento", "Em validação", "Concluído", "Bloqueado", "Não aplicável"]).optional(),
         responsible: z.string().max(255).optional(),
         dueDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),
         evidenceUrl: z.string().max(2048).optional(),
@@ -1025,7 +1069,7 @@ export const appRouter = router({
       await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       return gpChecklistStore.updateChecklistItem(input.projectId, input.id, input.data);
     }),
-    createFitToStandardCycle: protectedProcedure.input(z.object({
+    createFitToStandardCycle: gpChecklistCreateProcedure.input(z.object({
       projectId: z.string().min(1),
       name: z.string().trim().min(1).max(255),
       module: z.string().trim().max(128).default(""),
@@ -1034,11 +1078,11 @@ export const appRouter = router({
       await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       return gpChecklistStore.createFitToStandardCycle(input.projectId, input.name, input.module);
     }),
-    updateCycleStep: protectedProcedure.input(z.object({
+    updateCycleStep: gpChecklistModifyProcedure.input(z.object({
       projectId: z.string().min(1),
       stepId: z.string().min(1),
       data: z.object({
-        status: z.enum(["Pendente", "Em andamento", "Concluído", "Bloqueado", "Não aplicável"]).optional(),
+        status: z.enum(["Pendente", "Em andamento", "Em validação", "Concluído", "Bloqueado", "Não aplicável"]).optional(),
         responsible: z.string().max(255).optional(),
         dueDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),
         evidenceUrl: z.string().max(2048).optional(),
@@ -1075,7 +1119,7 @@ export const appRouter = router({
       const phases = await store.listPhases();
       return phases.filter(p => p.projectId === input.projectId);
     }),
-    create: projectsProcedure.input(z.object({
+    create: projectsCreateProcedure.input(z.object({
       projectId: z.string(),
       phase: z.string(),
       startDate: z.string(),
@@ -1092,7 +1136,7 @@ export const appRouter = router({
       await assertPhaseReferences(input);
       return store.createPhase(input as Omit<Phase, "id">);
     }),
-    update: projectsProcedure.input(z.object({
+    update: projectsModifyProcedure.input(z.object({
       id: z.string(),
       projectId: z.string().optional(),
       phase: z.string().optional(),
@@ -1111,7 +1155,7 @@ export const appRouter = router({
       if (input.projectId !== undefined) await assertPhaseReferences({ projectId: input.projectId });
       return store.updatePhase(input);
     }),
-    delete: projectsProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    delete: projectsModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       assertCanWrite(ctx);
       await assertPhaseCanBeDeleted(input.id);
       return store.deletePhase(input.id);
@@ -1129,7 +1173,7 @@ export const appRouter = router({
       const visibleAbsences = await filterAbsencesForUser(absences, ctx.appUser);
       return visibleAbsences.filter(a => a.resourceId === input.resourceId);
     }),
-    create: absencesProcedure.input(z.object({
+    create: absencesCreateProcedure.input(z.object({
       resourceId: z.string(),
       type: z.string(),
       startDate: z.string(),
@@ -1155,7 +1199,7 @@ export const appRouter = router({
         : { ...input, daysCount: null };
       return store.createAbsence(next as Omit<Absence, "id">);
     }),
-    update: absencesProcedure.input(z.object({
+    update: absencesModifyProcedure.input(z.object({
       id: z.string(),
       resourceId: z.string().optional(),
       type: z.string().optional(),
@@ -1183,13 +1227,13 @@ export const appRouter = router({
       }
       return store.updateAbsence({ ...input, endDate: next.endDate, daysCount: isSoldVacationDays(next.type) ? next.daysCount : null } as Partial<Absence> & { id: string });
     }),
-    delete: absencesProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    delete: absencesModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const current = (await store.listAbsences()).find(a => a.id === input.id);
       if (!current) badRequest("Ausencia nao encontrada");
       await assertCanManageAbsenceResource(ctx, current.resourceId);
       return store.deleteAbsence(input.id);
     }),
-    bulkImport: absencesProcedure.input(z.union([z.array(z.object({
+    bulkImport: absencesCreateProcedure.input(z.union([z.array(z.object({
         id: z.string().optional(),
         resourceId: z.string(),
         resourceName: z.string().optional(),
@@ -1278,7 +1322,7 @@ export const appRouter = router({
         return true;
       });
     }),
-    create: plannerProcedure.input(z.object({
+    create: plannerCreateProcedure.input(z.object({
       resourceId: z.string(),
       projectId: z.string(),
       phaseId: z.string().default(''),
@@ -1298,7 +1342,7 @@ export const appRouter = router({
       await assertNoSameProjectResourceOverlap(input);
       return store.createAllocation(input as Omit<Allocation, "id">);
     }),
-    update: plannerProcedure.input(z.object({
+    update: plannerModifyProcedure.input(z.object({
       id: z.string(),
       resourceId: z.string().optional(),
       projectId: z.string().optional(),
@@ -1322,11 +1366,11 @@ export const appRouter = router({
       await assertNoSameProjectResourceOverlap(next);
       return store.updateAllocation(input);
     }),
-    delete: plannerProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
+    delete: plannerModifyProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
       assertCanWrite(ctx);
       return store.deleteAllocation(input.id);
     }),
-    bulkImport: plannerProcedure.input(z.union([z.array(z.object({
+    bulkImport: plannerCreateProcedure.input(z.union([z.array(z.object({
         resourceId: z.string(),
         projectId: z.string(),
         phaseId: z.string().default(''),
@@ -1379,7 +1423,7 @@ export const appRouter = router({
       return store.getTechMoveData(input.projectId);
     }),
 
-    save: techMoveProcedure.input(z.object({
+    save: techMoveModifyProcedure.input(z.object({
       projectId: z.string().min(1),
       data: z.object({
         projectId: z.string().min(1),
@@ -1458,7 +1502,7 @@ export const appRouter = router({
           description: z.string(),
           impact: z.string(),
           severity: z.enum(["Baixo", "Medio", "Alto", "Critico"]),
-          status: z.enum(["Aberto", "Em analise", "Aprovado", "Rejeitado"]),
+          status: z.enum(["Aberto", "Em analise", "Aprovado", "Rejeitado", "Resolvido"]),
           resolutionType: z.string().optional(),
           resolution: z.string().optional(),
           effort: z.string().optional(),
@@ -1491,16 +1535,17 @@ export const appRouter = router({
 
   // ===== CONFIGURABLE LOOKUPS / CADASTROS =====
   settings: router({
+    // Lookup values are shared reference data used by several authorized products.
     getLookups: protectedProcedure.query(() => store.getLookups()),
 
-    addLookup: settingsProcedure.input(z.object({
+    addLookup: settingsCreateProcedure.input(z.object({
       category: z.enum(['profiles', 'fronts', 'resourceStatuses', 'projectStatuses', 'absenceTypes', 'allocationTypes', 'allocationStatuses', 'contractTypes', 'dashboardCheckStatuses']),
       value: z.string().trim().min(1),
     })).mutation(({ input }) => {
       return store.addLookup(input.category, input.value);
     }),
 
-    updateLookup: settingsProcedure.input(z.object({
+    updateLookup: settingsModifyProcedure.input(z.object({
       id: z.string(),
       value: z.string().trim().min(1),
       active: z.boolean(),
@@ -1508,7 +1553,7 @@ export const appRouter = router({
       return store.updateLookup(input);
     }),
 
-    deleteLookup: settingsProcedure.input(z.object({ id: z.string() })).mutation(({ input }) => {
+    deleteLookup: settingsModifyProcedure.input(z.object({ id: z.string() })).mutation(({ input }) => {
       return store.deleteLookup(input.id);
     }),
   }),
@@ -1679,17 +1724,7 @@ export const appRouter = router({
       role: z.enum(['admin', 'manager', 'technical_lead', 'consultant', 'viewer']),
       resourceId: z.string().default(''),
       teamFronts: z.array(z.string()).default([]),
-      permissions: z.object({
-        dashboard: z.boolean(),
-        resources: z.boolean(),
-        projects: z.boolean(),
-        absences: z.boolean(),
-        planner: z.boolean(),
-        organogram: z.boolean(),
-        techmove: z.boolean(),
-        access: z.boolean(),
-        settings: z.boolean(),
-      }).optional(),
+      permissions: userPermissionsSchema.optional(),
     })).mutation(async ({ input }) => {
       const existing = await store.getAppUserByEmail(input.email);
       if (existing) badRequest("Ja existe usuario com este e-mail");
@@ -1711,17 +1746,7 @@ export const appRouter = router({
       role: z.enum(['admin', 'manager', 'technical_lead', 'consultant', 'viewer']).optional(),
       resourceId: z.string().optional(),
       teamFronts: z.array(z.string()).optional(),
-      permissions: z.object({
-        dashboard: z.boolean(),
-        resources: z.boolean(),
-        projects: z.boolean(),
-        absences: z.boolean(),
-        planner: z.boolean(),
-        organogram: z.boolean(),
-        techmove: z.boolean(),
-        access: z.boolean(),
-        settings: z.boolean(),
-      }).optional(),
+      permissions: userPermissionsSchema.optional(),
       active: z.boolean().optional(),
     })).mutation(async ({ input }) => {
       if (input.email) {
