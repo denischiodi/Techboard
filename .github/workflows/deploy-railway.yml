@@ -41,20 +41,22 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/railwayapp/cli:latest
     env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+      RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
       RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
     steps:
       - name: Check Railway configuration
-        if: ${{ env.RAILWAY_TOKEN == '' || env.RAILWAY_SERVICE_ID == '' }}
+        if: ${{ env.RAILWAY_API_TOKEN == '' || env.RAILWAY_PROJECT_ID == '' || env.RAILWAY_ENVIRONMENT_ID == '' || env.RAILWAY_SERVICE_ID == '' }}
         run: |
           echo "Railway deploy not configured."
-          echo "Configure GitHub secret RAILWAY_TOKEN and GitHub variable RAILWAY_SERVICE_ID."
+          echo "Configure GitHub secret RAILWAY_API_TOKEN and Railway project, environment, and service variables."
           exit 1
 
       - name: Checkout
-        if: ${{ env.RAILWAY_TOKEN != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         uses: actions/checkout@v4
 
       - name: Deploy
-        if: ${{ env.RAILWAY_TOKEN != '' && env.RAILWAY_SERVICE_ID != '' }}
-        run: railway up --service "$RAILWAY_SERVICE_ID" --ci
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        run: railway up --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --ci
