@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { ProjectName } from "@/components/ProjectLogo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -278,7 +279,7 @@ function ProjectTimelineRow({ project, phases, days, projects }: {
   return (
     <tr className="border-b bg-slate-50/70">
       <td className="sticky left-0 z-10 min-w-[132px] border-r bg-slate-50 p-2 sm:min-w-[180px]">
-        <div className="text-xs font-semibold leading-tight text-slate-900 sm:text-sm">{project.name}</div>
+        <ProjectName project={project} className="text-xs font-semibold leading-tight text-slate-900 sm:text-sm" />
         <div className="text-[10px] text-muted-foreground">Projeto · {project.startDate} a {project.endDate}</div>
       </td>
       <td className="relative p-0" colSpan={totalDays}>
@@ -669,7 +670,7 @@ function AnnualProjectTimelineRow({ project, phases, weeks }: {
   return (
     <tr className="border-b bg-slate-50/70">
       <td className="sticky left-0 z-20 min-w-[180px] border-r bg-slate-50 p-2">
-        <div className="text-sm font-semibold text-slate-900">{project.name}</div>
+        <ProjectName project={project} className="text-sm font-semibold text-slate-900" />
         <div className="text-[10px] text-muted-foreground">Projeto · {project.startDate} a {project.endDate}</div>
       </td>
       <td colSpan={weeks.length} className="relative p-0">
@@ -2529,7 +2530,7 @@ export default function Planner() {
                 <Label>Projeto</Label>
                 <Select value={modalForm.projectId} onValueChange={v => setModalForm({ ...modalForm, projectId: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}><ProjectName project={p} /></SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>

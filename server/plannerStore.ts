@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import type { Absence, Allocation, AppUser, LookupConfig, LookupItem, Phase, Project, Resource, TechMoveData, UserPermissions, UserRole } from "../shared/types";
 import { DEFAULT_PERMISSIONS } from "../shared/types";
 import { getPgPool } from "./db";
+import type { QueryResultRow } from "pg";
+import { ensureProjectChecklist } from "./gpChecklistStore";
 import {
   absences as memoryAbsences,
   allocations as memoryAllocations,
@@ -42,7 +44,7 @@ function getPool() {
   return getPgPool();
 }
 
-async function query<T = any>(sql: string, params: unknown[] = []): Promise<{ rows: T[]; rowCount?: number | null } | null> {
+async function query<T extends QueryResultRow = QueryResultRow>(sql: string, params: unknown[] = []): Promise<{ rows: T[]; rowCount?: number | null } | null> {
   const db = getPool();
   if (!db) return null;
   return db.query<T>(sql, params);
@@ -356,7 +358,9 @@ export async function deleteResource(id: string) {
 
 export async function listProjects() {
   const result = await query('SELECT * FROM "projects" ORDER BY "name"');
-  return result ? result.rows.map(toProject) : memoryProjects;
+  const projects = result ? result.rows.map(toProject) : memoryProjects;
+  await Promise.all(projects.map(project => ensureProjectChecklist(project)));
+  return projects;
 }
 
 export async function getProjectById(id: string) {
@@ -368,13 +372,16 @@ export async function createProject(input: Omit<Project, "id"> & { id?: string }
   const project: Project = { ...input, id: input.id || createEntityId("p"), fronts: normalizeFronts(input.fronts) } as Project;
   if (!hasDatabase()) {
     memoryProjects.push(project);
+    await ensureProjectChecklist(project);
     return project;
   }
   const result = await query(
-    'INSERT INTO "projects" ("id", "name", "client", "manager", "status", "startDate", "endDate", "fronts", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-    [project.id, project.name, project.client, project.manager, project.status, project.startDate, project.endDate, JSON.stringify(project.fronts), project.notes],
+    'INSERT INTO "projects" ("id", "name", "logoUrl", "client", "manager", "status", "startDate", "endDate", "fronts", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+    [project.id, project.name, project.logoUrl || "", project.client, project.manager, project.status, project.startDate, project.endDate, JSON.stringify(project.fronts), project.notes],
   );
-  return toProject(result!.rows[0]);
+  const created = toProject(result!.rows[0]);
+  await ensureProjectChecklist(created);
+  return created;
 }
 
 export async function updateProject(input: Partial<Project> & { id: string }) {
@@ -386,7 +393,7 @@ export async function updateProject(input: Partial<Project> & { id: string }) {
   }
   const next: Record<string, unknown> = { ...input };
   if (Array.isArray(input.fronts)) next.fronts = JSON.stringify(input.fronts);
-  return updateById("projects", input.id, next, ["name", "client", "manager", "status", "startDate", "endDate", "fronts", "notes"], toProject);
+  return updateById("projects", input.id, next, ["name", "logoUrl", "client", "manager", "status", "startDate", "endDate", "fronts", "notes"], toProject);
 }
 
 export async function deleteProject(id: string) {

@@ -33,7 +33,10 @@ export function isSafeLocalDemoRequest(req: DemoRequest) {
   const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
   if (!host) return true;
 
-  const hostname = host.split(":")[0]?.toLowerCase();
+  const hostname = (host.startsWith("[")
+    ? host.slice(0, host.indexOf("]") + 1)
+    : host.split(":")[0]
+  )?.toLowerCase();
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
 }
 

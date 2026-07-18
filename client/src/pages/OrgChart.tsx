@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronDown, ChevronRight, FolderKanban, Layers, Network, Users } from "lucide-react";
 import type { Allocation, Project, Resource } from "../../../shared/types";
+import { ProjectName } from "@/components/ProjectLogo";
 
 type ViewMode = "team" | "group" | "project";
 
@@ -492,7 +493,7 @@ export default function OrgChart() {
             <Select value={currentProject?.id || ""} onValueChange={setSelectedProjectId}>
               <SelectTrigger className="w-full sm:w-[260px]"><SelectValue placeholder="Projeto" /></SelectTrigger>
               <SelectContent>
-                {activeProjects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+                {activeProjects.map(project => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}
               </SelectContent>
             </Select>
           ) : null}

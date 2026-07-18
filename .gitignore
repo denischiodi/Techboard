@@ -15,7 +15,9 @@ build/
 .env.production.local
 
 # IDE and editor files
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -49,6 +51,10 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov
+playwright-report/
+test-results/
+stats.html
+.supabase/
 
 # nyc test coverage
 .nyc_output

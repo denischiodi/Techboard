@@ -9,6 +9,7 @@ import type { Resource, Project, Phase, Absence, Allocation, ResourceFront, AppU
 import { DEFAULT_PERMISSIONS } from "../shared/types";
 import { parseISO, startOfWeek, endOfWeek, eachDayOfInterval, differenceInCalendarDays, format, getMonth, getDate, addDays, addYears, isValid } from "date-fns";
 import * as store from "./plannerStore";
+import * as gpChecklistStore from "./gpChecklistStore";
 import { LoginCodeRateLimitError, consumeLoginCode, establishEmailSession, issueLoginCode, normalizeLoginEmail } from "./_core/emailAuth";
 
 function badRequest(message: string): never {
@@ -597,6 +598,20 @@ async function filterProjectsForUser(projects: Project[], allocations: Allocatio
   return projects.filter(project => projectIds.has(project.id));
 }
 
+async function getVisibleProjectOrThrow(projectId: string, appUser?: AppUser | null) {
+  if (!appUser?.permissions.projects && !appUser?.permissions.planner) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para acessar projetos" });
+  }
+  const project = await store.getProjectById(projectId);
+  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto nao encontrado" });
+  const allocations = await store.listAllocations();
+  const visible = await filterProjectsForUser([project], allocations, appUser);
+  if (visible.length === 0) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para consultar este projeto" });
+  }
+  return project;
+}
+
 export const appRouter = router({
   system: systemRouter,
   workflow: workflowRouter,
@@ -889,6 +904,7 @@ export const appRouter = router({
     }),
     create: projectsProcedure.input(z.object({
       name: z.string(),
+      logoUrl: z.string().default(''),
       client: z.string(),
       manager: z.string(),
       status: z.string().default('Planejado'),
@@ -907,6 +923,7 @@ export const appRouter = router({
     update: projectsProcedure.input(z.object({
       id: z.string(),
       name: z.string().optional(),
+      logoUrl: z.string().optional(),
       client: z.string().optional(),
       manager: z.string().optional(),
       status: z.string().optional(),
@@ -934,6 +951,7 @@ export const appRouter = router({
     }),
     bulkImport: projectsProcedure.input(z.union([z.array(z.object({
         name: z.string(),
+        logoUrl: z.string().default(''),
         client: z.string(),
         manager: z.string().default(''),
         status: z.string().default('Planejado'),
@@ -943,6 +961,7 @@ export const appRouter = router({
         notes: z.string().default(''),
       })), z.object({ items: z.array(z.object({
         name: z.string(),
+        logoUrl: z.string().default(''),
         client: z.string(),
         manager: z.string().default(''),
         status: z.string().default('Planejado'),
@@ -966,6 +985,70 @@ export const appRouter = router({
         created.push(await store.createProject(item as Omit<Project, "id">));
       }
       return { count: created.length, items: created };
+    }),
+  }),
+
+  // ===== TRILHA DO GP =====
+  gpChecklist: router({
+    list: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
+      const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      const [items, cycles] = await Promise.all([
+        gpChecklistStore.listProjectChecklist(project),
+        gpChecklistStore.listFitToStandardCycles(project.id),
+      ]);
+      return {
+        project,
+        templateVersion: items[0]?.templateVersion || "sap-activate-3sl-v1",
+        items,
+        cycles,
+        progress: gpChecklistStore.calculateChecklistProgress(items),
+      };
+    }),
+    progress: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
+      const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      const items = await gpChecklistStore.listProjectChecklist(project);
+      return gpChecklistStore.calculateChecklistProgress(items);
+    }),
+    updateItem: protectedProcedure.input(z.object({
+      projectId: z.string().min(1),
+      id: z.string().min(1),
+      data: z.object({
+        status: z.enum(["Pendente", "Em andamento", "Concluído", "Bloqueado", "Não aplicável"]).optional(),
+        responsible: z.string().max(255).optional(),
+        dueDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),
+        evidenceUrl: z.string().max(2048).optional(),
+        notes: z.string().max(10000).optional(),
+        blockingReason: z.string().max(4000).optional(),
+      }),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      return gpChecklistStore.updateChecklistItem(input.projectId, input.id, input.data);
+    }),
+    createFitToStandardCycle: protectedProcedure.input(z.object({
+      projectId: z.string().min(1),
+      name: z.string().trim().min(1).max(255),
+      module: z.string().trim().max(128).default(""),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      return gpChecklistStore.createFitToStandardCycle(input.projectId, input.name, input.module);
+    }),
+    updateCycleStep: protectedProcedure.input(z.object({
+      projectId: z.string().min(1),
+      stepId: z.string().min(1),
+      data: z.object({
+        status: z.enum(["Pendente", "Em andamento", "Concluído", "Bloqueado", "Não aplicável"]).optional(),
+        responsible: z.string().max(255).optional(),
+        dueDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),
+        evidenceUrl: z.string().max(2048).optional(),
+        notes: z.string().max(10000).optional(),
+        blockingReason: z.string().max(4000).optional(),
+      }),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      return gpChecklistStore.updateFitToStandardStep(input.projectId, input.stepId, input.data);
     }),
   }),
 

@@ -6,12 +6,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, FolderKanban, Clock, AlertTriangle, UserCheck, CalendarOff, Cake, UserX, FolderSearch, UserMinus } from "lucide-react";
+import { Users, FolderKanban, Clock, AlertTriangle, UserCheck, CalendarOff, Cake, UserX, FolderSearch, UserMinus, Workflow, MessageSquare, FileCheck2, UserRoundX, Bell } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { Allocation, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateImpact, ResourceFront } from "../../../shared/types";
+import { useLocation } from "wouter";
 
 const COLORS = ['#1e3a5f', '#2563eb', '#059669', '#d97706', '#dc2626'];
 
@@ -37,11 +38,13 @@ function shouldExtendGapToProjectEnd(reason?: string) {
 }
 
 export default function Dashboard() {
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: stats, isLoading } = trpc.dashboard.stats.useQuery();
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: projects = [] } = trpc.projects.list.useQuery();
   const { data: allAllocations = [] } = trpc.allocations.list.useQuery();
+  const { data: workflowSummary } = trpc.workflow.dashboard.useQuery(undefined, { retry: false });
   const createAllocation = trpc.allocations.create.useMutation({
     onSuccess: () => {
       utils.dashboard.stats.invalidate();
@@ -272,6 +275,20 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {workflowSummary && <>
+        <div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Workflow de projetos</h2><p className="text-sm text-muted-foreground">Pendências de levantamento, documentação e gaps</p></div><Button variant="outline" onClick={() => setLocation("/workflow")}><Workflow className="mr-2 h-4 w-4" />Abrir Workflow</Button></div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="cursor-pointer border-l-4 border-l-violet-600" onClick={() => setLocation("/workflow")}><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs font-medium text-muted-foreground">Workflows em andamento</p><p className="mt-1 text-2xl font-bold">{workflowSummary.workflowsInProgress}</p></div><Workflow className="h-8 w-8 text-violet-600" /></CardContent></Card>
+          <Card className="border-l-4 border-l-amber-500"><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs font-medium text-muted-foreground">Perguntas BDCQ pendentes</p><p className="mt-1 text-2xl font-bold">{workflowSummary.pendingQuestions}</p></div><MessageSquare className="h-8 w-8 text-amber-500" /></CardContent></Card>
+          <Card className="border-l-4 border-l-blue-600"><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs font-medium text-muted-foreground">DCDs para aprovar</p><p className="mt-1 text-2xl font-bold">{workflowSummary.dcdsForApproval}</p></div><FileCheck2 className="h-8 w-8 text-blue-600" /></CardContent></Card>
+          <Card className="border-l-4 border-l-red-600"><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs font-medium text-muted-foreground">Gaps sem responsável</p><p className="mt-1 text-2xl font-bold">{workflowSummary.unassignedGaps}</p></div><UserRoundX className="h-8 w-8 text-red-600" /></CardContent></Card>
+        </div>
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Workflows por etapa atual</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.entries(workflowSummary.stageCounts).map(([stage, count]) => <div key={stage} className="rounded-md border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">{stage}</p><p className="text-xl font-semibold">{count as number}</p></div>)}</CardContent></Card>
+          <Card className={workflowSummary.alerts.length ? "border-amber-300" : ""}><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Bell className="h-4 w-4 text-amber-600" />Pendências do Workflow ({workflowSummary.alerts.length})</CardTitle></CardHeader><CardContent className="max-h-72 overflow-y-auto">{workflowSummary.alerts.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma pendência crítica encontrada.</p> : <div className="space-y-2">{workflowSummary.alerts.map((alert, index) => <button key={`${alert.projectId}-${alert.type}-${index}`} className="block w-full rounded-md border p-2 text-left hover:bg-muted" onClick={() => setLocation(`${alert.route}?projectId=${encodeURIComponent(alert.projectId)}`)}><div className="flex items-center justify-between gap-2"><Badge variant="outline">{alert.type}</Badge><span className="text-xs text-muted-foreground">{alert.projectName}</span></div><p className="mt-1 line-clamp-2 text-sm">{alert.label}</p></button>)}</div>}</CardContent></Card>
+        </div>
+      </>}
 
       {/* Alerts Section */}
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">

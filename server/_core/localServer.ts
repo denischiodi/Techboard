@@ -10,7 +10,7 @@ import { isSafeLocalDemoRequest } from "./context";
 import { sdk } from "./sdk";
 import type { User } from "../../drizzle/schema";
 
-const distPublic = path.resolve(import.meta.dirname, "../..", "dist", "public");
+const distPublic = path.resolve(process.cwd(), "dist", "public");
 const port = Number(process.env.PORT || 3030);
 
 const mimeTypes: Record<string, string> = {
@@ -40,7 +40,12 @@ function localDemoUser(): User {
 
 async function serveStatic(urlPath: string, res: any) {
   const safePath = decodeURIComponent(urlPath.split("?")[0] || "/");
-  const requestedPath = safePath === "/" ? "/index.html" : safePath;
+  const pathWithoutBase = safePath === "/techboard"
+    ? "/"
+    : safePath.startsWith("/techboard/")
+      ? safePath.slice("/techboard".length)
+      : safePath;
+  const requestedPath = pathWithoutBase === "/" ? "/index.html" : pathWithoutBase;
   const filePath = path.resolve(distPublic, `.${requestedPath}`);
   const resolved = filePath.startsWith(distPublic) && existsSync(filePath)
     ? filePath

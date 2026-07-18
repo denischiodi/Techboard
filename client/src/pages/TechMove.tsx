@@ -30,6 +30,7 @@ import { appPath, assetPath } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { ProjectName } from "@/components/ProjectLogo";
 import { EmailCodeLogin } from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -469,7 +470,7 @@ function TechMoveWorkspace() {
             }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+                {projects.map(project => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}
               </SelectContent>
             </Select>
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted-foreground">

@@ -1,0 +1,1 @@
+ALTER TABLE "gaps" ADD COLUMN IF NOT EXISTS "responsible" varchar(255) DEFAULT '' NOT NULL;

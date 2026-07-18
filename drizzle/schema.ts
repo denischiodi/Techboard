@@ -47,6 +47,7 @@ export const resources = mysqlTable("resources", {
 export const projects = mysqlTable("projects", {
   id: varchar("id", { length: 64 }).primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
+  logoUrl: text("logoUrl"),
   client: varchar("client", { length: 255 }).notNull().default(""),
   manager: varchar("manager", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Planejado"),
@@ -203,6 +204,17 @@ export const bdcqAnswers = mysqlTable("bdcq_answers", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const bdcqAnswerHistory = mysqlTable("bdcq_answer_history", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  answerId: varchar("answerId", { length: 64 }).notNull(),
+  questionId: varchar("questionId", { length: 64 }).notNull(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  answer: text("answer").notNull(),
+  answeredBy: varchar("answeredBy", { length: 255 }).notNull().default(""),
+  changedBy: varchar("changedBy", { length: 255 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 /**
  * Workshops - sessões de workshop
  */
@@ -247,11 +259,34 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
 });
 
 /**
+ * Client Requirements - requisitos levantados e validados antes do DCD
+ */
+export const clientRequirements = mysqlTable("client_requirements", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  workshopId: varchar("workshopId", { length: 64 }).notNull(),
+  code: varchar("code", { length: 128 }).notNull().default(""),
+  title: varchar("title", { length: 512 }).notNull(),
+  description: text("description").notNull(),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  category: varchar("category", { length: 128 }).notNull().default("Funcional"),
+  priority: varchar("priority", { length: 64 }).notNull().default("Média"),
+  status: varchar("status", { length: 64 }).notNull().default("Identificado"),
+  source: varchar("source", { length: 255 }).notNull().default("Cliente"),
+  acceptanceCriteria: text("acceptanceCriteria"),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
  * DCD Documents - Design Configuration Documents gerados por IA
  */
 export const dcdDocuments = mysqlTable("dcd_documents", {
   id: varchar("id", { length: 64 }).primaryKey(),
   projectId: varchar("projectId", { length: 64 }).notNull(),
+  seriesId: varchar("seriesId", { length: 64 }).notNull().default(""),
+  sourceHash: varchar("sourceHash", { length: 64 }).notNull().default(""),
   module: varchar("module", { length: 128 }).notNull().default(""),
   title: varchar("title", { length: 512 }).notNull(),
   content: text("content").notNull(),
@@ -271,6 +306,7 @@ export const gaps = mysqlTable("gaps", {
   module: varchar("module", { length: 128 }).notNull().default(""),
   description: text("description").notNull(),
   impact: varchar("impact", { length: 64 }).notNull().default("Médio"),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   resolution: text("resolution"),
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -289,6 +325,29 @@ export const configurations = mysqlTable("configurations", {
   responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Pendente"),
   notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const workflowAuditLog = mysqlTable("workflow_audit_log", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  userId: varchar("userId", { length: 128 }).notNull(),
+  userName: varchar("userName", { length: 255 }).notNull().default(""),
+  action: varchar("action", { length: 128 }).notNull(),
+  entityType: varchar("entityType", { length: 128 }).notNull(),
+  entityId: varchar("entityId", { length: 64 }).notNull(),
+  details: json("details").$type<Record<string, unknown>>().default({}),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const workflowPrompts = mysqlTable("workflow_prompts", {
+  key: varchar("key", { length: 128 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  systemPrompt: text("systemPrompt").notNull(),
+  model: varchar("model", { length: 255 }).notNull().default(""),
+  updatedBy: varchar("updatedBy", { length: 255 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

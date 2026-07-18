@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
-import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
+import { initMonitoring } from "@/lib/monitoring";
+import { COOKIE_NAME, UNAUTHED_ERR_MSG } from "@shared/const";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -7,6 +8,8 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl, isLoginConfigured } from "./const";
 import "./index.css";
+
+initMonitoring();
 
 const queryClient = new QueryClient();
 

@@ -8,5 +8,6 @@ overrides:
   tailwindcss>nanoid: 3.3.7
 
 allowBuilds:
+  '@sentry/cli': true
   '@tailwindcss/oxide': true
   esbuild: true

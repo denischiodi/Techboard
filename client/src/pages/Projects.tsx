@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Search, Layers, Upload, Download, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ProjectLogo, ProjectName } from "@/components/ProjectLogo";
+import { Plus, Pencil, Trash2, Search, Layers, Upload, Download, X, ArrowUpDown, ArrowUp, ArrowDown, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
 import type { Project, ProjectStatus, Phase, ProjectPhase, ResourceFront } from "../../../shared/types";
@@ -47,6 +48,30 @@ const statusDot: Record<string, string> = {
   'Suspenso': 'bg-amber-500',
 };
 
+function resizeLogo(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Imagem inválida"));
+      image.onload = () => {
+        const maxSize = 480;
+        const scale = Math.min(maxSize / image.width, maxSize / image.height, 1);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) return reject(new Error("Não foi possível processar a imagem"));
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      image.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Projects() {
   const utils = trpc.useUtils();
   const { data: projects = [] } = trpc.projects.list.useQuery();
@@ -60,6 +85,7 @@ export default function Projects() {
   const deleteMutation = trpc.projects.delete.useMutation({ onSuccess: () => utils.projects.list.invalidate() });
   const bulkImportMutation = trpc.projects.bulkImport.useMutation({ onSuccess: () => utils.projects.list.invalidate() });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const createPhaseMutation = trpc.phases.create.useMutation({ onSuccess: () => utils.phases.list.invalidate() });
   const updatePhaseMutation = trpc.phases.update.useMutation({ onSuccess: () => utils.phases.list.invalidate() });
@@ -73,7 +99,7 @@ export default function Projects() {
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [form, setForm] = useState({
-    name: '', client: '', manager: '', status: 'Planejado' as string,
+    name: '', logoUrl: '', client: '', manager: '', status: 'Planejado' as string,
     startDate: '', endDate: '', fronts: [] as string[], notes: ''
   });
 
@@ -134,14 +160,30 @@ export default function Projects() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', client: '', manager: '', status: 'Planejado', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), fronts: [], notes: '' });
+    setForm({ name: '', logoUrl: '', client: '', manager: '', status: 'Planejado', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), fronts: [], notes: '' });
     setDialogOpen(true);
   };
 
   const openEdit = (p: Project) => {
     setEditing(p);
-    setForm({ name: p.name, client: p.client, manager: p.manager, status: p.status, startDate: p.startDate, endDate: p.endDate, fronts: p.fronts || [], notes: p.notes });
+    setForm({ name: p.name, logoUrl: p.logoUrl || '', client: p.client, manager: p.manager, status: p.status, startDate: p.startDate, endDate: p.endDate, fronts: p.fronts || [], notes: p.notes });
     setDialogOpen(true);
+  };
+
+  const handleLogoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return toast.error("Selecione um arquivo de imagem");
+    if (file.size > 6 * 1024 * 1024) return toast.error("Use uma imagem de até 6 MB");
+    try {
+      const logoUrl = await resizeLogo(file);
+      setForm(current => ({ ...current, logoUrl }));
+      toast.success("Logotipo carregado");
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao carregar logotipo");
+    } finally {
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
   };
 
   const handleSave = async () => {
@@ -470,7 +512,7 @@ export default function Projects() {
             <TableBody>
               {filtered.map(p => (
                 <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell className="font-medium"><ProjectName project={p} /></TableCell>
                   <TableCell>{p.client}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
@@ -514,6 +556,15 @@ export default function Projects() {
             <DialogTitle>{editing ? 'Editar Projeto' : 'Novo Projeto'}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/20 p-3">
+              <ProjectLogo project={{ name: form.name || "projeto", logoUrl: form.logoUrl }} className="h-16 w-16 rounded-lg" />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => logoInputRef.current?.click()}><ImagePlus className="mr-2 h-4 w-4" />Subir logotipo</Button>
+                {form.logoUrl && <Button type="button" variant="ghost" size="sm" onClick={() => setForm(current => ({ ...current, logoUrl: "" }))}><X className="mr-2 h-4 w-4" />Remover</Button>}
+                <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+                <p className="w-full text-xs text-muted-foreground">PNG, JPG, WebP ou SVG, até 6 MB.</p>
+              </div>
+            </div>
             <div className="grid gap-2">
               <Label>Nome do Projeto</Label>
               <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />

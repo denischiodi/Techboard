@@ -53,6 +53,7 @@ export interface Resource {
 export interface Project {
   id: string;
   name: string;
+  logoUrl?: string;
   client: string;
   manager: string;
   status: ProjectStatus;
@@ -60,6 +61,54 @@ export interface Project {
   endDate: string; // ISO date
   fronts: ResourceFront[]; // frentes necessárias no projeto
   notes: string;
+}
+
+export type GpChecklistStatus = 'Pendente' | 'Em andamento' | 'Concluído' | 'Bloqueado' | 'Não aplicável';
+export type GpChecklistItemType = 'Atividade' | 'Quality Gate';
+
+export interface GpChecklistItem {
+  id: string;
+  projectId: string;
+  templateVersion: string;
+  itemKey: string;
+  phase: string;
+  workstream: string;
+  title: string;
+  description: string;
+  ownerRole: string;
+  itemType: GpChecklistItemType;
+  sortOrder: number;
+  status: GpChecklistStatus;
+  responsible: string;
+  dueDate: string;
+  evidenceUrl: string;
+  notes: string;
+  blockingReason: string;
+  completedAt: string;
+}
+
+export interface GpFitToStandardStep {
+  id: string;
+  cycleId: string;
+  stepKey: string;
+  stepNumber: number;
+  title: string;
+  status: GpChecklistStatus;
+  responsible: string;
+  dueDate: string;
+  evidenceUrl: string;
+  notes: string;
+  blockingReason: string;
+  completedAt: string;
+}
+
+export interface GpFitToStandardCycle {
+  id: string;
+  projectId: string;
+  name: string;
+  module: string;
+  status: GpChecklistStatus;
+  steps: GpFitToStandardStep[];
 }
 
 export interface Phase {

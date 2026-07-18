@@ -24,7 +24,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderKanban, CalendarOff, CalendarRange, ShieldCheck, Lock, Database, KeyRound, Mail, Network, Workflow } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderKanban, CalendarOff, CalendarRange, ShieldCheck, Lock, Database, KeyRound, Mail, Network, Workflow, ClipboardCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -37,6 +37,8 @@ const menuItems = [
   { icon: FolderKanban, label: "Projetos", path: "/projects", permKey: "projects" as const },
   { icon: CalendarOff, label: "Férias/Ausências", path: "/absences", permKey: "absences" as const },
   { icon: CalendarRange, label: "Planner Gantt", path: "/planner", permKey: "planner" as const },
+  { icon: ClipboardCheck, label: "Trilha do GP", path: "/gp-checklist", permKey: "projects" as const },
+  { icon: Workflow, label: "Workflow", path: "/workflow", permKey: "projects" as const },
   { icon: Network, label: "Organograma", path: "/org-chart", permKey: "organogram" as const },
   { icon: Workflow, label: "TechMove", path: "/techmove", permKey: "techmove" as const },
   { icon: ShieldCheck, label: "Gestão de Acesso", path: "/access", permKey: "access" as const },

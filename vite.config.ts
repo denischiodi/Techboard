@@ -1,10 +1,12 @@
 import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import { visualizer } from "rollup-plugin-visualizer";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -56,7 +58,7 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map((entry) => {
+  const lines = entries.map(entry => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -132,7 +134,7 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
-        req.on("data", (chunk) => {
+        req.on("data", chunk => {
           body += chunk.toString();
         });
 
@@ -151,10 +153,40 @@ function vitePluginManusDebugCollector(): Plugin {
 }
 
 const isProductionBuild = process.env.NODE_ENV === "production";
+const shouldUploadSourcemaps = Boolean(
+  process.env.SENTRY_AUTH_TOKEN &&
+    process.env.SENTRY_ORG &&
+    process.env.SENTRY_PROJECT
+);
 const plugins = [
   react(),
   tailwindcss(),
-  ...(isProductionBuild ? [] : [jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()]),
+  ...(isProductionBuild
+    ? []
+    : [
+        jsxLocPlugin(),
+        vitePluginManusRuntime(),
+        vitePluginManusDebugCollector(),
+      ]),
+  ...(process.env.ANALYZE === "true"
+    ? [
+        visualizer({
+          filename: "stats.html",
+          gzipSize: true,
+          brotliSize: true,
+          open: false,
+        }),
+      ]
+    : []),
+  ...(shouldUploadSourcemaps
+    ? [
+        sentryVitePlugin({
+          org: process.env.SENTRY_ORG,
+          project: process.env.SENTRY_PROJECT,
+          authToken: process.env.SENTRY_AUTH_TOKEN,
+        }),
+      ]
+    : []),
 ];
 
 export default defineConfig({
@@ -173,6 +205,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    sourcemap: shouldUploadSourcemaps ? "hidden" : false,
   },
   server: {
     host: true,

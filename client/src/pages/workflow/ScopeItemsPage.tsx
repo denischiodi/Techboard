@@ -10,10 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Plus, Upload, Trash2, Search } from "lucide-react";
-
-const PROJECT_ID = "default-project";
+import { useWorkflowProject } from "./useWorkflowProject";
 
 export default function ScopeItemsPage() {
+  const { projectId: PROJECT_ID } = useWorkflowProject();
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", module: "", code: "", processArea: "", description: "" });
