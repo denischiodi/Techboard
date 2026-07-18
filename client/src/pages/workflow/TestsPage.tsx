@@ -27,6 +27,7 @@ import {
   Download,
   FileImage,
   FlaskConical,
+  Loader2,
   Paperclip,
   Plus,
   Trash2,
@@ -102,12 +103,14 @@ function ScenarioSteps({
     { testCaseId: scenario.id }
   );
   const create = trpc.workflow.tests.steps.create.useMutation({
-    onSuccess: () => {
-      refetch();
+    onSuccess: async () => {
+      await refetch();
       setShowAdd(false);
       setStepForm(emptyStep);
       toast.success("Etapa adicionada");
     },
+    onError: error =>
+      toast.error(error.message || "Não foi possível adicionar a etapa"),
   });
   const update = trpc.workflow.tests.steps.update.useMutation({
     onSuccess: () => {
@@ -341,15 +344,19 @@ function ScenarioSteps({
           </div>
           <DialogFooter>
             <Button
-              disabled={!stepForm.title.trim()}
+              disabled={!stepForm.title.trim() || create.isPending}
               onClick={() =>
                 create.mutate({
                   testCaseId: scenario.id,
                   position: steps.length + 1,
                   ...stepForm,
+                  title: stepForm.title.trim(),
                 })
               }
             >
+              {create.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               Adicionar etapa
             </Button>
           </DialogFooter>

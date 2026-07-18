@@ -3119,10 +3119,10 @@ Retorne APENAS um JSON array com objetos no formato:
       .input(z.object({ id: z.string() }))
       .mutation(({ input }) => wdb.deleteWorkflowTestCase(input.id)),
     steps: router({
-      list: workflowEntityProcedure("workflow_test_cases")
+      list: workflowEntityProcedure("workflow_test_cases", false, "testCaseId")
         .input(z.object({ testCaseId: z.string() }))
         .query(({ input }) => wdb.listWorkflowTestSteps(input.testCaseId)),
-      create: workflowEntityProcedure("workflow_test_cases", true)
+      create: workflowEntityProcedure("workflow_test_cases", true, "testCaseId")
         .input(
           z.object({
             testCaseId: z.string(),
