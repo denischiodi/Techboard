@@ -66,6 +66,12 @@ export interface Project {
 export type GpChecklistStatus = 'Pendente' | 'Em andamento' | 'Em validação' | 'Concluído' | 'Bloqueado' | 'Não aplicável';
 export type GpChecklistItemType = 'Atividade' | 'Quality Gate';
 
+export interface GpDocumentTemplateFile {
+  fileName: string;
+  contentType: string;
+  url: string;
+}
+
 export interface GpChecklistItem {
   id: string;
   projectId: string;
@@ -86,6 +92,7 @@ export interface GpChecklistItem {
   blockingReason: string;
   completedAt: string;
   documentationTemplate: string;
+  documentTemplateFile: GpDocumentTemplateFile | null;
 }
 
 export interface GpFitToStandardStep {
@@ -102,6 +109,7 @@ export interface GpFitToStandardStep {
   blockingReason: string;
   completedAt: string;
   documentationTemplate: string;
+  documentTemplateFile: GpDocumentTemplateFile | null;
 }
 
 export interface GpFitToStandardCycle {

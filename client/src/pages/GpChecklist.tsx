@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Check, ChevronsUpDown, ExternalLink, FileText, Filter, Flag, Loader2, Plus, Search, Settings2, UserRound, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown, Download, ExternalLink, FileText, FileUp, Filter, Flag, Loader2, Plus, Search, Settings2, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,7 @@ type EditForm = {
 };
 
 type GpResource = { id: string; name: string; email: string; profile: string; status: string };
+type GpDocumentTemplateFile = { fileName: string; contentType: string; url: string };
 type DocumentationTemplateType = "execution" | "plan" | "workshop" | "quality-gate";
 type NewActivityForm = {
   phase: typeof PHASES[number];
@@ -127,6 +128,28 @@ function safeEvidenceUrl(value: string) {
   return /^https?:\/\//i.test(value) ? value : "";
 }
 
+function validateWordFile(file: File) {
+  if (!/\.(doc|docx)$/i.test(file.name)) {
+    toast.error("Selecione um arquivo Word .doc ou .docx");
+    return false;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    toast.error("O modelo Word deve ter no máximo 10 MB");
+    return false;
+  }
+  return true;
+}
+
+async function fileToBase64(file: File) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Não foi possível ler o arquivo"));
+    reader.readAsDataURL(file);
+  });
+  return dataUrl.split(",", 2)[1] || "";
+}
+
 export default function GpChecklist() {
   const [, setLocation] = useLocation();
   const [selectedProjectId, setSelectedProjectId] = useState(() => new URLSearchParams(window.location.search).get("projectId") || "");
@@ -134,12 +157,13 @@ export default function GpChecklist() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [workstreamFilter, setWorkstreamFilter] = useState("all");
-  const [editTarget, setEditTarget] = useState<{ kind: "item" | "step"; id: string; title: string; context: string; documentationTemplate: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<{ kind: "item" | "step"; id: string; title: string; context: string; documentationTemplate: string; documentTemplateFile: GpDocumentTemplateFile | null } | null>(null);
   const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT_FORM);
   const [cycleDialogOpen, setCycleDialogOpen] = useState(false);
   const [cycleForm, setCycleForm] = useState({ name: "", module: "" });
   const [activityDialogOpen, setActivityDialogOpen] = useState(false);
   const [activityForm, setActivityForm] = useState<NewActivityForm>(EMPTY_NEW_ACTIVITY);
+  const [newActivityWordFile, setNewActivityWordFile] = useState<File | null>(null);
 
   const utils = trpc.useUtils();
   const { data: projects = [], isLoading: projectsLoading } = trpc.projects.list.useQuery();
@@ -180,11 +204,32 @@ export default function GpChecklist() {
     },
     onError: error => toast.error(error.message || "Não foi possível criar o ciclo"),
   });
+  const uploadDocumentTemplate = trpc.gpChecklist.uploadDocumentTemplate.useMutation({
+    onError: error => toast.error(error.message || "Não foi possível anexar o modelo Word"),
+  });
+  const removeDocumentTemplate = trpc.gpChecklist.removeDocumentTemplate.useMutation({
+    onError: error => toast.error(error.message || "Não foi possível remover o modelo Word"),
+  });
   const createItem = trpc.gpChecklist.createItem.useMutation({
     onSuccess: async created => {
+      if (newActivityWordFile) {
+        try {
+          await uploadDocumentTemplate.mutateAsync({
+            projectId: selectedProjectId,
+            targetKind: "item",
+            targetId: created.id,
+            fileName: newActivityWordFile.name,
+            contentType: newActivityWordFile.type,
+            fileData: await fileToBase64(newActivityWordFile),
+          });
+        } catch {
+          toast.warning("A atividade foi criada, mas o modelo Word não pôde ser anexado");
+        }
+      }
       await refresh();
       setActivityDialogOpen(false);
       setActivityForm({ ...EMPTY_NEW_ACTIVITY, phase });
+      setNewActivityWordFile(null);
       toast.success(`Atividade “${created.title}” adicionada`);
     },
     onError: error => toast.error(error.message || "Não foi possível criar a atividade"),
@@ -236,6 +281,7 @@ export default function GpChecklist() {
       title: current.title,
       context: kind === "item" ? `${current.phase} · ${current.workstream}` : "Explore · Fit-to-Standard",
       documentationTemplate: current.documentationTemplate || "",
+      documentTemplateFile: current.documentTemplateFile || null,
     });
     setEditForm({
       status: current.status || "Pendente",
@@ -259,7 +305,45 @@ export default function GpChecklist() {
 
   const openNewActivity = () => {
     setActivityForm({ ...EMPTY_NEW_ACTIVITY, phase });
+    setNewActivityWordFile(null);
     setActivityDialogOpen(true);
+  };
+
+  const uploadWordForEditTarget = async (file?: File) => {
+    if (!file || !editTarget || !validateWordFile(file)) return;
+    try {
+      uploadDocumentTemplate.mutate({
+        projectId: selectedProjectId,
+        targetKind: editTarget.kind,
+        targetId: editTarget.id,
+        fileName: file.name,
+        contentType: file.type,
+        fileData: await fileToBase64(file),
+      }, {
+        onSuccess: async updated => {
+          setEditTarget(current => current ? { ...current, documentTemplateFile: updated.documentTemplateFile } : current);
+          await refresh();
+          toast.success("Modelo Word anexado à atividade");
+        },
+      });
+    } catch {
+      toast.error("Não foi possível ler o arquivo Word selecionado");
+    }
+  };
+
+  const removeWordFromEditTarget = () => {
+    if (!editTarget) return;
+    removeDocumentTemplate.mutate({
+      projectId: selectedProjectId,
+      targetKind: editTarget.kind,
+      targetId: editTarget.id,
+    }, {
+      onSuccess: async () => {
+        setEditTarget(current => current ? { ...current, documentTemplateFile: null } : current);
+        await refresh();
+        toast.success("Modelo Word removido da atividade");
+      },
+    });
   };
 
   const saveEditor = () => {
@@ -403,6 +487,7 @@ export default function GpChecklist() {
                             <span>Papel: {item.ownerRole}</span>
                             <span>Responsável: {item.responsible || "a definir"}</span>
                             <span>Prazo: {item.dueDate || "a definir"}</span>
+                            {item.documentTemplateFile && <a className="inline-flex items-center gap-1 font-medium text-primary hover:underline" href={item.documentTemplateFile.url} target="_blank" rel="noreferrer" title={item.documentTemplateFile.fileName}><Download className="h-3 w-3" />Modelo Word</a>}
                             {safeEvidenceUrl(item.evidenceUrl) && <a className="inline-flex items-center gap-1 text-primary hover:underline" href={safeEvidenceUrl(item.evidenceUrl)} target="_blank" rel="noreferrer">Evidência <ExternalLink className="h-3 w-3" /></a>}
                           </div>
                           {item.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{item.notes}</p>}
@@ -445,6 +530,7 @@ export default function GpChecklist() {
                               <p className="mt-1 text-xs text-muted-foreground">{step.responsible || "Responsável a definir"}{step.dueDate ? ` · ${step.dueDate}` : ""}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-2">
                                 <Badge variant="outline" className={statusClass(step.status)}>{step.status}</Badge>
+                                {step.documentTemplateFile && <a className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline" href={step.documentTemplateFile.url} target="_blank" rel="noreferrer" title={step.documentTemplateFile.fileName}><Download className="h-3 w-3" />Modelo Word</a>}
                                 {safeEvidenceUrl(step.evidenceUrl) && <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href={safeEvidenceUrl(step.evidenceUrl)} target="_blank" rel="noreferrer">Evidência <ExternalLink className="h-3 w-3" /></a>}
                               </div>
                               {step.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{step.notes}</p>}
@@ -497,6 +583,37 @@ export default function GpChecklist() {
                   <FileText className="mr-2 h-4 w-4" />Inserir modelo padrão
                 </Button>
               </div>
+              <div className="rounded-lg border border-dashed bg-muted/20 p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-medium">Modelo Word desta atividade</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Deixe o documento padrão pronto para o responsável baixar e preencher. Formatos .doc e .docx, até 10 MB.</p>
+                </div>
+                {editTarget?.documentTemplateFile ? (
+                  <div className="flex flex-col gap-3 rounded-md border bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <a href={editTarget.documentTemplateFile.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 text-sm font-medium text-primary hover:underline">
+                      <FileText className="h-5 w-5 shrink-0" />
+                      <span className="truncate">{editTarget.documentTemplateFile.fileName}</span>
+                      <Download className="h-4 w-4 shrink-0" />
+                    </a>
+                    <div className="flex flex-wrap gap-2">
+                      <Label className={cn("inline-flex h-9 cursor-pointer items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-accent", uploadDocumentTemplate.isPending && "pointer-events-none opacity-50")}>
+                        <FileUp className="mr-2 h-4 w-4" />Substituir
+                        <Input className="hidden" type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event => { void uploadWordForEditTarget(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+                      </Label>
+                      <Button type="button" variant="outline" size="sm" onClick={removeWordFromEditTarget} disabled={removeDocumentTemplate.isPending}>
+                        {removeDocumentTemplate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}Remover
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Label className={cn("flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-md border bg-background px-4 py-3 text-center hover:bg-accent/50", uploadDocumentTemplate.isPending && "pointer-events-none opacity-50")}>
+                    {uploadDocumentTemplate.isPending ? <Loader2 className="mb-2 h-5 w-5 animate-spin text-primary" /> : <FileUp className="mb-2 h-5 w-5 text-primary" />}
+                    <span className="text-sm font-medium">Anexar modelo Word</span>
+                    <span className="text-xs text-muted-foreground">Clique para selecionar o documento</span>
+                    <Input className="hidden" type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event => { void uploadWordForEditTarget(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+                  </Label>
+                )}
+              </div>
               <div className="space-y-2"><Label htmlFor="gp-edit-notes">Registro e observações</Label><Textarea id="gp-edit-notes" value={editForm.notes} onChange={event => setEditForm(current => ({ ...current, notes: event.target.value }))} rows={10} placeholder="Registre aqui decisões, ações, pendências e aceite." /></div>
               <div className="space-y-2"><Label htmlFor="gp-edit-evidence">Evidência ou link</Label><Input id="gp-edit-evidence" type="url" value={editForm.evidenceUrl} onChange={event => setEditForm(current => ({ ...current, evidenceUrl: event.target.value }))} placeholder="https://..." /></div>
             </section>
@@ -508,7 +625,7 @@ export default function GpChecklist() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={activityDialogOpen} onOpenChange={setActivityDialogOpen}>
+      <Dialog open={activityDialogOpen} onOpenChange={open => { setActivityDialogOpen(open); if (!open) setNewActivityWordFile(null); }}>
         <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto p-0">
           <DialogHeader className="border-b px-6 py-5 pr-12 text-left">
             <DialogTitle>Nova atividade da Trilha do GP</DialogTitle>
@@ -533,10 +650,25 @@ export default function GpChecklist() {
               </div>
               {activityForm.includeDocumentationTemplate && <div className="space-y-2"><Label htmlFor="gp-new-template-type">Modelo</Label><Select value={activityForm.documentationTemplateType} onValueChange={value => setActivityForm(current => ({ ...current, documentationTemplateType: value as DocumentationTemplateType }))}><SelectTrigger id="gp-new-template-type"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(DOCUMENTATION_TEMPLATE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>}
             </div>
+            <div className="grid gap-3 rounded-lg border border-dashed p-4">
+              <div><p className="text-sm font-medium">Modelo Word da atividade <span className="font-normal text-muted-foreground">(opcional)</span></p><p className="mt-1 text-xs text-muted-foreground">Anexe o documento padrão que o responsável deverá baixar e preencher.</p></div>
+              {newActivityWordFile ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+                  <div className="flex min-w-0 items-center gap-2 text-sm"><FileText className="h-5 w-5 shrink-0 text-primary" /><span className="truncate">{newActivityWordFile.name}</span></div>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => setNewActivityWordFile(null)} aria-label="Remover modelo Word selecionado"><X className="h-4 w-4" /></Button>
+                </div>
+              ) : (
+                <Label className="flex min-h-16 cursor-pointer items-center justify-center gap-2 rounded-md border bg-muted/10 px-4 text-sm font-medium hover:bg-accent/50">
+                  <FileUp className="h-4 w-4 text-primary" />Selecionar arquivo .doc ou .docx
+                  <Input className="hidden" type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event => { const file = event.target.files?.[0]; if (file && validateWordFile(file)) setNewActivityWordFile(file); event.currentTarget.value = ""; }} />
+                </Label>
+              )}
+              <p className="text-xs text-muted-foreground">Tamanho máximo: 10 MB.</p>
+            </div>
           </div>
           <DialogFooter className="sticky bottom-0 border-t bg-background px-6 py-4">
             <Button variant="outline" onClick={() => setActivityDialogOpen(false)}>Cancelar</Button>
-            <Button disabled={!activityForm.title.trim() || !activityForm.workstream.trim() || createItem.isPending} onClick={() => createItem.mutate({ projectId: selectedProjectId, ...activityForm, title: activityForm.title.trim(), workstream: activityForm.workstream.trim(), description: activityForm.description.trim(), ownerRole: activityForm.ownerRole.trim() })}>{createItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Criar atividade</Button>
+            <Button disabled={!activityForm.title.trim() || !activityForm.workstream.trim() || createItem.isPending || uploadDocumentTemplate.isPending} onClick={() => createItem.mutate({ projectId: selectedProjectId, ...activityForm, title: activityForm.title.trim(), workstream: activityForm.workstream.trim(), description: activityForm.description.trim(), ownerRole: activityForm.ownerRole.trim() })}>{(createItem.isPending || uploadDocumentTemplate.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Criar atividade</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

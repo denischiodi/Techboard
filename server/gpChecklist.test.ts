@@ -7,6 +7,7 @@ import {
   createFitToStandardCycle,
   listFitToStandardCycles,
   listProjectChecklist,
+  setDocumentTemplateFile,
   updateChecklistItem,
   updateFitToStandardStep,
 } from "./gpChecklistStore";
@@ -82,5 +83,21 @@ describe("Trilha do GP", () => {
     expect(created.notes).toContain("## Entregáveis");
     expect(created.documentationTemplate).toContain("# Validar plano de comunicação");
     expect((await listProjectChecklist(project)).some(item => item.id === created.id)).toBe(true);
+  });
+
+  it("mantém um modelo Word separado por atividade e permite removê-lo", async () => {
+    const project = testProject("gp-word-template");
+    const [item] = await listProjectChecklist(project);
+    const attachment = {
+      fileName: "Plano-do-Projeto.docx",
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      url: "/manus-storage/gp-checklist/plano.docx",
+    };
+
+    await setDocumentTemplateFile(project.id, "item", item.id, attachment);
+    expect((await listProjectChecklist(project))[0].documentTemplateFile).toEqual(attachment);
+
+    await setDocumentTemplateFile(project.id, "item", item.id, null);
+    expect((await listProjectChecklist(project))[0].documentTemplateFile).toBeNull();
   });
 });

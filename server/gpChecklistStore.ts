@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   GpChecklistItem,
   GpChecklistStatus,
+  GpDocumentTemplateFile,
   GpFitToStandardCycle,
   GpFitToStandardStep,
   Project,
@@ -39,6 +40,18 @@ function documentationTemplateTypeFromItemKey(itemKey: unknown): GpDocumentation
   return match?.[1] as GpDocumentationTemplateType | undefined;
 }
 
+function documentTemplateFileFromRow(row: any): GpDocumentTemplateFile | null {
+  if (row.documentTemplateFile?.fileName && row.documentTemplateFile?.url) {
+    return row.documentTemplateFile as GpDocumentTemplateFile;
+  }
+  if (!row.documentTemplateFileName || !row.documentTemplateFileUrl) return null;
+  return {
+    fileName: String(row.documentTemplateFileName),
+    contentType: String(row.documentTemplateFileContentType || "application/octet-stream"),
+    url: String(row.documentTemplateFileUrl),
+  };
+}
+
 function toChecklistItem(row: any): GpChecklistItem {
   return {
     ...row,
@@ -52,6 +65,7 @@ function toChecklistItem(row: any): GpChecklistItem {
       ...row,
       templateType: documentationTemplateTypeFromItemKey(row.itemKey),
     }),
+    documentTemplateFile: documentTemplateFileFromRow(row),
   } as GpChecklistItem;
 }
 
@@ -70,6 +84,7 @@ function toCycleStep(row: any): GpFitToStandardStep {
       workstream: "Fit-to-Standard",
       templateType: "workshop",
     }),
+    documentTemplateFile: documentTemplateFileFromRow(row),
   } as GpFitToStandardStep;
 }
 
@@ -111,6 +126,7 @@ export async function ensureProjectChecklist(project: Pick<Project, "id" | "mana
         blockingReason: "",
         completedAt: "",
         documentationTemplate: buildGpDocumentationTemplate(catalogItem),
+        documentTemplateFile: null,
       }];
     });
     memoryItems.set(project.id, [...existing, ...additions]);
@@ -201,6 +217,7 @@ export async function createChecklistItem(projectId: string, input: CreateCheckl
     blockingReason: "",
     completedAt: "",
     documentationTemplate,
+    documentTemplateFile: null,
   };
 
   const pool = getPgPool();
@@ -262,6 +279,56 @@ export async function updateChecklistItem(projectId: string, id: string, data: C
   return toChecklistItem(result.rows[0]);
 }
 
+export type GpDocumentTemplateTarget = "item" | "step";
+
+export async function setDocumentTemplateFile(
+  projectId: string,
+  targetKind: GpDocumentTemplateTarget,
+  targetId: string,
+  file: GpDocumentTemplateFile | null,
+) {
+  const pool = getPgPool();
+  if (!pool) {
+    if (targetKind === "item") {
+      const items = memoryItems.get(projectId) || [];
+      const item = items.find(current => current.id === targetId);
+      if (!item) throw new Error("Atividade não encontrada");
+      item.documentTemplateFile = file;
+      return item;
+    }
+    const cycle = (memoryCycles.get(projectId) || []).find(current => current.steps.some(step => step.id === targetId));
+    const step = cycle?.steps.find(current => current.id === targetId);
+    if (!step) throw new Error("Etapa Fit-to-Standard não encontrada");
+    step.documentTemplateFile = file;
+    return step;
+  }
+
+  const values = file ? [file.fileName, file.contentType, file.url] : ["", "", ""];
+  if (targetKind === "item") {
+    const result = await pool.query(
+      `UPDATE "gp_checklist_items"
+       SET "documentTemplateFileName" = $3, "documentTemplateFileContentType" = $4,
+           "documentTemplateFileUrl" = $5, "updatedAt" = now()
+       WHERE "projectId" = $1 AND "id" = $2 RETURNING *`,
+      [projectId, targetId, ...values],
+    );
+    if (!result.rows[0]) throw new Error("Atividade não encontrada");
+    return toChecklistItem(result.rows[0]);
+  }
+
+  const result = await pool.query(
+    `UPDATE "gp_fit_to_standard_steps" s
+     SET "documentTemplateFileName" = $3, "documentTemplateFileContentType" = $4,
+         "documentTemplateFileUrl" = $5, "updatedAt" = now()
+     FROM "gp_fit_to_standard_cycles" c
+     WHERE s."cycleId" = c."id" AND c."projectId" = $1 AND s."id" = $2
+     RETURNING s.*`,
+    [projectId, targetId, ...values],
+  );
+  if (!result.rows[0]) throw new Error("Etapa Fit-to-Standard não encontrada");
+  return toCycleStep(result.rows[0]);
+}
+
 export async function listFitToStandardCycles(projectId: string): Promise<GpFitToStandardCycle[]> {
   const pool = getPgPool();
   if (!pool) return memoryCycles.get(projectId) || [];
@@ -298,6 +365,7 @@ export async function createFitToStandardCycle(projectId: string, name: string, 
     title: step.title, status: "Pendente", responsible: "", dueDate: "", evidenceUrl: "",
     notes: "", blockingReason: "", completedAt: "",
     documentationTemplate: buildGpDocumentationTemplate({ title: step.title, phase: "Explore", workstream: "Fit-to-Standard", templateType: "workshop" }),
+    documentTemplateFile: null,
   }));
 
   const pool = getPgPool();
