@@ -35,6 +35,23 @@ describe("kanban de atividades", () => {
     expect((await admin.activities.list()).some(item => item.id === created.id)).toBe(true);
   });
 
+  it("importa novas atividades e atualiza atividades manuais pelo Excel", async () => {
+    const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    const imported = await caller.activities.importExcel({ rows: [{
+      rowNumber: 2, id: "", scope: "project", projectId: "p1", title: "Importada do Excel", description: "Carga inicial",
+      status: "A fazer", priority: "Média", assigneeUserId: "u3", participantUserIds: ["u3"], dueDate: "2035-07-01",
+    }] });
+    expect(imported).toMatchObject({ created: 1, updated: 0, errors: [] });
+    const activity = (await caller.activities.list()).find(item => item.title === "Importada do Excel");
+    expect(activity).toBeTruthy();
+    const updated = await caller.activities.importExcel({ rows: [{
+      rowNumber: 2, id: activity!.id, scope: "project", projectId: "p1", title: "Importada e atualizada", description: "Carga revisada",
+      status: "Em andamento", priority: "Alta", assigneeUserId: "u3", participantUserIds: ["u3"], dueDate: "2035-07-02",
+    }] });
+    expect(updated).toMatchObject({ created: 0, updated: 1, errors: [] });
+    expect((await caller.activities.get({ id: activity!.id })).title).toBe("Importada e atualizada");
+  });
+
   it("bloqueia conclusão enquanto houver checklist obrigatório pendente", async () => {
     const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const activity = await caller.activities.create({

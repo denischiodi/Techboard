@@ -293,6 +293,30 @@ export async function removeParticipant(activityId: string, userId: string) {
   return getActivity(activityId);
 }
 
+export async function replaceParticipants(activityId: string, userIds: string[]) {
+  const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+  const db = getPgPool();
+  if (!db) {
+    memoryParticipants.set(activityId, new Set(uniqueUserIds));
+  } else {
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query('DELETE FROM "activity_participants" WHERE "activityId" = $1', [activityId]);
+      for (const userId of uniqueUserIds) {
+        await client.query('INSERT INTO "activity_participants" ("activityId","userId") VALUES ($1,$2) ON CONFLICT DO NOTHING', [activityId, userId]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  return getActivity(activityId);
+}
+
 export async function addHistory(activityId: string, actor: Pick<AppUser, "id" | "name"> | null, action: string, details: Record<string, unknown> = {}) {
   const event: ActivityHistoryEvent = { id: id("ahe"), activityId, actorUserId: actor?.id || "", actorName: actor?.name || "Sistema", action, details, createdAt: now() };
   const db = getPgPool();

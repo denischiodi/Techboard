@@ -1,5 +1,5 @@
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -15,8 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CheckCircle2, Circle, ExternalLink, FileUp,
-  GripVertical, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, UserPlus, Users,
+  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
+  GripVertical, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users,
 } from "lucide-react";
 import type { Activity, ActivityPriority, ActivityScope, ActivityStatus } from "../../../shared/types";
 
@@ -90,6 +90,27 @@ function normalizeSearch(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
+function splitIds(value: unknown) {
+  return String(value || "").split(/[;,]/).map(item => item.trim()).filter(Boolean);
+}
+
+function excelDate(value: unknown, XLSX: typeof import("xlsx")) {
+  if (!value) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === "number") {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+  }
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : text;
+}
+
+function dateForExcel(value: string) {
+  return value ? new Date(`${value}T12:00:00`) : "";
+}
+
 export default function Activities() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -103,6 +124,7 @@ export default function Activities() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [dueFilter, setDueFilter] = useState<"all" | "overdue" | "not_overdue" | "no_due">("all");
+  const excelInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("activityId"));
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", dueDate: "" });
@@ -111,6 +133,15 @@ export default function Activities() {
   const eligibleUsers = trpc.activities.eligibleUsers.useQuery({ scope: createForm.scope, projectId: createForm.projectId }, { enabled: createOpen && (createForm.scope === "internal" || Boolean(createForm.projectId)) });
   const updateActivity = trpc.activities.update.useMutation({ onSuccess: async () => { await utils.activities.list.invalidate(); }, onError: error => toast.error(error.message) });
   const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", title: "", description: "", priority: "Média", assigneeUserId: "", dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
+  const importExcel = trpc.activities.importExcel.useMutation({
+    onSuccess: async result => {
+      await utils.activities.list.invalidate();
+      const summary = `${result.created} criada(s), ${result.updated} atualizada(s)`;
+      if (result.errors.length) toast.warning(`${summary}. ${result.errors.length} linha(s) com erro: ${result.errors.slice(0, 3).map(error => `linha ${error.rowNumber}: ${error.message}`).join("; ")}`);
+      else toast.success(`Importação concluída: ${summary}`);
+    },
+    onError: error => toast.error(error.message),
+  });
 
   const activities = activitiesQuery.data || [];
   const selected = activities.find(activity => activity.id === selectedId) || null;
@@ -138,6 +169,72 @@ export default function Activities() {
 
   const assignees = useMemo(() => [...new Map(activities.filter(activity => activity.assigneeUserId).map(activity => [activity.assigneeUserId, activity.assigneeName || "Usuário sem nome"])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [activities]);
 
+  const handleExportExcel = async () => {
+    const XLSX = await import("xlsx");
+    const pending = activities.filter(activity => activity.status !== "Concluída");
+    const rows = pending.map(activity => ({
+      ID: activity.id, Escopo: activity.scope, "Projeto ID": activity.projectId, Projeto: activity.projectName,
+      Título: activity.title, Descrição: activity.description, Status: activity.status, Prioridade: activity.priority,
+      "Responsável ID": activity.assigneeUserId, Responsável: activity.assigneeName,
+      "E-mail do responsável": activity.participants.find(person => person.id === activity.assigneeUserId)?.email || "",
+      "Criador ID": activity.creatorUserId, Criador: activity.creatorName, Prazo: dateForExcel(activity.dueDate),
+      Origem: activity.sourceType, "Chave da origem": activity.sourceKey, "URL da origem": activity.sourceUrl,
+      Resolvida: activity.sourceResolved ? "Sim" : "Não",
+      "Participantes IDs": activity.participantUserIds.join("; "),
+      Participantes: activity.participants.map(person => `${person.name} <${person.email}>`).join("; "),
+      Checklist: activity.checklist.map(item => `${item.completed ? "[x]" : "[ ]"} ${item.description}${item.assigneeName ? ` (${item.assigneeName})` : ""}`).join(" | "),
+      Comentários: activity.comments.map(item => `${item.authorName}: ${item.content}`).join(" | "),
+      Anexos: activity.attachments.map(item => `${item.fileName}: ${item.url}`).join(" | "),
+      Histórico: activity.history.map(item => `${item.createdAt} - ${item.actorName}: ${item.action}`).join(" | "),
+      "Concluída em": activity.completedAt, "Criada em": activity.createdAt, "Atualizada em": activity.updatedAt,
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows, { cellDates: true });
+    sheet["!autofilter"] = { ref: sheet["!ref"] || "A1:Y1" };
+    const headers = Object.keys(rows[0] || { ID: "" });
+    sheet["!cols"] = headers.map(header => ({ wch: Math.min(55, Math.max(12, header.length + 2, ...rows.map(row => String(row[header as keyof typeof row] || "").length + 2))) }));
+    for (let row = 2; row <= rows.length + 1; row += 1) if (sheet[`N${row}`]) sheet[`N${row}`].z = "yyyy-mm-dd";
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Pendências Kanban");
+    XLSX.writeFile(workbook, `pendencias-kanban-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handleImportExcel = async (file?: File) => {
+    if (!file) return;
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
+      const localErrors: string[] = [];
+      const rows = rawRows.flatMap((row, index) => {
+        const rowNumber = index + 2;
+        const scopeText = normalizeSearch(String(row.Escopo || ""));
+        const scope: ActivityScope | "" = scopeText === "internal" || scopeText.includes("interna") ? "internal" : scopeText === "project" || scopeText === "projeto" ? "project" : "";
+        const status = STATUSES.find(item => normalizeSearch(item) === normalizeSearch(String(row.Status || "A fazer")));
+        const priority = PRIORITIES.find(item => normalizeSearch(item) === normalizeSearch(String(row.Prioridade || "Média")));
+        const title = String(row["Título"] || row.Titulo || "").trim();
+        const dueDate = excelDate(row.Prazo, XLSX);
+        if (!scope || !status || !priority || !title || (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate))) {
+          localErrors.push(`linha ${rowNumber}: escopo, título, status, prioridade ou prazo inválido`);
+          return [];
+        }
+        return [{
+          rowNumber, id: String(row.ID || "").trim(), scope, projectId: String(row["Projeto ID"] || "").trim(),
+          title, description: String(row["Descrição"] || row.Descricao || ""), status, priority,
+          assigneeUserId: String(row["Responsável ID"] || row["Responsavel ID"] || "").trim(),
+          participantUserIds: splitIds(row["Participantes IDs"]), dueDate,
+        }];
+      });
+      if (!rows.length) throw new Error(localErrors[0] || "A planilha não contém linhas para importar");
+      if (localErrors.length) toast.warning(`${localErrors.length} linha(s) ignoradas: ${localErrors.slice(0, 3).join("; ")}`);
+      importExcel.mutate({ rows });
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      if (excelInputRef.current) excelInputRef.current.value = "";
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const activity = activities.find(item => item.id === event.active.id);
     const status = event.over?.id as ActivityStatus | undefined;
@@ -149,7 +246,12 @@ export default function Activities() {
     <div className="space-y-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div><h1 className="text-2xl font-bold">Atividades</h1><p className="text-sm text-muted-foreground">Tarefas manuais e pendências integradas dos projetos.</p></div>
-        <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova atividade</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void handleExportExcel()}><Download className="mr-2 h-4 w-4" />Baixar Excel</Button>
+          <Button variant="outline" disabled={importExcel.isPending} onClick={() => excelInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" />Importar Excel</Button>
+          <input ref={excelInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={event => void handleImportExcel(event.target.files?.[0])} />
+          <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Nova atividade</Button>
+        </div>
       </div>
       <Card><CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:flex-wrap lg:items-center">
         <div className="flex gap-1 rounded-lg bg-muted p-1">{(["mine", "projects", "internal"] as const).map(key => <Button key={key} size="sm" variant={view === key ? "default" : "ghost"} onClick={() => setView(key)}>{key === "mine" ? "Minhas" : key === "projects" ? "Projetos" : "Operação interna"}</Button>)}</div>

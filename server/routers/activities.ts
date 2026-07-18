@@ -11,6 +11,12 @@ import { storagePut } from "../storage";
 const statusSchema = z.enum(["A fazer", "Em andamento", "Bloqueada", "Em validação", "Concluída"]);
 const prioritySchema = z.enum(["Baixa", "Média", "Alta", "Crítica"]);
 const isoDateSchema = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
+const importRowSchema = z.object({
+  rowNumber: z.number().int().positive(), id: z.string().default(""), scope: z.enum(["project", "internal"]),
+  projectId: z.string().default(""), title: z.string().trim().min(1).max(500), description: z.string().max(10000).default(""),
+  status: statusSchema.default("A fazer"), priority: prioritySchema.default("Média"), assigneeUserId: z.string().default(""),
+  participantUserIds: z.array(z.string()).default([]), dueDate: isoDateSchema.default(""),
+});
 
 function forbidden(message = "Sem permissão para esta atividade"): never {
   throw new TRPCError({ code: "FORBIDDEN", message });
@@ -159,6 +165,52 @@ export const activitiesRouter = router({
     const current = await activityStore.getActivity(created.id) as Activity;
     await notify(current, ctx.appUser, "assigned", `${ctx.appUser.name} criou e atribuiu uma atividade.`);
     return current;
+  }),
+
+  importExcel: activityCreateProcedure.input(z.object({ rows: z.array(importRowSchema).min(1).max(1000) })).mutation(async ({ ctx, input }) => {
+    const results: Array<{ rowNumber: number; id?: string; action?: "created" | "updated"; error?: string }> = [];
+    for (const row of input.rows) {
+      try {
+        const participantUserIds = [...new Set(row.participantUserIds.filter(Boolean))];
+        if (row.scope === "project") {
+          const project = await plannerStore.getProjectById(row.projectId);
+          if (!project) throw new Error("Projeto não encontrado");
+          const members = await projectMemberIds(project);
+          if (ctx.appUser.role !== "admin" && !members.has(ctx.appUser.id)) throw new Error("Usuário não participa do projeto");
+          for (const userId of [row.assigneeUserId, ...participantUserIds]) if (userId && !members.has(userId)) throw new Error(`Usuário ${userId} não participa do projeto`);
+        } else {
+          for (const userId of [row.assigneeUserId, ...participantUserIds]) await assertEligibleUser({ scope: "internal", projectId: "" }, userId);
+        }
+
+        if (!row.id) {
+          const created = await activityStore.createActivity({ ...row, creatorUserId: ctx.appUser.id, participantUserIds });
+          if (!created) throw new Error("Não foi possível criar a atividade");
+          await activityStore.addHistory(created.id, ctx.appUser, "EXCEL_IMPORTED", { rowNumber: row.rowNumber });
+          results.push({ rowNumber: row.rowNumber, id: created.id, action: "created" });
+          continue;
+        }
+
+        const current = await requireActivity(row.id, ctx.appUser, true);
+        if (current.sourceType !== "manual") throw new Error("Atividades automáticas não podem ser alteradas por Excel");
+        if (current.scope !== row.scope || current.projectId !== row.projectId) throw new Error("Escopo e projeto não podem ser alterados por Excel");
+        if (row.status === "Concluída" && current.checklist.some(item => item.required && !item.completed)) throw new Error("Há itens obrigatórios pendentes no checklist");
+        const updated = await activityStore.updateActivity(row.id, {
+          title: row.title, description: row.description, status: row.status, priority: row.priority,
+          assigneeUserId: row.assigneeUserId, dueDate: row.dueDate,
+        });
+        if (!updated) throw new Error("Atividade não encontrada");
+        await activityStore.replaceParticipants(row.id, [...participantUserIds, current.creatorUserId, row.assigneeUserId]);
+        await activityStore.addHistory(row.id, ctx.appUser, "EXCEL_IMPORTED", { rowNumber: row.rowNumber });
+        results.push({ rowNumber: row.rowNumber, id: row.id, action: "updated" });
+      } catch (error) {
+        results.push({ rowNumber: row.rowNumber, error: error instanceof Error ? error.message : "Erro inesperado" });
+      }
+    }
+    return {
+      created: results.filter(result => result.action === "created").length,
+      updated: results.filter(result => result.action === "updated").length,
+      errors: results.filter(result => result.error).map(result => ({ rowNumber: result.rowNumber, message: result.error as string })),
+    };
   }),
 
   update: activityModifyProcedure.input(z.object({
