@@ -145,7 +145,7 @@ const gapImpactSchema = z.enum(["Alto", "Médio", "Baixo"]);
 const workshopStatusSchema = z.enum(["Planejado", "Agendado", "Realizado", "Concluído", "Cancelado"]);
 const dcdStatusSchema = z.enum(["Rascunho", "Em revisão", "Aprovado"]);
 const paginationInput = { offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(500).optional() };
-const testTypeSchema = z.enum(["Unitário", "Integrado"]);
+const testTypeSchema = z.enum(["Unitário consultor", "Unitário key user", "Integrado 1", "Integrado 2"]);
 const testStatusSchema = z.enum(["Não iniciado", "Em execução", "Aprovado", "Reprovado", "Bloqueado"]);
 
 async function getDcdGenerationContext(projectId: string, module?: string) {
@@ -395,7 +395,7 @@ export const workflowRouter = router({
         { id: "dcd", percent: percent(approvedDcds, documents.length), label: `${approvedDcds} de ${documents.length} aprovados` },
         { id: "gaps", percent: percent(resolvedGaps, gapList.length), label: `${resolvedGaps} de ${gapList.length} resolvidos` },
         { id: "configurations", percent: percent(completedConfigs, configList.length), label: `${completedConfigs} de ${configList.length} concluídas` },
-        { id: "tests", percent: percent(approvedTests, testCases.length), label: `${approvedTests} de ${testCases.length} aprovados · ${testCases.filter((item: any) => item.type === "Unitário").length} unitários · ${testCases.filter((item: any) => item.type === "Integrado").length} integrados` },
+        { id: "tests", percent: percent(approvedTests, testCases.length), label: `${approvedTests} de ${testCases.length} aprovados · ${testCases.filter((item: any) => item.type?.startsWith("Unitário")).length} unitários · ${testCases.filter((item: any) => item.type?.startsWith("Integrado")).length} integrados` },
       ],
     };
   }),

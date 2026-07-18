@@ -439,7 +439,7 @@ export const configurations = mysqlTable("configurations", {
 export const workflowTestCases = mysqlTable("workflow_test_cases", {
   id: varchar("id", { length: 64 }).primaryKey(),
   projectId: varchar("projectId", { length: 64 }).notNull(),
-  type: varchar("type", { length: 32 }).notNull().default("Unitário"),
+  type: varchar("type", { length: 32 }).notNull().default("Unitário consultor"),
   code: varchar("code", { length: 128 }).notNull().default(""),
   title: varchar("title", { length: 512 }).notNull(),
   description: text("description"),
