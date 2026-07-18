@@ -1,7 +1,7 @@
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { invokeLLM, listLLMModels } from "../_core/llm";
+import { invokeLLM, invokeLLMStream, listLLMModels } from "../_core/llm";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import * as wdb from "./workflowDb";
 import { TRPCError } from "@trpc/server";
@@ -166,6 +166,64 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
   };
   const sourceHash = createHash("sha256").update(JSON.stringify(hashPayload)).digest("hex");
   return { filteredScope, filteredQuestions, filteredRequirements, answerMap, sourceHash };
+}
+
+export async function streamDcdGeneration(input: {
+  projectId: string;
+  module?: string;
+  forceRegenerate?: boolean;
+  user: { id: string; name: string };
+  onDelta: (text: string) => void | Promise<void>;
+}) {
+  const { filteredScope, filteredQuestions, filteredRequirements, answerMap, sourceHash } = await getDcdGenerationContext(input.projectId, input.module);
+  const cached = await wdb.findDcdBySourceHash(input.projectId, sourceHash);
+  if (cached && !input.forceRegenerate) {
+    await recordWorkflowAudit({ user: input.user }, input.projectId, "DCD_CACHE_REUSED", "dcd", cached.id, { version: cached.version, module: input.module || "" });
+    return { id: cached.id, title: cached.title, content: cached.content, version: cached.version, cached: true };
+  }
+  const answeredCount = filteredQuestions.filter((question: any) => answerMap.has(question.id)).length;
+  const completion = filteredQuestions.length === 0 ? 0 : answeredCount / filteredQuestions.length;
+  if (filteredQuestions.length > 0 && completion < 0.7) {
+    const pending = filteredQuestions.filter((question: any) => !answerMap.has(question.id)).slice(0, 10);
+    throw new Error(`Complete ao menos 70% do BDCQ antes de gerar o DCD. Progresso atual: ${Math.round(completion * 100)}%. Pendentes: ${pending.map((question: any) => question.question).join("; ")}`);
+  }
+  const prompt = `Você é um consultor SAP sênior. Gere um documento DCD (Design de Configuração Detalhada) para o módulo "${input.module || "Geral"}".
+
+Scope Items relevantes (${filteredScope.length}):
+${filteredScope.slice(0, 15).map((scope: any) => `- ${scope.code || ""} ${scope.name}`).join("\n")}
+
+Perguntas e Respostas BDCQ:
+${filteredQuestions.slice(0, 15).map((question: any) => `Q: ${question.question}\nA: ${(answerMap.get(question.id) as any)?.answer || "Sem resposta"}`).join("\n\n")}
+
+Requisitos do Cliente levantados nos workshops (${filteredRequirements.length}):
+${filteredRequirements.slice(0, 40).map((requirement: any) => `- [${requirement.priority}/${requirement.status}] ${requirement.code ? `${requirement.code} - ` : ""}${requirement.title}: ${requirement.description}${requirement.acceptanceCriteria ? `\n  Critérios de aceite: ${requirement.acceptanceCriteria}` : ""}`).join("\n") || "- Nenhum requisito registrado"}
+
+Contexto SAP de referência:
+${getSapKnowledgeContext(input.module)}
+
+${DCD_FEW_SHOT_EXAMPLE}
+
+O DCD deve conter:
+1. Visão geral do processo
+2. Configurações necessárias (transações, tabelas, campos)
+3. Decisões de design
+4. Gaps identificados (se houver)
+5. Dependências e integrações
+6. Cenários e critérios de teste
+7. Matriz de rastreabilidade entre requisitos, BDCQ e decisões
+
+Retorne em formato markdown profissional. Não copie os fatos do exemplo e não invente transações ou apps ausentes do contexto.`;
+  const ai = await getWorkflowAiConfig("dcd_generation");
+  const streamed = await invokeLLMStream({ model: ai.model, messages: [{ role: "system", content: ai.systemPrompt }, { role: "user", content: prompt }] }, input.onDelta);
+  if (!streamed.content.trim()) throw new Error("A IA não retornou conteúdo para o DCD");
+  const id = nanoid();
+  const latest = await wdb.getLatestDcdByModule(input.projectId, input.module || "");
+  const version = (latest?.version || 0) + 1;
+  const seriesId = latest?.seriesId || latest?.id || id;
+  const title = `DCD - ${input.module || "Geral"} - v${version}`;
+  await wdb.createDcdDocument({ id, seriesId, sourceHash, version, projectId: input.projectId, module: input.module || "", title, content: streamed.content, status: "Rascunho" });
+  await recordWorkflowAudit({ user: input.user }, input.projectId, "DCD_GENERATED_STREAM", "dcd", id, { version, module: input.module || "", sourceHash, model: streamed.model || ai.model || "" });
+  return { id, title, content: streamed.content, version, cached: false };
 }
 
 export async function ensureBdcqTemplates(projectId: string, modules?: string[]) {

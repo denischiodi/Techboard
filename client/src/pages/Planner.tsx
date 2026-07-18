@@ -2390,6 +2390,8 @@ export default function Planner() {
                       phases={phases}
                       days={monthDays}
                       projects={projects}
+                      workflowStage={workflowStageByProject.get(project.id)}
+                      onOpenWorkflow={openProjectWorkflow}
                     />
                   ))}
                   {showResourceTimeline && filteredResources.map(resource => (

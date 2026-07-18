@@ -44,9 +44,9 @@ function AppRoutes() {
               <Route path={"/techboard/absences"} component={Absences} />
               <Route path={"/techboard/planner"} component={Planner} />
               <Route path={"/techboard/org-chart"} component={OrgChart} />
-              <Route path={"/techlead"} component={TechLeadDashboard} />
+              <Route path={"/techlead"}>{() => <TechLeadDashboard />}</Route>
               <Route path={"/techlead/gp-track"} component={GpChecklist} />
-              <Route path={"/techlead/teams"} component={TechLeadTeams} />
+              <Route path={"/techlead/teams"}>{() => <TechLeadTeams />}</Route>
               <Route path={"/techlead/indicators"}>{() => <TechLeadTeams indicators />}</Route>
               <Route path={"/techmove"} component={ProjectWorkflow} />
               <Route path={"/techmove/scope-items"} component={ScopeItemsPage} />
