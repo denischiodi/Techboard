@@ -1036,15 +1036,20 @@ export const appRouter = router({
   gpChecklist: router({
     list: gpChecklistProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
       const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
-      const [items, cycles] = await Promise.all([
+      const [items, cycles, allResources] = await Promise.all([
         gpChecklistStore.listProjectChecklist(project),
         gpChecklistStore.listFitToStandardCycles(project.id),
+        store.listResources(),
       ]);
+      const resources = await filterResourcesForUser(allResources, ctx.appUser);
       return {
         project,
         templateVersion: items[0]?.templateVersion || "sap-activate-3sl-v1",
         items,
         cycles,
+        resources: resources
+          .map(resource => ({ id: resource.id, name: resource.name, email: resource.email, profile: resource.profile, status: resource.status }))
+          .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
         progress: gpChecklistStore.calculateChecklistProgress(items),
       };
     }),
@@ -1052,6 +1057,23 @@ export const appRouter = router({
       const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       const items = await gpChecklistStore.listProjectChecklist(project);
       return gpChecklistStore.calculateChecklistProgress(items);
+    }),
+    createItem: gpChecklistCreateProcedure.input(z.object({
+      projectId: z.string().min(1),
+      phase: z.enum(["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"]),
+      workstream: z.string().trim().min(1).max(255),
+      title: z.string().trim().min(1).max(255),
+      description: z.string().trim().max(2000).default(""),
+      ownerRole: z.string().trim().max(255).default(""),
+      responsible: z.string().trim().max(255).default(""),
+      dueDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).default(""),
+      documentationTemplateType: z.enum(["execution", "plan", "workshop", "quality-gate"]).default("execution"),
+      includeDocumentationTemplate: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      const { projectId, ...data } = input;
+      return gpChecklistStore.createChecklistItem(projectId, data);
     }),
     updateItem: gpChecklistModifyProcedure.input(z.object({
       projectId: z.string().min(1),

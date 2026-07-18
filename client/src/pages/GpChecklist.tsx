@@ -6,15 +6,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, ExternalLink, Filter, Flag, Loader2, Plus, Search, Settings2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown, ExternalLink, FileText, Filter, Flag, Loader2, Plus, Search, Settings2, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const PHASES = ["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"] as const;
 const STATUSES = ["Pendente", "Em andamento", "Em validação", "Concluído", "Bloqueado", "Não aplicável"] as const;
@@ -28,6 +31,20 @@ type EditForm = {
   blockingReason: string;
 };
 
+type GpResource = { id: string; name: string; email: string; profile: string; status: string };
+type DocumentationTemplateType = "execution" | "plan" | "workshop" | "quality-gate";
+type NewActivityForm = {
+  phase: typeof PHASES[number];
+  workstream: string;
+  title: string;
+  description: string;
+  ownerRole: string;
+  responsible: string;
+  dueDate: string;
+  documentationTemplateType: DocumentationTemplateType;
+  includeDocumentationTemplate: boolean;
+};
+
 const EMPTY_EDIT_FORM: EditForm = {
   status: "Pendente",
   responsible: "",
@@ -36,6 +53,63 @@ const EMPTY_EDIT_FORM: EditForm = {
   notes: "",
   blockingReason: "",
 };
+
+const EMPTY_NEW_ACTIVITY: NewActivityForm = {
+  phase: "Discover",
+  workstream: "Project Management",
+  title: "",
+  description: "",
+  ownerRole: "GP",
+  responsible: "",
+  dueDate: "",
+  documentationTemplateType: "execution",
+  includeDocumentationTemplate: true,
+};
+
+const DOCUMENTATION_TEMPLATE_LABELS: Record<DocumentationTemplateType, string> = {
+  execution: "Registro de execução",
+  plan: "Plano de atividade",
+  workshop: "Ata de workshop",
+  "quality-gate": "Validação / Quality Gate",
+};
+
+function ResourcePicker({ value, resources, onChange, id }: { value: string; resources: GpResource[]; onChange: (value: string) => void; id: string }) {
+  const [open, setOpen] = useState(false);
+  const selected = resources.find(resource => resource.name === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+          <span className={cn("truncate", !value && "text-muted-foreground")}>{selected?.name || value || "Selecione nos Recursos"}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Buscar por nome, e-mail ou perfil..." />
+          <CommandList>
+            <CommandEmpty>Nenhum recurso encontrado.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="sem responsável" onSelect={() => { onChange(""); setOpen(false); }}>
+                <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
+                Não atribuído
+              </CommandItem>
+              {resources.map(resource => (
+                <CommandItem key={resource.id} value={`${resource.name} ${resource.email} ${resource.profile}`} onSelect={() => { onChange(resource.name); setOpen(false); }}>
+                  <Check className={cn("mr-2 h-4 w-4", value === resource.name ? "opacity-100" : "opacity-0")} />
+                  <div className="min-w-0">
+                    <p className="truncate">{resource.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{resource.profile}{resource.email ? ` · ${resource.email}` : ""}{resource.status !== "Ativo" ? ` · ${resource.status}` : ""}</p>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function statusClass(status: string) {
   if (status === "Concluído") return "bg-emerald-100 text-emerald-800 border-emerald-200";
@@ -60,10 +134,12 @@ export default function GpChecklist() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [workstreamFilter, setWorkstreamFilter] = useState("all");
-  const [editTarget, setEditTarget] = useState<{ kind: "item" | "step"; id: string; title: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<{ kind: "item" | "step"; id: string; title: string; context: string; documentationTemplate: string } | null>(null);
   const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT_FORM);
   const [cycleDialogOpen, setCycleDialogOpen] = useState(false);
   const [cycleForm, setCycleForm] = useState({ name: "", module: "" });
+  const [activityDialogOpen, setActivityDialogOpen] = useState(false);
+  const [activityForm, setActivityForm] = useState<NewActivityForm>(EMPTY_NEW_ACTIVITY);
 
   const utils = trpc.useUtils();
   const { data: projects = [], isLoading: projectsLoading } = trpc.projects.list.useQuery();
@@ -104,10 +180,21 @@ export default function GpChecklist() {
     },
     onError: error => toast.error(error.message || "Não foi possível criar o ciclo"),
   });
+  const createItem = trpc.gpChecklist.createItem.useMutation({
+    onSuccess: async created => {
+      await refresh();
+      setActivityDialogOpen(false);
+      setActivityForm({ ...EMPTY_NEW_ACTIVITY, phase });
+      toast.success(`Atividade “${created.title}” adicionada`);
+    },
+    onError: error => toast.error(error.message || "Não foi possível criar a atividade"),
+  });
 
   const workstreams = useMemo(() => Array.from(new Set(
     (data?.items || []).filter(item => item.phase === phase).map(item => item.workstream),
   )).sort(), [data?.items, phase]);
+  const allWorkstreams = useMemo(() => Array.from(new Set((data?.items || []).map(item => item.workstream))).sort(), [data?.items]);
+  const resources = (data?.resources || []) as GpResource[];
 
   useEffect(() => {
     if (workstreamFilter !== "all" && !workstreams.includes(workstreamFilter)) {
@@ -143,7 +230,13 @@ export default function GpChecklist() {
   });
 
   const openEditor = (kind: "item" | "step", current: any) => {
-    setEditTarget({ kind, id: current.id, title: current.title });
+    setEditTarget({
+      kind,
+      id: current.id,
+      title: current.title,
+      context: kind === "item" ? `${current.phase} · ${current.workstream}` : "Explore · Fit-to-Standard",
+      documentationTemplate: current.documentationTemplate || "",
+    });
     setEditForm({
       status: current.status || "Pendente",
       responsible: current.responsible || "",
@@ -152,6 +245,21 @@ export default function GpChecklist() {
       notes: current.notes || "",
       blockingReason: current.blockingReason || "",
     });
+  };
+
+  const applyDocumentationTemplate = () => {
+    const template = editTarget?.documentationTemplate.trim();
+    if (!template) return;
+    setEditForm(current => {
+      if (current.notes.includes(template)) return current;
+      return { ...current, notes: current.notes.trim() ? `${current.notes.trim()}\n\n---\n\n${template}` : template };
+    });
+    toast.success("Modelo padrão inserido nas observações");
+  };
+
+  const openNewActivity = () => {
+    setActivityForm({ ...EMPTY_NEW_ACTIVITY, phase });
+    setActivityDialogOpen(true);
   };
 
   const saveEditor = () => {
@@ -200,10 +308,13 @@ export default function GpChecklist() {
           </div>
           <p className="mt-1 text-sm text-muted-foreground">SAP Activate · S/4HANA Cloud Public Edition · 3-system landscape</p>
         </div>
-        <Select value={selectedProjectId} onValueChange={selectProject}>
-          <SelectTrigger className="w-full lg:w-80"><SelectValue placeholder="Selecione o projeto" /></SelectTrigger>
-          <SelectContent>{projects.map(project => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}</SelectContent>
-        </Select>
+        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+          <Select value={selectedProjectId} onValueChange={selectProject}>
+            <SelectTrigger className="w-full sm:w-80"><SelectValue placeholder="Selecione o projeto" /></SelectTrigger>
+            <SelectContent>{projects.map(project => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}</SelectContent>
+          </Select>
+          <Button onClick={openNewActivity} disabled={!selectedProjectId}><Plus className="mr-2 h-4 w-4" />Nova atividade</Button>
+        </div>
       </div>
 
       <Card className="overflow-hidden border-primary/20">
@@ -297,7 +408,10 @@ export default function GpChecklist() {
                           {item.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{item.notes}</p>}
                           {item.status === "Bloqueado" && item.blockingReason && <p className="mt-2 flex items-center gap-1 text-xs text-red-700"><AlertTriangle className="h-3 w-3" />{item.blockingReason}</p>}
                         </div>
-                        <Button variant="ghost" size="icon" onClick={() => openEditor("item", item)} aria-label={`Editar ${item.title}`}><Settings2 className="h-4 w-4" /></Button>
+                        <div className="flex shrink-0 items-center">
+                          <Button variant="ghost" size="icon" onClick={() => openEditor("item", item)} aria-label={`Documentação de ${item.title}`} title="Documentação e evidências"><FileText className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEditor("item", item)} aria-label={`Editar ${item.title}`} title="Editar atividade"><Settings2 className="h-4 w-4" /></Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -336,7 +450,10 @@ export default function GpChecklist() {
                               {step.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{step.notes}</p>}
                               {step.status === "Bloqueado" && step.blockingReason && <p className="mt-2 flex items-start gap-1 text-xs text-red-700"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{step.blockingReason}</p>}
                             </div>
-                            <Button variant="ghost" size="icon" onClick={() => openEditor("step", step)} aria-label={`Editar etapa ${step.stepNumber}: ${step.title}`}><Settings2 className="h-4 w-4" /></Button>
+                            <div className="flex shrink-0 items-center">
+                              <Button variant="ghost" size="icon" onClick={() => openEditor("step", step)} aria-label={`Documentação da etapa ${step.stepNumber}: ${step.title}`} title="Documentação e evidências"><FileText className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => openEditor("step", step)} aria-label={`Editar etapa ${step.stepNumber}: ${step.title}`} title="Editar etapa"><Settings2 className="h-4 w-4" /></Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -350,19 +467,77 @@ export default function GpChecklist() {
       </Tabs>
 
       <Dialog open={Boolean(editTarget)} onOpenChange={open => !open && setEditTarget(null)}>
-        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
-          <DialogHeader><DialogTitle>{editTarget?.title}</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div><Label htmlFor="gp-edit-status">Status</Label><Select value={editForm.status} onValueChange={value => setEditForm(current => ({ ...current, status: value as EditForm["status"] }))}><SelectTrigger id="gp-edit-status"><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-              <div><Label htmlFor="gp-edit-due-date">Prazo</Label><Input id="gp-edit-due-date" type="date" value={editForm.dueDate} onChange={event => setEditForm(current => ({ ...current, dueDate: event.target.value }))} /></div>
-            </div>
-            <div><Label htmlFor="gp-edit-responsible">Responsável</Label><Input id="gp-edit-responsible" value={editForm.responsible} onChange={event => setEditForm(current => ({ ...current, responsible: event.target.value }))} placeholder="Nome do responsável" /></div>
-            <div><Label htmlFor="gp-edit-evidence">Evidência ou link</Label><Input id="gp-edit-evidence" type="url" value={editForm.evidenceUrl} onChange={event => setEditForm(current => ({ ...current, evidenceUrl: event.target.value }))} placeholder="https://..." /></div>
-            {editForm.status === "Bloqueado" && <div><Label htmlFor="gp-edit-blocking-reason">Motivo do bloqueio *</Label><Textarea id="gp-edit-blocking-reason" value={editForm.blockingReason} onChange={event => setEditForm(current => ({ ...current, blockingReason: event.target.value }))} /></div>}
-            <div><Label htmlFor="gp-edit-notes">Observações</Label><Textarea id="gp-edit-notes" value={editForm.notes} onChange={event => setEditForm(current => ({ ...current, notes: event.target.value }))} rows={4} /></div>
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto p-0">
+          <DialogHeader className="border-b bg-muted/30 px-6 py-5 pr-12 text-left">
+            <DialogTitle className="text-xl">{editTarget?.title}</DialogTitle>
+            <p className="text-sm text-muted-foreground">{editTarget?.context}</p>
+          </DialogHeader>
+          <div className="grid gap-5 px-6 py-5">
+            <section className="grid gap-4 rounded-lg border p-4">
+              <div className="flex items-center gap-2 font-medium"><UserRound className="h-4 w-4 text-primary" />Execução</div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2"><Label htmlFor="gp-edit-status">Status</Label><Select value={editForm.status} onValueChange={value => setEditForm(current => ({ ...current, status: value as EditForm["status"] }))}><SelectTrigger id="gp-edit-status"><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label htmlFor="gp-edit-due-date">Prazo</Label><Input id="gp-edit-due-date" type="date" value={editForm.dueDate} onChange={event => setEditForm(current => ({ ...current, dueDate: event.target.value }))} /></div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="gp-edit-responsible">Responsável</Label>
+                <ResourcePicker id="gp-edit-responsible" value={editForm.responsible} resources={resources} onChange={responsible => setEditForm(current => ({ ...current, responsible }))} />
+                <p className="text-xs text-muted-foreground">Lista sincronizada com os Recursos cadastrados.</p>
+              </div>
+              {editForm.status === "Bloqueado" && <div className="space-y-2"><Label htmlFor="gp-edit-blocking-reason">Motivo do bloqueio *</Label><Textarea id="gp-edit-blocking-reason" value={editForm.blockingReason} onChange={event => setEditForm(current => ({ ...current, blockingReason: event.target.value }))} rows={3} /></div>}
+            </section>
+
+            <section className="grid gap-4 rounded-lg border p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 font-medium"><FileText className="h-4 w-4 text-primary" />Documentação da atividade</div>
+                  <p className="mt-1 text-xs text-muted-foreground">Use o modelo para registrar decisões, pendências, evidências e aceite.</p>
+                </div>
+                <Button type="button" variant="secondary" size="sm" onClick={applyDocumentationTemplate} disabled={!editTarget?.documentationTemplate}>
+                  <FileText className="mr-2 h-4 w-4" />Inserir modelo padrão
+                </Button>
+              </div>
+              <div className="space-y-2"><Label htmlFor="gp-edit-notes">Registro e observações</Label><Textarea id="gp-edit-notes" value={editForm.notes} onChange={event => setEditForm(current => ({ ...current, notes: event.target.value }))} rows={10} placeholder="Registre aqui decisões, ações, pendências e aceite." /></div>
+              <div className="space-y-2"><Label htmlFor="gp-edit-evidence">Evidência ou link</Label><Input id="gp-edit-evidence" type="url" value={editForm.evidenceUrl} onChange={event => setEditForm(current => ({ ...current, evidenceUrl: event.target.value }))} placeholder="https://..." /></div>
+            </section>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setEditTarget(null)}>Cancelar</Button><Button onClick={saveEditor} disabled={updateItem.isPending || updateStep.isPending}>Salvar</Button></DialogFooter>
+          <DialogFooter className="sticky bottom-0 border-t bg-background px-6 py-4">
+            <Button variant="outline" onClick={() => setEditTarget(null)}>Cancelar</Button>
+            <Button onClick={saveEditor} disabled={updateItem.isPending || updateStep.isPending}>{(updateItem.isPending || updateStep.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar atividade</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={activityDialogOpen} onOpenChange={setActivityDialogOpen}>
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto p-0">
+          <DialogHeader className="border-b px-6 py-5 pr-12 text-left">
+            <DialogTitle>Nova atividade da Trilha do GP</DialogTitle>
+            <p className="text-sm text-muted-foreground">Adicione somente o que for específico do projeto. A atividade ficará na fase selecionada.</p>
+          </DialogHeader>
+          <div className="grid gap-4 px-6 py-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label htmlFor="gp-new-phase">Fase *</Label><Select value={activityForm.phase} onValueChange={value => setActivityForm(current => ({ ...current, phase: value as NewActivityForm["phase"] }))}><SelectTrigger id="gp-new-phase"><SelectValue /></SelectTrigger><SelectContent>{PHASES.map(current => <SelectItem key={current} value={current}>{current}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label htmlFor="gp-new-workstream">Workstream *</Label><Input id="gp-new-workstream" list="gp-workstreams" value={activityForm.workstream} onChange={event => setActivityForm(current => ({ ...current, workstream: event.target.value }))} placeholder="Ex.: Project Management" /><datalist id="gp-workstreams">{allWorkstreams.map(current => <option key={current} value={current} />)}</datalist></div>
+            </div>
+            <div className="space-y-2"><Label htmlFor="gp-new-title">Nome da atividade *</Label><Input id="gp-new-title" value={activityForm.title} onChange={event => setActivityForm(current => ({ ...current, title: event.target.value }))} placeholder="O que precisa ser concluído?" autoFocus /></div>
+            <div className="space-y-2"><Label htmlFor="gp-new-description">Descrição</Label><Textarea id="gp-new-description" value={activityForm.description} onChange={event => setActivityForm(current => ({ ...current, description: event.target.value }))} rows={3} placeholder="Resultado esperado ou orientação rápida." /></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label htmlFor="gp-new-role">Papel</Label><Input id="gp-new-role" value={activityForm.ownerRole} onChange={event => setActivityForm(current => ({ ...current, ownerRole: event.target.value }))} placeholder="Ex.: GP" /></div>
+              <div className="space-y-2"><Label htmlFor="gp-new-due-date">Prazo</Label><Input id="gp-new-due-date" type="date" value={activityForm.dueDate} onChange={event => setActivityForm(current => ({ ...current, dueDate: event.target.value }))} /></div>
+            </div>
+            <div className="space-y-2"><Label htmlFor="gp-new-responsible">Responsável</Label><ResourcePicker id="gp-new-responsible" value={activityForm.responsible} resources={resources} onChange={responsible => setActivityForm(current => ({ ...current, responsible }))} /></div>
+            <div className="grid gap-3 rounded-lg border bg-muted/20 p-4">
+              <div className="flex items-start gap-3">
+                <Checkbox id="gp-new-use-template" checked={activityForm.includeDocumentationTemplate} onCheckedChange={checked => setActivityForm(current => ({ ...current, includeDocumentationTemplate: Boolean(checked) }))} />
+                <div><Label htmlFor="gp-new-use-template" className="cursor-pointer">Já iniciar com documentação padrão</Label><p className="mt-1 text-xs text-muted-foreground">O roteiro será colocado nas observações e poderá ser ajustado pelo GP.</p></div>
+              </div>
+              {activityForm.includeDocumentationTemplate && <div className="space-y-2"><Label htmlFor="gp-new-template-type">Modelo</Label><Select value={activityForm.documentationTemplateType} onValueChange={value => setActivityForm(current => ({ ...current, documentationTemplateType: value as DocumentationTemplateType }))}><SelectTrigger id="gp-new-template-type"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(DOCUMENTATION_TEMPLATE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>}
+            </div>
+          </div>
+          <DialogFooter className="sticky bottom-0 border-t bg-background px-6 py-4">
+            <Button variant="outline" onClick={() => setActivityDialogOpen(false)}>Cancelar</Button>
+            <Button disabled={!activityForm.title.trim() || !activityForm.workstream.trim() || createItem.isPending} onClick={() => createItem.mutate({ projectId: selectedProjectId, ...activityForm, title: activityForm.title.trim(), workstream: activityForm.workstream.trim(), description: activityForm.description.trim(), ownerRole: activityForm.ownerRole.trim() })}>{createItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Criar atividade</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -3,6 +3,7 @@ import type { Project } from "../shared/types";
 import { FIT_TO_STANDARD_STEPS, GP_CHECKLIST_CATALOG } from "./gpChecklistCatalog";
 import {
   calculateChecklistProgress,
+  createChecklistItem,
   createFitToStandardCycle,
   listFitToStandardCycles,
   listProjectChecklist,
@@ -59,5 +60,27 @@ describe("Trilha do GP", () => {
     const cycles = await listFitToStandardCycles(projectId);
     expect(cycles[0].status).toBe("Concluído");
     expect(cycles[0].steps.every(step => step.status === "Concluído")).toBe(true);
+  });
+
+  it("cria atividade adicional com responsável e documentação padrão", async () => {
+    const project = testProject("gp-custom-activity");
+    await listProjectChecklist(project);
+    const created = await createChecklistItem(project.id, {
+      phase: "Prepare",
+      workstream: "Project Management",
+      title: "Validar plano de comunicação",
+      description: "Atividade específica do projeto",
+      ownerRole: "GP",
+      responsible: "Ana Costa",
+      dueDate: "2035-02-10",
+      documentationTemplateType: "plan",
+      includeDocumentationTemplate: true,
+    });
+
+    expect(created.itemKey).toMatch(/^custom-/);
+    expect(created.responsible).toBe("Ana Costa");
+    expect(created.notes).toContain("## Entregáveis");
+    expect(created.documentationTemplate).toContain("# Validar plano de comunicação");
+    expect((await listProjectChecklist(project)).some(item => item.id === created.id)).toBe(true);
   });
 });

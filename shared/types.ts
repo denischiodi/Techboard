@@ -85,6 +85,7 @@ export interface GpChecklistItem {
   notes: string;
   blockingReason: string;
   completedAt: string;
+  documentationTemplate: string;
 }
 
 export interface GpFitToStandardStep {
@@ -100,6 +101,7 @@ export interface GpFitToStandardStep {
   notes: string;
   blockingReason: string;
   completedAt: string;
+  documentationTemplate: string;
 }
 
 export interface GpFitToStandardCycle {

@@ -12,6 +12,10 @@ import {
   GP_CHECKLIST_CATALOG,
   GP_CHECKLIST_TEMPLATE_VERSION,
 } from "./gpChecklistCatalog";
+import {
+  buildGpDocumentationTemplate,
+  type GpDocumentationTemplateType,
+} from "./gpChecklistDocumentation";
 
 const memoryItems = new Map<string, GpChecklistItem[]>();
 const memoryCycles = new Map<string, GpFitToStandardCycle[]>();
@@ -30,6 +34,11 @@ function toIso(value: unknown) {
   return String(value);
 }
 
+function documentationTemplateTypeFromItemKey(itemKey: unknown): GpDocumentationTemplateType | undefined {
+  const match = String(itemKey || "").match(/^custom-(execution|plan|workshop|quality-gate)-/);
+  return match?.[1] as GpDocumentationTemplateType | undefined;
+}
+
 function toChecklistItem(row: any): GpChecklistItem {
   return {
     ...row,
@@ -39,6 +48,10 @@ function toChecklistItem(row: any): GpChecklistItem {
     notes: row.notes || "",
     blockingReason: row.blockingReason || "",
     completedAt: toIso(row.completedAt),
+    documentationTemplate: buildGpDocumentationTemplate({
+      ...row,
+      templateType: documentationTemplateTypeFromItemKey(row.itemKey),
+    }),
   } as GpChecklistItem;
 }
 
@@ -51,6 +64,12 @@ function toCycleStep(row: any): GpFitToStandardStep {
     notes: row.notes || "",
     blockingReason: row.blockingReason || "",
     completedAt: toIso(row.completedAt),
+    documentationTemplate: buildGpDocumentationTemplate({
+      title: row.title,
+      phase: "Explore",
+      workstream: "Fit-to-Standard",
+      templateType: "workshop",
+    }),
   } as GpFitToStandardStep;
 }
 
@@ -91,6 +110,7 @@ export async function ensureProjectChecklist(project: Pick<Project, "id" | "mana
         notes: "",
         blockingReason: "",
         completedAt: "",
+        documentationTemplate: buildGpDocumentationTemplate(catalogItem),
       }];
     });
     memoryItems.set(project.id, [...existing, ...additions]);
@@ -131,12 +151,77 @@ export async function ensureProjectChecklist(project: Pick<Project, "id" | "mana
 export async function listProjectChecklist(project: Pick<Project, "id" | "manager">) {
   await ensureProjectChecklist(project);
   const pool = getPgPool();
-  if (!pool) return [...(memoryItems.get(project.id) || [])].sort((a, b) => a.sortOrder - b.sortOrder);
+  if (!pool) return [...(memoryItems.get(project.id) || [])]
+    .map(toChecklistItem)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
   const result = await pool.query(
     `SELECT * FROM "gp_checklist_items" WHERE "projectId" = $1 ORDER BY "sortOrder", "title"`,
     [project.id],
   );
   return result.rows.map(toChecklistItem);
+}
+
+export type CreateChecklistItemInput = {
+  phase: string;
+  workstream: string;
+  title: string;
+  description: string;
+  ownerRole: string;
+  responsible: string;
+  dueDate: string;
+  documentationTemplateType: GpDocumentationTemplateType;
+  includeDocumentationTemplate: boolean;
+};
+
+export async function createChecklistItem(projectId: string, input: CreateChecklistItemInput) {
+  const id = createId("gpc");
+  const documentationTemplate = buildGpDocumentationTemplate({
+    title: input.title,
+    phase: input.phase,
+    workstream: input.workstream,
+    templateType: input.documentationTemplateType,
+  });
+  const baseItem: GpChecklistItem = {
+    id,
+    projectId,
+    templateVersion: GP_CHECKLIST_TEMPLATE_VERSION,
+    itemKey: `custom-${input.documentationTemplateType}-${id}`,
+    phase: input.phase,
+    workstream: input.workstream,
+    title: input.title,
+    description: input.description,
+    ownerRole: input.ownerRole,
+    itemType: "Atividade",
+    sortOrder: 0,
+    status: "Pendente",
+    responsible: input.responsible,
+    dueDate: input.dueDate,
+    evidenceUrl: "",
+    notes: input.includeDocumentationTemplate ? documentationTemplate : "",
+    blockingReason: "",
+    completedAt: "",
+    documentationTemplate,
+  };
+
+  const pool = getPgPool();
+  if (!pool) {
+    const items = memoryItems.get(projectId) || [];
+    baseItem.sortOrder = Math.max(-1, ...items.map(item => item.sortOrder)) + 1;
+    memoryItems.set(projectId, [...items, baseItem]);
+    return baseItem;
+  }
+
+  const result = await pool.query(
+    `INSERT INTO "gp_checklist_items"
+      ("id", "projectId", "templateVersion", "itemKey", "phase", "workstream", "title", "description", "ownerRole", "itemType", "sortOrder", "status", "responsible", "dueDate", "notes")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Atividade',
+       COALESCE((SELECT MAX("sortOrder") + 1 FROM "gp_checklist_items" WHERE "projectId" = $2), 0),
+       'Pendente',$10,$11,$12)
+     RETURNING *`,
+    [id, projectId, GP_CHECKLIST_TEMPLATE_VERSION, baseItem.itemKey, input.phase, input.workstream,
+      input.title, input.description, input.ownerRole, input.responsible, input.dueDate, baseItem.notes],
+  );
+  return toChecklistItem(result.rows[0]);
 }
 
 type ChecklistItemUpdate = Partial<Pick<GpChecklistItem,
@@ -212,6 +297,7 @@ export async function createFitToStandardCycle(projectId: string, name: string, 
     id: createId("ftss"), cycleId: cycle.id, stepKey: step.key, stepNumber: index + 1,
     title: step.title, status: "Pendente", responsible: "", dueDate: "", evidenceUrl: "",
     notes: "", blockingReason: "", completedAt: "",
+    documentationTemplate: buildGpDocumentationTemplate({ title: step.title, phase: "Explore", workstream: "Fit-to-Standard", templateType: "workshop" }),
   }));
 
   const pool = getPgPool();
