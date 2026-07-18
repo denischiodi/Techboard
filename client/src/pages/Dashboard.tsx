@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { Allocation, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateImpact, ResourceFront } from "../../../shared/types";
 import { useLocation } from "wouter";
+import { ProductLogo } from "@/components/ProductLogo";
+import { PRODUCT_CATALOG } from "@/lib/productCatalog";
 
 const COLORS = ['#1e3a5f', '#2563eb', '#059669', '#d97706', '#dc2626'];
 
@@ -196,9 +198,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">Visão geral de capacidade e alocação</p>
+      <div className="flex items-center gap-4">
+        <ProductLogo product={PRODUCT_CATALOG.techboard} className="h-14 w-44" />
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Visão geral de capacidade e alocação</p>
+        </div>
       </div>
 
       {/* KPI Cards */}

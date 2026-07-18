@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 96" role="img" aria-labelledby="title">
+  <title id="title">TechAdmin</title>
+  <defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#334155"/><stop offset="1" stop-color="#64748b"/></linearGradient></defs>
+  <rect width="96" height="96" rx="24" fill="url(#g)"/>
+  <path d="M48 19 72 29v18c0 15-10 25-24 31-14-6-24-16-24-31V29l24-10Z" fill="none" stroke="#fff" stroke-width="7"/>
+  <path d="m37 48 8 8 15-17" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="116" y="62" font-family="Inter,Arial,sans-serif" font-size="43" font-weight="750" fill="#1e293b">TechAdmin</text>
+</svg>

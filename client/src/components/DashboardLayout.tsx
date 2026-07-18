@@ -31,6 +31,7 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { canAccessPath, canViewTab, productForPath, PRODUCTS } from "@/lib/productCatalog";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
+import { ProductLogo } from "@/components/ProductLogo";
 
 const menuItems = PRODUCTS.flatMap(product => product.menus.map(item => ({ ...item, productId: product.id, permKey: item.permission })));
 
@@ -219,7 +220,6 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeProduct = productForPath(location);
-  const ActiveProductIcon = activeProduct?.icon;
   const activeMenuItem = menuItems.filter(item => location === item.path || location.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
   const isMobile = useIsMobile();
 
@@ -325,8 +325,7 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <div className="flex min-w-0 flex-1 items-center">
                   <button onClick={() => setLocation("/")} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 hover:bg-accent">
-                    {ActiveProductIcon ? <ActiveProductIcon className="h-5 w-5 shrink-0" /> : <Grid2X2 className="h-5 w-5 shrink-0" />}
-                    <span className="truncate font-semibold">{activeProduct?.name || "Portal Tech"}</span>
+                    {activeProduct ? <ProductLogo product={activeProduct} compact className="h-8 w-28 rounded-lg" imageClassName="p-1.5" /> : <><Grid2X2 className="h-5 w-5 shrink-0" /><span className="truncate font-semibold">Portal Tech</span></>}
                   </button>
                 </div>
               ) : null}
@@ -414,6 +413,7 @@ function DashboardLayoutContent({
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
                 <div className="flex flex-col gap-1">
+                  {activeProduct && <ProductLogo product={activeProduct} compact className="h-8 w-24 rounded-lg" imageClassName="p-1" />}
                   <span className="tracking-tight text-foreground">
                     {activeMenuItem?.label ?? "Menu"}
                   </span>

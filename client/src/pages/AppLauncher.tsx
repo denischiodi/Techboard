@@ -5,6 +5,7 @@ import { canAccessProduct, firstAccessiblePath, PRODUCTS } from "@/lib/productCa
 import { ArrowRight, LockKeyhole } from "lucide-react";
 import { useLocation } from "wouter";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
+import { ProductLogo } from "@/components/ProductLogo";
 
 export default function AppLauncher() {
   const { user } = useAuth();
@@ -24,13 +25,12 @@ export default function AppLauncher() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {PRODUCTS.map(product => {
           const allowed = canAccessProduct(product, permissions);
-          const Icon = product.icon;
           return (
             <Card key={product.id} className={`group overflow-hidden transition ${allowed ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg" : "opacity-55"}`} onClick={() => allowed && navigate(firstAccessiblePath(product, permissions))}>
               <div className={`h-1.5 bg-gradient-to-r ${product.accent}`} />
               <CardContent className="flex min-h-44 flex-col justify-between p-5">
                 <div className="flex items-start justify-between gap-4">
-                  <span className={`rounded-2xl p-3 ${product.iconClass}`}><Icon className="h-6 w-6" /></span>
+                  <ProductLogo product={product} />
                   {!allowed && <LockKeyhole className="h-5 w-5 text-muted-foreground" />}
                 </div>
                 <div>

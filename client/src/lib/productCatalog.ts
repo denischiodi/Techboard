@@ -18,6 +18,7 @@ export type ProductMenuItem = {
 export type ProductDefinition = {
   id: ProductId;
   name: string;
+  logoPath: string;
   description: string;
   icon: LucideIcon;
   homePath: string;
@@ -28,7 +29,7 @@ export type ProductDefinition = {
 
 export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
   techboard: {
-    id: "techboard", name: "TechBoard", icon: BarChart3, homePath: "/techboard",
+    id: "techboard", name: "TechBoard", logoPath: "/techboard-logo.png", icon: BarChart3, homePath: "/techboard",
     description: "Recursos, projetos, disponibilidade e alocações.",
     accent: "from-blue-600 to-cyan-500", iconClass: "bg-blue-600 text-white",
     menus: [
@@ -41,7 +42,7 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
     ],
   },
   techlead: {
-    id: "techlead", name: "TechLead", icon: Users, homePath: "/techlead",
+    id: "techlead", name: "TechLead", logoPath: "/techlead-logo.svg", icon: Users, homePath: "/techlead",
     description: "Liderança, times, trilhas e acompanhamento de entregas.",
     accent: "from-violet-600 to-fuchsia-500", iconClass: "bg-violet-600 text-white",
     menus: [
@@ -52,7 +53,7 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
     ],
   },
   techmove: {
-    id: "techmove", name: "TechMove", icon: Workflow, homePath: "/techmove",
+    id: "techmove", name: "TechMove", logoPath: "/techmove-logo.svg", icon: Workflow, homePath: "/techmove",
     description: "Jornada de implementação, escopo, workshops e gaps.",
     accent: "from-emerald-600 to-teal-500", iconClass: "bg-emerald-600 text-white",
     menus: [
@@ -67,7 +68,7 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
     ],
   },
   techtask: {
-    id: "techtask", name: "TechTask", icon: KanbanSquare, homePath: "/techtask",
+    id: "techtask", name: "TechTask", logoPath: "/techtask-logo.svg", icon: KanbanSquare, homePath: "/techtask",
     description: "Kanban, atividades, responsáveis e notificações.",
     accent: "from-orange-500 to-amber-400", iconClass: "bg-orange-500 text-white",
     menus: [
@@ -77,7 +78,7 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
     ],
   },
   admin: {
-    id: "admin", name: "Administração", icon: ShieldCheck, homePath: "/admin",
+    id: "admin", name: "Administração", logoPath: "/techadmin-logo.svg", icon: ShieldCheck, homePath: "/admin",
     description: "Usuários, permissões, cadastros e configurações.",
     accent: "from-slate-700 to-slate-500", iconClass: "bg-slate-700 text-white",
     menus: [

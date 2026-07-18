@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96" role="img" aria-labelledby="title">
+  <title id="title">TechLead</title>
+  <defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#d946ef"/></linearGradient></defs>
+  <rect width="96" height="96" rx="24" fill="url(#g)"/>
+  <path d="M26 68V28h12v29h31v11H26Zm26-40h18v11H52V28Z" fill="#fff"/>
+  <text x="116" y="62" font-family="Inter,Arial,sans-serif" font-size="43" font-weight="750" fill="#24133f">TechLead</text>
+</svg>
