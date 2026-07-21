@@ -1,24 +1,13 @@
-<svg width="1490" height="275" viewBox="0 0 1490 275" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TechMove">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" role="img" aria-label="TechMove">
   <defs>
-    <linearGradient id="textGradient" x1="90" y1="40" x2="1220" y2="220" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F7FAFC"/>
-      <stop offset="0.45" stop-color="#D8E2EA"/>
-      <stop offset="1" stop-color="#B9C7D2"/>
+    <linearGradient id="word" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#fff"/><stop offset="1" stop-color="#d8dee8"/>
     </linearGradient>
-    <linearGradient id="greenGradient" x1="1290" y1="58" x2="1430" y2="215" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8FDD08"/>
-      <stop offset="1" stop-color="#5AA900"/>
+    <linearGradient id="accent" x1="0" x2="1">
+      <stop stop-color="#34d399"/><stop offset="1" stop-color="#84cc16"/>
     </linearGradient>
-    <filter id="softShadow" x="0" y="0" width="1490" height="275" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#0B172A" flood-opacity="0.28"/>
-    </filter>
   </defs>
-
-  <g filter="url(#softShadow)">
-    <text x="58" y="199" fill="url(#textGradient)" font-family="Inter, Arial, Helvetica, sans-serif" font-size="194" font-weight="800" letter-spacing="-8">TechMove</text>
-    <path d="M1335 54H1392L1458 137.5L1392 221H1335L1400 137.5L1335 54Z" fill="url(#greenGradient)"/>
-    <path d="M880 170H983C1001 170 1010 160 1010 143V129" stroke="#73C900" stroke-width="10" stroke-linecap="round"/>
-    <rect x="1003" y="95" width="34" height="34" rx="7" stroke="#73C900" stroke-width="9"/>
-    <path d="M1013 171C1024 192 1041 202 1065 202" stroke="#B4C2CC" stroke-width="10" stroke-linecap="round"/>
-  </g>
+  <rect width="480" height="120" rx="14" fill="#050608"/>
+  <text x="24" y="81" fill="url(#word)" font-family="Inter,Arial,sans-serif" font-size="66" font-weight="800" letter-spacing="-3">TechMove</text>
+  <path d="M416 30h18v21h21v18h-21v21h-18V69h-21V51h21z" fill="url(#accent)"/>
 </svg>

@@ -63,10 +63,18 @@ vi.mock("./routers/workflowDb", () => ({
   bulkUpdateGaps: vi.fn().mockResolvedValue(0),
   bulkUpdateConfigurations: vi.fn().mockResolvedValue(0),
   listWorkflowTestCases: vi.fn().mockResolvedValue([]),
+  getWorkflowTestCaseById: vi.fn().mockResolvedValue({ id: "test-case-1", projectId: "project-1", responsible: "Ana Costa" }),
   createWorkflowTestCase: vi.fn().mockResolvedValue({ id: "test-1" }),
   updateWorkflowTestCase: vi.fn().mockResolvedValue(undefined),
   deleteWorkflowTestCase: vi.fn().mockResolvedValue(undefined),
   bulkUpdateWorkflowTestCases: vi.fn().mockResolvedValue(0),
+  listWorkflowTestSteps: vi.fn().mockResolvedValue([]),
+  createWorkflowTestStep: vi.fn().mockResolvedValue({ id: "step-1" }),
+}));
+
+vi.mock("./workflowAccess", () => ({
+  assertWorkflowProjectAccess: vi.fn().mockResolvedValue({ id: "project-1" }),
+  listWorkflowProjects: vi.fn().mockResolvedValue([]),
 }));
 
 describe("workflow router module structure", () => {
@@ -122,6 +130,25 @@ describe("workflow router module structure", () => {
     expect(db.getWorkflowPrompt).toBeDefined();
     expect(db.upsertWorkflowPrompt).toBeDefined();
     expect(db.deleteWorkflowPrompt).toBeDefined();
+  });
+
+  it("resolves an E2E step through testCaseId when listing and creating", async () => {
+    const db = await import("./routers/workflowDb");
+    const { workflowRouter } = await import("./routers/workflow");
+    const caller = workflowRouter.createCaller({
+      user: { id: 1, openId: "test-user", name: "Ana Costa", email: "ana.costa@consultoria.com" },
+    } as any);
+
+    await caller.tests.steps.list({ testCaseId: "test-case-1" });
+    await caller.tests.steps.create({
+      testCaseId: "test-case-1",
+      position: 1,
+      title: "Criar pedido",
+    });
+
+    expect(db.getWorkflowEntityProjectId).toHaveBeenCalledWith("workflow_test_cases", "test-case-1");
+    expect(db.listWorkflowTestSteps).toHaveBeenCalledWith("test-case-1");
+    expect(db.createWorkflowTestStep).toHaveBeenCalledWith(expect.objectContaining({ testCaseId: "test-case-1", title: "Criar pedido" }));
   });
 
   it("applies a custom BDCQ template to matching scope items", async () => {

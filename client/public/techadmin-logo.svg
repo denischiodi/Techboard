@@ -1,8 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 96" role="img" aria-labelledby="title">
-  <title id="title">TechAdmin</title>
-  <defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#334155"/><stop offset="1" stop-color="#64748b"/></linearGradient></defs>
-  <rect width="96" height="96" rx="24" fill="url(#g)"/>
-  <path d="M48 19 72 29v18c0 15-10 25-24 31-14-6-24-16-24-31V29l24-10Z" fill="none" stroke="#fff" stroke-width="7"/>
-  <path d="m37 48 8 8 15-17" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="116" y="62" font-family="Inter,Arial,sans-serif" font-size="43" font-weight="750" fill="#1e293b">TechAdmin</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 120" role="img" aria-label="TechAdmin">
+  <defs>
+    <linearGradient id="word" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#fff"/><stop offset="1" stop-color="#d8dee8"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1">
+      <stop stop-color="#94a3b8"/><stop offset="1" stop-color="#e2e8f0"/>
+    </linearGradient>
+  </defs>
+  <rect width="560" height="120" rx="14" fill="#050608"/>
+  <text x="24" y="81" fill="url(#word)" font-family="Inter,Arial,sans-serif" font-size="66" font-weight="800" letter-spacing="-3">TechAdmin</text>
+  <path d="M496 30h18v21h21v18h-21v21h-18V69h-21V51h21z" fill="url(#accent)"/>
 </svg>

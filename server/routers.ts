@@ -23,6 +23,7 @@ import { addYears } from "date-fns/addYears";
 import { isValid } from "date-fns/isValid";
 import * as store from "./plannerStore";
 import * as gpChecklistStore from "./gpChecklistStore";
+import { storagePut } from "./storage";
 import { LoginCodeRateLimitError, consumeLoginCode, establishEmailSession, issueLoginCode, normalizeLoginEmail } from "./_core/emailAuth";
 
 function badRequest(message: string): never {
@@ -1043,15 +1044,20 @@ export const appRouter = router({
   gpChecklist: router({
     list: gpChecklistProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
       const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
-      const [items, cycles] = await Promise.all([
+      const [items, cycles, allResources] = await Promise.all([
         gpChecklistStore.listProjectChecklist(project),
         gpChecklistStore.listFitToStandardCycles(project.id),
+        store.listResources(),
       ]);
+      const resources = await filterResourcesForUser(allResources, ctx.appUser);
       return {
         project,
         templateVersion: items[0]?.templateVersion || "sap-activate-3sl-v1",
         items,
         cycles,
+        resources: resources
+          .map(resource => ({ id: resource.id, name: resource.name, email: resource.email, profile: resource.profile, status: resource.status }))
+          .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
         progress: gpChecklistStore.calculateChecklistProgress(items),
       };
     }),
@@ -1059,6 +1065,23 @@ export const appRouter = router({
       const project = await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       const items = await gpChecklistStore.listProjectChecklist(project);
       return gpChecklistStore.calculateChecklistProgress(items);
+    }),
+    createItem: gpChecklistCreateProcedure.input(z.object({
+      projectId: z.string().min(1),
+      phase: z.enum(["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"]),
+      workstream: z.string().trim().min(1).max(255),
+      title: z.string().trim().min(1).max(255),
+      description: z.string().trim().max(2000).default(""),
+      ownerRole: z.string().trim().max(255).default(""),
+      responsible: z.string().trim().max(255).default(""),
+      dueDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).default(""),
+      documentationTemplateType: z.enum(["execution", "plan", "workshop", "quality-gate"]).default("execution"),
+      includeDocumentationTemplate: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      const { projectId, ...data } = input;
+      return gpChecklistStore.createChecklistItem(projectId, data);
     }),
     updateItem: gpChecklistModifyProcedure.input(z.object({
       projectId: z.string().min(1),
@@ -1075,6 +1098,45 @@ export const appRouter = router({
       assertCanWrite(ctx);
       await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
       return gpChecklistStore.updateChecklistItem(input.projectId, input.id, input.data);
+    }),
+    uploadDocumentTemplate: gpChecklistModifyProcedure.input(z.object({
+      projectId: z.string().min(1),
+      targetKind: z.enum(["item", "step"]),
+      targetId: z.string().min(1),
+      fileName: z.string().trim().min(1).max(255),
+      contentType: z.string().max(255).default(""),
+      fileData: z.string().min(1).max(14_000_000),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      const extension = input.fileName.toLowerCase().match(/\.(docx|doc)$/)?.[1];
+      if (!extension) badRequest("O modelo deve ser um arquivo Word .doc ou .docx");
+      const buffer = Buffer.from(input.fileData, "base64");
+      if (buffer.byteLength === 0) badRequest("O arquivo Word está vazio");
+      if (buffer.byteLength > 10 * 1024 * 1024) badRequest("O modelo Word deve ter no máximo 10 MB");
+      const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const contentType = input.contentType || (extension === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "application/msword");
+      const stored = await storagePut(
+        `gp-checklist/${input.projectId}/${input.targetKind}/${input.targetId}/${safeName}`,
+        buffer,
+        contentType,
+      );
+      return gpChecklistStore.setDocumentTemplateFile(input.projectId, input.targetKind, input.targetId, {
+        fileName: input.fileName,
+        contentType,
+        url: stored.url,
+      });
+    }),
+    removeDocumentTemplate: gpChecklistModifyProcedure.input(z.object({
+      projectId: z.string().min(1),
+      targetKind: z.enum(["item", "step"]),
+      targetId: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      assertCanWrite(ctx);
+      await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+      return gpChecklistStore.setDocumentTemplateFile(input.projectId, input.targetKind, input.targetId, null);
     }),
     createFitToStandardCycle: gpChecklistCreateProcedure.input(z.object({
       projectId: z.string().min(1),

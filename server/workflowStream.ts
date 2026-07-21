@@ -32,7 +32,7 @@ export function registerWorkflowStream(app: Express) {
       const result = await streamDcdGeneration({
         projectId, module: module || undefined, forceRegenerate,
         user: { id: appUser.id, name: appUser.name || appUser.email },
-        onDelta: delta => { if (!closed) sendEvent(res, "delta", { text: delta }); },
+        onDelta: (delta: string) => { if (!closed) sendEvent(res, "delta", { text: delta }); },
       });
       if (!closed) {
         sendEvent(res, "complete", result);

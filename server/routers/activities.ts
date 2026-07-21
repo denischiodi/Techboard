@@ -306,10 +306,12 @@ export const activitiesRouter = router({
 
   archive: activityModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
     const activity = await requireActivity(input.id, ctx.appUser);
-    if (activity.sourceType !== "manual") throw new TRPCError({ code: "BAD_REQUEST", message: "Atividades automáticas não podem ser arquivadas" });
-    if (ctx.appUser.role !== "admin" && activity.creatorUserId !== ctx.appUser.id) forbidden();
+    if (ctx.appUser.role !== "admin") {
+      if (activity.sourceType !== "manual") throw new TRPCError({ code: "BAD_REQUEST", message: "Atividades automáticas só podem ser excluídas por administradores" });
+      if (activity.creatorUserId !== ctx.appUser.id) forbidden();
+    }
     await activityStore.archiveActivity(activity.id);
-    await activityStore.addHistory(activity.id, ctx.appUser, "ARCHIVED");
+    await activityStore.addHistory(activity.id, ctx.appUser, ctx.appUser.role === "admin" ? "ADMIN_DELETED" : "ARCHIVED");
     return { success: true };
   }),
 
