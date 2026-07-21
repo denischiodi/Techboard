@@ -8,13 +8,16 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "html",
   use: {
-    baseURL: "http://127.0.0.1:3000/techboard/",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000/techboard/",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium-desktop", use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium-mobile", use: { ...devices["Pixel 7"] } },
+  ],
   webServer: {
-    command: "pnpm dev",
+    command: process.env.PLAYWRIGHT_WEB_SERVER_COMMAND || "pnpm dev",
     url: "http://127.0.0.1:3000/health",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

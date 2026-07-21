@@ -44,6 +44,10 @@ vi.mock("./routers/workflowDb", () => ({
   createConfiguration: vi.fn().mockResolvedValue({ id: "c-1" }),
   updateConfiguration: vi.fn().mockResolvedValue(undefined),
   deleteConfiguration: vi.fn().mockResolvedValue(undefined),
+  listConfigurationTemplates: vi.fn().mockResolvedValue([]),
+  createConfigurationTemplate: vi.fn().mockResolvedValue({ id: "ct-1" }),
+  updateConfigurationTemplate: vi.fn().mockResolvedValue(undefined),
+  deleteConfigurationTemplate: vi.fn().mockResolvedValue(undefined),
   listWorkflowPrompts: vi.fn().mockResolvedValue([]),
   getWorkflowPrompt: vi.fn().mockResolvedValue(null),
   upsertWorkflowPrompt: vi.fn().mockResolvedValue({ key: "dcd_generation" }),
@@ -54,6 +58,7 @@ vi.mock("./routers/workflowDb", () => ({
   bulkUpdateGaps: vi.fn().mockResolvedValue(0),
   bulkUpdateConfigurations: vi.fn().mockResolvedValue(0),
   listWorkflowTestCases: vi.fn().mockResolvedValue([]),
+  getWorkflowTestCaseById: vi.fn().mockResolvedValue({ id: "test-case-1", projectId: "project-1", responsible: "Ana Costa" }),
   createWorkflowTestCase: vi.fn().mockResolvedValue({ id: "test-1" }),
   updateWorkflowTestCase: vi.fn().mockResolvedValue(undefined),
   deleteWorkflowTestCase: vi.fn().mockResolvedValue(undefined),
@@ -111,6 +116,7 @@ describe("workflow router module structure", () => {
     expect(db.listConfigurations).toBeDefined();
     expect(db.createConfiguration).toBeDefined();
     expect(db.updateConfiguration).toBeDefined();
+    expect(db.listConfigurationTemplates).toBeDefined();
     expect(db.listWorkflowTestCases).toBeDefined();
     expect(db.createWorkflowTestCase).toBeDefined();
     expect(db.updateWorkflowTestCase).toBeDefined();
@@ -152,6 +158,25 @@ describe("workflow router module structure", () => {
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       projectId: "project-1", templateId: "template-1", module: "MM", scopeItemIds: ["scope-mm"], question: "Como aprovar compras?",
+    }));
+  });
+
+  it("applies an admin configuration model to its project scope item", async () => {
+    const db = await import("./routers/workflowDb");
+    const plannerStore = await import("./plannerStore");
+    vi.spyOn(plannerStore, "getProjectById").mockResolvedValueOnce({ id: "project-1", fronts: ["MM"] } as any);
+    vi.mocked(db.listScopeItems).mockResolvedValueOnce([{ id: "scope-mm", projectId: "project-1", code: "J45", name: "Compras", module: "MM", active: 1 } as any]);
+    vi.mocked(db.listConfigurationTemplates).mockResolvedValueOnce([{ id: "ct-1", description: "Configurar estratégia de liberação", category: "Customizing", modules: ["MM"], scopeItemKeys: ["J45"], active: true } as any]);
+    vi.mocked(db.listConfigurations).mockResolvedValueOnce([]);
+    const create = vi.mocked(db.createConfiguration);
+    create.mockClear();
+    const { applyConfigurationTemplates } = await import("./routers/workflow");
+
+    const result = await applyConfigurationTemplates("project-1");
+
+    expect(result.added).toBe(1);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1", templateId: "ct-1", module: "MM", scopeItemIds: ["scope-mm"], source: "template",
     }));
   });
 });

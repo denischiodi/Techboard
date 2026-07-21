@@ -24,7 +24,9 @@ import { notifyOwner } from "../_core/notification";
 import * as plannerStore from "../plannerStore";
 import { transcribeAudio } from "../_core/voiceTranscription";
 import { buildWorkflowConsolidatedMarkdown } from "../workflowConsolidatedReport";
-import type { TechMoveData } from "../../shared/types";
+import type { ProjectCapabilities, TechMoveData } from "../../shared/types";
+import * as projectAccess from "../projectAccess";
+import * as approvalStore from "../approvalStore";
 
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
@@ -321,7 +323,7 @@ async function getWorkflowAiConfig(key: WorkflowPromptKey) {
   };
 }
 
-const workflowProjectProcedure = (write = false) =>
+const workflowProjectProcedure = (write = false, capability?: keyof ProjectCapabilities) =>
   protectedProcedure.use(async ({ ctx, next, getRawInput }) => {
     const input = (await getRawInput()) as { projectId?: string } | null;
     if (!input?.projectId)
@@ -329,14 +331,15 @@ const workflowProjectProcedure = (write = false) =>
         code: "BAD_REQUEST",
         message: "Projeto é obrigatório",
       });
-    await assertWorkflowProjectAccess(ctx.appUser, input.projectId, write);
+    await assertWorkflowProjectAccess(ctx.appUser, input.projectId, write, capability || (!write ? "viewWorkflowArtifacts" : undefined));
     return next();
   });
 
 const workflowEntityProcedure = (
   table: string,
   write = false,
-  idField = "id"
+  idField = "id",
+  capability?: keyof ProjectCapabilities
 ) =>
   protectedProcedure.use(async ({ ctx, next, getRawInput }) => {
     const input = (await getRawInput()) as Record<string, unknown> | null;
@@ -352,9 +355,56 @@ const workflowEntityProcedure = (
         code: "NOT_FOUND",
         message: "Registro do Workflow não encontrado",
       });
-    await assertWorkflowProjectAccess(ctx.appUser, projectId, write);
+    await assertWorkflowProjectAccess(ctx.appUser, projectId, write, capability || (!write ? "viewWorkflowArtifacts" : undefined));
     return next();
   });
+
+async function assertCanAnswerBdcq(appUser: any, projectId: string, questionId: string) {
+  if (appUser.role === "admin") return;
+  const membership = await projectAccess.getProjectMembership(projectId, appUser.id);
+  if (!membership) return;
+  if (!membership.active || !membership.capabilities?.fillAssignedBdcq)
+    throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não permite preencher BDCQ" });
+  if (membership.profile === "gp_internal" || membership.profile === "internal_team") return;
+  const question = (await wdb.listBdcqQuestions(projectId)).find((item: any) => item.id === questionId);
+  if (!question) throw new TRPCError({ code: "NOT_FOUND", message: "Pergunta não encontrada" });
+  const keyUser = (await wdb.listProjectKeyUsers(projectId)).find((item: any) => item.id === question.keyUserId);
+  if (!keyUser || keyUser.email?.toLowerCase() !== appUser.email.toLowerCase())
+    throw new TRPCError({ code: "FORBIDDEN", message: "Esta pergunta está atribuída a outro key user" });
+}
+
+async function visibleBdcqQuestionIds(appUser: any, projectId: string, questions?: any[]) {
+  if (appUser.role === "admin") return null;
+  const membership = await projectAccess.getProjectMembership(projectId, appUser.id);
+  if (!membership || membership.profile === "gp_internal" || membership.profile === "internal_team" || membership.capabilities?.viewWorkflowArtifacts) return null;
+  const rows = questions || await wdb.listBdcqQuestions(projectId);
+  const keyUsers = await wdb.listProjectKeyUsers(projectId);
+  const ownKeyUserIds = new Set(keyUsers.filter((item: any) => item.active && item.email?.toLowerCase() === appUser.email.toLowerCase()).map((item: any) => item.id));
+  return new Set(rows.filter((item: any) => ownKeyUserIds.has(item.keyUserId)).map((item: any) => item.id));
+}
+
+async function assertCanViewBdcqQuestion(appUser: any, projectId: string, questionId: string) {
+  const visible = await visibleBdcqQuestionIds(appUser, projectId);
+  if (visible && !visible.has(questionId)) throw new TRPCError({ code: "FORBIDDEN", message: "Esta pergunta está atribuída a outro key user" });
+}
+
+function responsibleMatches(appUser: any, value: string | null | undefined) {
+  const normalized = String(value || "").trim().toLocaleLowerCase("pt-BR");
+  return Boolean(normalized && [appUser.id, appUser.name, appUser.email].some(candidate => String(candidate || "").trim().toLocaleLowerCase("pt-BR") === normalized));
+}
+
+async function canViewAllWorkflowTests(appUser: any, projectId: string) {
+  if (appUser.role === "admin") return true;
+  const membership = await projectAccess.getProjectMembership(projectId, appUser.id);
+  return !membership || Boolean(membership.capabilities?.viewWorkflowArtifacts || membership.profile === "gp_internal" || membership.profile === "internal_team");
+}
+
+async function assertCanExecuteTestCase(appUser: any, testCase: any) {
+  if (await canViewAllWorkflowTests(appUser, testCase.projectId)) return;
+  const steps = await wdb.listWorkflowTestSteps(testCase.id);
+  if (!responsibleMatches(appUser, testCase.responsible) && !steps.some((step: any) => responsibleMatches(appUser, step.responsible)))
+    throw new TRPCError({ code: "FORBIDDEN", message: "Este teste está atribuído a outro usuário" });
+}
 
 const gapStatusSchema = z.enum(["Aberto", "Em Análise", "Resolvido", "Aceito"]);
 const gapImpactSchema = z.enum(["Alto", "Médio", "Baixo"]);
@@ -606,6 +656,7 @@ export async function ensureBdcqTemplates(
     module: string;
     category: string;
     question: string;
+    required?: boolean;
     scopeItemIds?: string[];
   }> = BDCQ_TEMPLATES.filter(
     template => !moduleSet || moduleSet.has(template.module)
@@ -637,6 +688,7 @@ export async function ensureBdcqTemplates(
         module,
         category: template.category || "",
         question: template.question,
+        required: Boolean(template.required),
         scopeItemIds: matchedScope
           .filter(
             (item: any) =>
@@ -657,6 +709,7 @@ export async function ensureBdcqTemplates(
       category: template.category,
       question: template.question,
       templateId: template.id || "",
+      required: Boolean(template.required),
       scopeItemIds: template.scopeItemIds || [],
       isDefault: 1,
       sortOrder: existing.length + added,
@@ -665,6 +718,57 @@ export async function ensureBdcqTemplates(
     added++;
   }
   return added;
+}
+
+export async function applyConfigurationTemplates(projectId: string) {
+  const [project, scopeItems, templates, existing] = await Promise.all([
+    plannerStore.getProjectById(projectId),
+    wdb.listScopeItems(projectId),
+    wdb.listConfigurationTemplates(),
+    wdb.listConfigurations(projectId),
+  ]);
+  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
+  const normalize = (value: string) => value.trim().toLocaleLowerCase("pt-BR");
+  const projectModules = new Set([
+    ...(project.fronts || []).map(value => value.toUpperCase()),
+    ...scopeItems.map((item: any) => String(item.module || "").toUpperCase()),
+  ]);
+  const known = new Set(existing.map((item: any) =>
+    `${item.templateId || ""}|${String(item.module || "").toUpperCase()}|${[...(item.scopeItemIds || [])].sort().join(",")}`
+  ));
+  let added = 0;
+  let ignored = 0;
+  for (const template of templates.filter((item: any) => item.active !== false && item.active !== 0)) {
+    const modules = (template.modules || []).map((value: string) => value.toUpperCase());
+    const keys = new Set((template.scopeItemKeys || []).map((value: string) => normalize(value)));
+    const matchedScope = scopeItems.filter((item: any) =>
+      item.active !== 0 && keys.has(normalize(item.code || item.name || "")) && (!modules.length || modules.includes(String(item.module || "").toUpperCase()))
+    );
+    if (keys.size && !matchedScope.length) { ignored++; continue; }
+    const targetModules = keys.size
+      ? [...new Set(matchedScope.map((item: any) => String(item.module || "").toUpperCase()))]
+      : modules.length
+        ? modules.filter((module: string) => projectModules.has(module))
+        : [""];
+    if (!targetModules.length) { ignored++; continue; }
+    for (const module of targetModules) {
+      const scopeItemIds = matchedScope
+        .filter((item: any) => !module || String(item.module || "").toUpperCase() === module)
+        .map((item: any) => item.id)
+        .sort();
+      const key = `${template.id}|${module}|${scopeItemIds.join(",")}`;
+      if (known.has(key)) { ignored++; continue; }
+      await wdb.createConfiguration({
+        id: nanoid(), projectId, module, category: template.category || "Configuração",
+        description: template.description, responsible: "", status: "Pendente",
+        notes: "Aplicada a partir do modelo administrativo", templateId: template.id,
+        bdcqQuestionId: "", scopeItemIds, source: "template",
+      });
+      known.add(key);
+      added++;
+    }
+  }
+  return { added, ignored };
 }
 
 async function recordWorkflowAudit(
@@ -1514,7 +1618,7 @@ export const workflowRouter = router({
   }),
   // ===== Scope Items =====
   scopeItems: router({
-    list: workflowProjectProcedure()
+    list: workflowProjectProcedure(false, "viewProject")
       .input(z.object({ projectId: z.string(), ...paginationInput }))
       .query(({ input }) => wdb.listScopeItems(input.projectId, input)),
     create: workflowProjectProcedure(true)
@@ -1605,6 +1709,7 @@ export const workflowRouter = router({
           category: template.category,
           modules: [template.module],
           scopeItemKeys: [],
+          required: false,
           active: 1,
           createdBy: "Sistema",
           builtIn: true,
@@ -1613,6 +1718,29 @@ export const workflowRouter = router({
           ...builtIn,
           ...custom.map(template => ({ ...template, builtIn: false })),
         ];
+      }),
+      options: adminProcedure.query(async () => {
+        const projects = await plannerStore.listProjects();
+        const scopeByProject = await Promise.all(
+          projects.map(project => wdb.listScopeItems(project.id))
+        );
+        const unique = new Map<string, { key: string; code: string; name: string; module: string }>();
+        for (const item of scopeByProject.flat()) {
+          if (item.active === 0) continue;
+          const key = String(item.code || item.name || "").trim();
+          if (!key) continue;
+          const module = String(item.module || "Geral").trim() || "Geral";
+          const identity = `${module.toLocaleLowerCase("pt-BR")}:${key.toLocaleLowerCase("pt-BR")}`;
+          if (!unique.has(identity)) unique.set(identity, {
+            key,
+            code: String(item.code || ""),
+            name: String(item.name || key),
+            module,
+          });
+        }
+        return [...unique.values()].sort((a, b) =>
+          `${a.module} ${a.code} ${a.name}`.localeCompare(`${b.module} ${b.code} ${b.name}`, "pt-BR")
+        );
       }),
       create: adminProcedure
         .input(
@@ -1627,6 +1755,7 @@ export const workflowRouter = router({
               .array(z.string().trim().min(1).max(512))
               .max(200)
               .default([]),
+            required: z.boolean().default(false),
             active: z.number().int().min(0).max(1).optional(),
           })
         )
@@ -1654,6 +1783,7 @@ export const workflowRouter = router({
                 .array(z.string().trim().min(1).max(512))
                 .max(200)
                 .optional(),
+              required: z.boolean().optional(),
               active: z.number().int().min(0).max(1).optional(),
             }),
           })
@@ -1674,12 +1804,19 @@ export const workflowRouter = router({
         })),
     }),
     keyUsers: router({
-      list: workflowProjectProcedure()
+      list: workflowProjectProcedure(false, "viewProject")
         .input(z.object({ projectId: z.string() }))
         .query(({ input }) => wdb.listProjectKeyUsers(input.projectId)),
       create: workflowProjectProcedure(true)
         .input(z.object({ projectId: z.string(), name: z.string().trim().min(1).max(255), email: z.string().trim().email().max(320), role: z.string().trim().max(255).optional() }))
-        .mutation(({ input }) => wdb.createProjectKeyUser({ id: nanoid(), projectId: input.projectId, name: input.name, email: input.email.toLowerCase(), role: input.role || "", active: 1 })),
+        .mutation(async ({ input }) => {
+          const appUser = await plannerStore.getAppUserByEmail(input.email.toLowerCase());
+          if (!appUser) throw new TRPCError({ code: "BAD_REQUEST", message: "Cadastre primeiro este e-mail em Gestão de Acesso" });
+          const membership = await projectAccess.getProjectMembership(input.projectId, appUser.id);
+          if (!membership?.active || !membership.capabilities?.fillAssignedBdcq)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Associe o usuário ao projeto com permissão para preencher BDCQ" });
+          return wdb.createProjectKeyUser({ id: nanoid(), projectId: input.projectId, name: input.name, email: input.email.toLowerCase(), role: input.role || membership.jobTitle || "", active: 1 });
+        }),
       update: workflowEntityProcedure("workflow_project_key_users", true)
         .input(z.object({ id: z.string(), data: z.object({ name: z.string().trim().min(1).max(255).optional(), email: z.string().trim().email().max(320).optional(), role: z.string().trim().max(255).optional(), active: z.number().int().min(0).max(1).optional() }) }))
         .mutation(({ input }) => wdb.updateProjectKeyUser(input.id, { ...input.data, email: input.data.email?.toLowerCase() })),
@@ -1688,9 +1825,13 @@ export const workflowRouter = router({
         .mutation(({ input }) => wdb.deleteProjectKeyUser(input.id)),
     }),
     questions: router({
-      list: workflowProjectProcedure()
+      list: workflowProjectProcedure(false, "viewProject")
         .input(z.object({ projectId: z.string(), ...paginationInput }))
-        .query(({ input }) => wdb.listBdcqQuestions(input.projectId, input)),
+        .query(async ({ ctx, input }) => {
+          const rows = await wdb.listBdcqQuestions(input.projectId, input);
+          const visible = await visibleBdcqQuestionIds(ctx.appUser, input.projectId, rows);
+          return visible ? rows.filter((item: any) => visible.has(item.id)) : rows;
+        }),
       create: workflowProjectProcedure(true)
         .input(
           z.object({
@@ -1705,7 +1846,7 @@ export const workflowRouter = router({
             sortOrder: z.number().optional(),
           })
         )
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           if (input.consultantResourceId && !(await plannerStore.getResourceById(input.consultantResourceId)))
             throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
           if (input.keyUserId && await wdb.getWorkflowEntityProjectId("workflow_project_key_users", input.keyUserId) !== input.projectId)
@@ -1741,7 +1882,7 @@ export const workflowRouter = router({
             }),
           })
         )
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           if (input.data.consultantResourceId && !(await plannerStore.getResourceById(input.data.consultantResourceId)))
             throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
           if (input.data.keyUserId) {
@@ -1808,7 +1949,7 @@ export const workflowRouter = router({
         }),
     }),
     answers: router({
-      list: workflowProjectProcedure()
+      list: workflowProjectProcedure(false, "viewProject")
         .input(
           z.object({
             projectId: z.string(),
@@ -1816,15 +1957,13 @@ export const workflowRouter = router({
             ...paginationInput,
           })
         )
-        .query(({ input }) =>
-          input.questionIds
-            ? wdb.listBdcqAnswersForQuestions(
-                input.projectId,
-                input.questionIds
-              )
-            : wdb.listBdcqAnswers(input.projectId, input)
-        ),
-      create: workflowProjectProcedure(true)
+        .query(async ({ ctx, input }) => {
+          const visible = await visibleBdcqQuestionIds(ctx.appUser, input.projectId);
+          const requestedIds = input.questionIds ? input.questionIds.filter(id => !visible || visible.has(id)) : undefined;
+          const rows = requestedIds ? await wdb.listBdcqAnswersForQuestions(input.projectId, requestedIds) : await wdb.listBdcqAnswers(input.projectId, input);
+          return visible ? rows.filter((item: any) => visible.has(item.questionId)) : rows;
+        }),
+      create: workflowProjectProcedure(true, "fillAssignedBdcq")
         .input(
           z.object({
             questionId: z.string(),
@@ -1834,7 +1973,7 @@ export const workflowRouter = router({
             attachments: z.array(z.string()).optional(),
           })
         )
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           const questionProjectId = await wdb.getWorkflowEntityProjectId(
             "bdcq_questions",
             input.questionId
@@ -1844,11 +1983,13 @@ export const workflowRouter = router({
               code: "BAD_REQUEST",
               message: "A pergunta não pertence ao projeto selecionado",
             });
+          await assertCanAnswerBdcq(ctx.appUser, input.projectId, input.questionId);
           const existing = await wdb.getBdcqAnswerByQuestion(
             input.projectId,
             input.questionId
           );
-          if (existing)
+          if (existing) {
+            await approvalStore.assertEntityEditable("bdcq_answer", existing.id);
             return wdb.updateBdcqAnswerWithHistory(
               existing.id,
               {
@@ -1859,6 +2000,7 @@ export const workflowRouter = router({
               nanoid(),
               "Auto-save"
             );
+          }
           const id = nanoid();
           const created = await wdb.createBdcqAnswer({
             id,
@@ -1871,7 +2013,7 @@ export const workflowRouter = router({
           await notifyIfBdcqModuleCompleted(input.projectId, input.questionId);
           return created;
         }),
-      update: workflowEntityProcedure("bdcq_answers", true)
+      update: workflowEntityProcedure("bdcq_answers", true, "id", "fillAssignedBdcq")
         .input(
           z.object({
             id: z.string(),
@@ -1882,20 +2024,32 @@ export const workflowRouter = router({
             }),
           })
         )
-        .mutation(({ ctx, input }) =>
-          wdb.updateBdcqAnswerWithHistory(
+        .mutation(async ({ ctx, input }) => {
+          const existing = await wdb.getBdcqAnswerById(input.id);
+          if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Resposta não encontrada" });
+          await assertCanAnswerBdcq(ctx.appUser, existing.projectId, existing.questionId);
+          await approvalStore.assertEntityEditable("bdcq_answer", input.id);
+          return wdb.updateBdcqAnswerWithHistory(
             input.id,
             input.data,
             nanoid(),
             ctx.user.name || ctx.user.email || "Usuário"
-          )
-        ),
-      history: workflowEntityProcedure("bdcq_answers", false, "answerId")
+          );
+        }),
+      history: workflowEntityProcedure("bdcq_answers", false, "answerId", "viewProject")
         .input(z.object({ answerId: z.string() }))
-        .query(({ input }) => wdb.listBdcqAnswerHistory(input.answerId)),
+        .query(async ({ ctx, input }) => {
+          const answer = await wdb.getBdcqAnswerById(input.answerId);
+          if (!answer) throw new TRPCError({ code: "NOT_FOUND", message: "Resposta não encontrada" });
+          await assertCanViewBdcqQuestion(ctx.appUser, answer.projectId, answer.questionId);
+          return wdb.listBdcqAnswerHistory(input.answerId);
+        }),
       delete: workflowEntityProcedure("bdcq_answers", true)
         .input(z.object({ id: z.string() }))
-        .mutation(({ input }) => wdb.deleteBdcqAnswer(input.id)),
+        .mutation(async ({ input }) => {
+          await approvalStore.assertEntityEditable("bdcq_answer", input.id);
+          return wdb.deleteBdcqAnswer(input.id);
+        }),
     }),
   }),
 
@@ -2254,6 +2408,7 @@ Retorne em formato markdown.`;
         })
       )
       .mutation(async ({ ctx, input }) => {
+        await approvalStore.assertEntityEditable("dcd", input.id);
         const before = await wdb.getDcdDocument(input.id);
         const projectId =
           before?.projectId ||
@@ -2289,6 +2444,7 @@ Retorne em formato markdown.`;
         })
       )
       .mutation(async ({ ctx, input }) => {
+        await Promise.all(input.ids.map(id => approvalStore.assertEntityEditable("dcd", id)));
         await assertEntitiesBelongToProject(
           "dcd_documents",
           input.ids,
@@ -2315,7 +2471,7 @@ Retorne em formato markdown.`;
       }),
     delete: workflowEntityProcedure("dcd_documents", true)
       .input(z.object({ id: z.string() }))
-      .mutation(({ input }) => wdb.deleteDcdDocument(input.id)),
+      .mutation(async ({ input }) => { await approvalStore.assertEntityEditable("dcd", input.id); return wdb.deleteDcdDocument(input.id); }),
     generationStatus: workflowProjectProcedure()
       .input(
         z.object({
@@ -2606,6 +2762,7 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
         })
       )
       .mutation(async ({ ctx, input }) => {
+        await approvalStore.assertEntityEditable("gap", input.id);
         const projectId = await wdb.getWorkflowEntityProjectId(
           "gaps",
           input.id
@@ -2634,6 +2791,7 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
         })
       )
       .mutation(async ({ ctx, input }) => {
+        await Promise.all(input.ids.map(id => approvalStore.assertEntityEditable("gap", id)));
         await assertEntitiesBelongToProject("gaps", input.ids, input.projectId);
         const updated = await wdb.bulkUpdateGaps(input.ids, input.data);
         await recordWorkflowAudit(
@@ -2648,7 +2806,7 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
       }),
     delete: workflowEntityProcedure("gaps", true)
       .input(z.object({ id: z.string() }))
-      .mutation(({ input }) => wdb.deleteGap(input.id)),
+      .mutation(async ({ input }) => { await approvalStore.assertEntityEditable("gap", input.id); return wdb.deleteGap(input.id); }),
     extractFromDcd: workflowProjectProcedure(true)
       .input(
         z.object({
@@ -2748,6 +2906,38 @@ Retorne APENAS um JSON array com objetos no formato:
 
   // ===== Configurations =====
   configurations: router({
+    templates: router({
+      list: protectedProcedure.query(() => wdb.listConfigurationTemplates()),
+      create: adminProcedure
+        .input(z.object({
+          description: z.string().trim().min(1).max(5000),
+          category: z.string().trim().max(256).default("Configuração"),
+          modules: z.array(z.string().trim().min(1).max(128)).max(30).default([]),
+          scopeItemKeys: z.array(z.string().trim().min(1).max(512)).max(200).default([]),
+          active: z.boolean().default(true),
+        }))
+        .mutation(({ ctx, input }) => wdb.createConfigurationTemplate({
+          id: nanoid(), ...input, createdBy: ctx.appUser.name || ctx.appUser.email,
+        })),
+      update: adminProcedure
+        .input(z.object({
+          id: z.string().min(1),
+          data: z.object({
+            description: z.string().trim().min(1).max(5000).optional(),
+            category: z.string().trim().max(256).optional(),
+            modules: z.array(z.string().trim().min(1).max(128)).max(30).optional(),
+            scopeItemKeys: z.array(z.string().trim().min(1).max(512)).max(200).optional(),
+            active: z.boolean().optional(),
+          }),
+        }))
+        .mutation(({ input }) => wdb.updateConfigurationTemplate(input.id, input.data)),
+      delete: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(({ input }) => wdb.deleteConfigurationTemplate(input.id)),
+      applyToProject: workflowProjectProcedure(true)
+        .input(z.object({ projectId: z.string().min(1) }))
+        .mutation(({ input }) => applyConfigurationTemplates(input.projectId)),
+    }),
     list: workflowProjectProcedure()
       .input(z.object({ projectId: z.string(), ...paginationInput }))
       .query(({ input }) => wdb.listConfigurations(input.projectId, input)),
@@ -2761,6 +2951,7 @@ Retorne APENAS um JSON array com objetos no formato:
           responsible: z.string().optional(),
           status: z.string().optional(),
           notes: z.string().optional(),
+          scopeItemIds: z.array(z.string()).max(200).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -2774,6 +2965,10 @@ Retorne APENAS um JSON array com objetos no formato:
           responsible: input.responsible || "",
           status: input.status || "Pendente",
           notes: input.notes,
+          templateId: "",
+          bdcqQuestionId: "",
+          scopeItemIds: input.scopeItemIds || [],
+          source: "manual",
         });
       }),
     update: workflowEntityProcedure("configurations", true)
@@ -2893,6 +3088,10 @@ Retorne APENAS um JSON array com objetos no formato:
             responsible: "",
             status: "Pendente",
             notes: `Extraída de ${document.title}`,
+            templateId: "",
+            bdcqQuestionId: "",
+            scopeItemIds: [],
+            source: "dcd",
           });
           known.add(key);
           added++;
@@ -2905,6 +3104,38 @@ Retorne APENAS um JSON array com objetos no formato:
           document.id,
           { added, ignored }
         );
+        return { added, ignored };
+      }),
+    generateFromBdcq: workflowProjectProcedure(true)
+      .input(z.object({ projectId: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const [questions, answers, existing] = await Promise.all([
+          wdb.listBdcqQuestions(input.projectId),
+          wdb.listBdcqAnswers(input.projectId),
+          wdb.listConfigurations(input.projectId),
+        ]);
+        const answersByQuestion = new Map(
+          answers.filter((item: any) => String(item.answer || "").trim()).map((item: any) => [item.questionId, item])
+        );
+        const known = new Set(existing.map((item: any) => item.bdcqQuestionId).filter(Boolean));
+        let added = 0;
+        let ignored = 0;
+        for (const question of questions as any[]) {
+          const answer = answersByQuestion.get(question.id) as any;
+          if (!answer || known.has(question.id)) { if (answer) ignored++; continue; }
+          await wdb.createConfiguration({
+            id: nanoid(), projectId: input.projectId, module: question.module || "",
+            category: question.category || "Configuração",
+            description: `Configurar conforme BDCQ: ${question.question}`,
+            responsible: "", status: "Pendente",
+            notes: `Resposta BDCQ: ${answer.answer}`,
+            templateId: "", bdcqQuestionId: question.id,
+            scopeItemIds: question.scopeItemIds || [], source: "bdcq",
+          });
+          known.add(question.id);
+          added++;
+        }
+        await recordWorkflowAudit(ctx, input.projectId, "CONFIGURATIONS_FROM_BDCQ", "configuration", input.projectId, { added, ignored });
         return { added, ignored };
       }),
     delete: workflowEntityProcedure("configurations", true)
@@ -3006,7 +3237,7 @@ Retorne APENAS um JSON array com objetos no formato:
         );
         return { scenariosCreated, stepsCreated };
       }),
-    list: workflowProjectProcedure()
+    list: workflowProjectProcedure(false, "executeAssignedTests")
       .input(
         z.object({
           projectId: z.string(),
@@ -3014,11 +3245,15 @@ Retorne APENAS um JSON array com objetos no formato:
           ...paginationInput,
         })
       )
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
         const rows = await wdb.listWorkflowTestCases(input.projectId, input);
-        return input.type
+        const typed = input.type
           ? rows.filter((item: any) => item.type === input.type)
           : rows;
+        if (await canViewAllWorkflowTests(ctx.appUser, input.projectId)) return typed;
+        const steps = await wdb.listWorkflowTestStepsByProject(input.projectId);
+        const ownCaseIds = new Set(steps.filter((step: any) => responsibleMatches(ctx.appUser, step.responsible)).map((step: any) => step.testCaseId));
+        return typed.filter((item: any) => responsibleMatches(ctx.appUser, item.responsible) || ownCaseIds.has(item.id));
       }),
     create: workflowProjectProcedure(true)
       .input(
@@ -3084,7 +3319,7 @@ Retorne APENAS um JSON array com objetos no formato:
         );
         return created;
       }),
-    update: workflowEntityProcedure("workflow_test_cases", true)
+    update: workflowEntityProcedure("workflow_test_cases", true, "id", "executeAssignedTests")
       .input(
         z.object({
           id: z.string(),
@@ -3106,6 +3341,10 @@ Retorne APENAS um JSON array com objetos no formato:
         })
       )
       .mutation(async ({ ctx, input }) => {
+        await approvalStore.assertEntityEditable("test_case", input.id);
+        const testCase = await wdb.getWorkflowTestCaseById(input.id);
+        if (!testCase) throw new TRPCError({ code: "NOT_FOUND", message: "Teste não encontrado" });
+        await assertCanExecuteTestCase(ctx.appUser, testCase);
         const projectId = await wdb.getWorkflowEntityProjectId(
           "workflow_test_cases",
           input.id
@@ -3134,6 +3373,7 @@ Retorne APENAS um JSON array com objetos no formato:
         })
       )
       .mutation(async ({ ctx, input }) => {
+        await Promise.all(input.ids.map(id => approvalStore.assertEntityEditable("test_case", id)));
         await assertEntitiesBelongToProject(
           "workflow_test_cases",
           input.ids,
@@ -3155,11 +3395,17 @@ Retorne APENAS um JSON array com objetos no formato:
       }),
     delete: workflowEntityProcedure("workflow_test_cases", true)
       .input(z.object({ id: z.string() }))
-      .mutation(({ input }) => wdb.deleteWorkflowTestCase(input.id)),
+      .mutation(async ({ input }) => { await approvalStore.assertEntityEditable("test_case", input.id); return wdb.deleteWorkflowTestCase(input.id); }),
     steps: router({
-      list: workflowEntityProcedure("workflow_test_cases", false, "testCaseId")
+      list: workflowEntityProcedure("workflow_test_cases", false, "testCaseId", "executeAssignedTests")
         .input(z.object({ testCaseId: z.string() }))
-        .query(({ input }) => wdb.listWorkflowTestSteps(input.testCaseId)),
+        .query(async ({ ctx, input }) => {
+          const testCase = await wdb.getWorkflowTestCaseById(input.testCaseId);
+          if (!testCase) throw new TRPCError({ code: "NOT_FOUND", message: "Teste não encontrado" });
+          const rows = await wdb.listWorkflowTestSteps(input.testCaseId);
+          if (await canViewAllWorkflowTests(ctx.appUser, testCase.projectId)) return rows;
+          return rows.filter((step: any) => responsibleMatches(ctx.appUser, step.responsible));
+        }),
       create: workflowEntityProcedure("workflow_test_cases", true, "testCaseId")
         .input(
           z.object({
@@ -3197,7 +3443,7 @@ Retorne APENAS um JSON array com objetos no formato:
             );
           return created;
         }),
-      update: workflowEntityProcedure("workflow_test_steps", true)
+      update: workflowEntityProcedure("workflow_test_steps", true, "id", "executeAssignedTests")
         .input(
           z.object({
             id: z.string(),
@@ -3222,7 +3468,13 @@ Retorne APENAS um JSON array com objetos no formato:
             }),
           })
         )
-        .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const step = await wdb.getWorkflowTestStepById(input.id);
+        if (!step) throw new TRPCError({ code: "NOT_FOUND", message: "Etapa não encontrada" });
+        const testCase = await wdb.getWorkflowTestCaseById(step.testCaseId);
+        if (!testCase) throw new TRPCError({ code: "NOT_FOUND", message: "Teste não encontrado" });
+        if (!(await canViewAllWorkflowTests(ctx.appUser, testCase.projectId)) && !responsibleMatches(ctx.appUser, step.responsible))
+          throw new TRPCError({ code: "FORBIDDEN", message: "Esta etapa está atribuída a outro usuário" });
           const projectId = await wdb.getWorkflowEntityProjectId(
             "workflow_test_steps",
             input.id
@@ -3245,7 +3497,7 @@ Retorne APENAS um JSON array com objetos no formato:
   }),
 
   // ===== File Upload =====
-  upload: workflowProjectProcedure(true)
+  upload: workflowProjectProcedure(true, "fillAssignedBdcq")
     .input(
       z.object({
         projectId: z.string().min(1),

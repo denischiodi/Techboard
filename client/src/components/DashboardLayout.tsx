@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -24,12 +25,12 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { LogOut, PanelLeft, Lock, KeyRound, Mail, Bell, Grid2X2 } from "lucide-react";
+import { LogOut, PanelLeft, Lock, KeyRound, Mail, Bell, ChevronDown, Grid2X2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-import { canAccessPath, canViewTab, productForPath, PRODUCTS } from "@/lib/productCatalog";
+import { canAccessPath, canAccessProduct, canViewMenuItem, productForPath, PRODUCTS, type ProductId } from "@/lib/productCatalog";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
 import { ProductLogo } from "@/components/ProductLogo";
 
@@ -215,13 +216,16 @@ function DashboardLayoutContent({
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, setOpenMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeProduct = productForPath(location);
   const activeMenuItem = menuItems.filter(item => location === item.path || location.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
   const isMobile = useIsMobile();
+  const [expandedProducts, setExpandedProducts] = useState<Partial<Record<ProductId, boolean>>>(() => (
+    activeProduct ? { [activeProduct.id]: true } : {}
+  ));
 
   // Fetch user permissions based on email
   const { data: appUser, isLoading: permLoading } = trpc.access.getByEmail.useQuery(
@@ -256,8 +260,10 @@ function DashboardLayoutContent({
     </DropdownMenu>
   );
 
-  // Filter menu items based on permissions
-  const visibleMenuItems = activeProduct?.menus.filter(item => canViewTab(item.permission, userPermissions)) || [];
+  const visibleProducts = PRODUCTS
+    .filter(product => canAccessProduct(product, userPermissions))
+    .map(product => ({ ...product, visibleMenus: product.menus.filter(item => canViewMenuItem(item, userPermissions)) }))
+    .filter(product => product.visibleMenus.length > 0);
 
   // Check if current page is blocked
   const isBlocked = location !== "/" && !canAccessPath(location, userPermissions);
@@ -267,7 +273,17 @@ function DashboardLayoutContent({
     if (isBlocked && !permLoading) {
       setLocation("/");
     }
-  }, [isBlocked, permLoading, visibleMenuItems, setLocation]);
+  }, [isBlocked, permLoading, setLocation]);
+
+  useEffect(() => {
+    if (!activeProduct) return;
+    setExpandedProducts(current => ({ ...current, [activeProduct.id]: true }));
+  }, [activeProduct?.id]);
+
+  const navigateFromSidebar = (path: string) => {
+    setLocation(path);
+    if (isMobile) setOpenMobile(false);
+  };
 
   useEffect(() => {
     if (isCollapsed) {
@@ -334,35 +350,51 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <div className="px-2 pb-2">
-              <Button variant="ghost" className="w-full justify-start gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2" onClick={() => setLocation("/")} title="Todas as ferramentas">
+              <Button variant="ghost" className="w-full justify-start gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2" onClick={() => navigateFromSidebar("/")} title="Todas as ferramentas">
                 <Grid2X2 className="h-4 w-4" /><span className="group-data-[collapsible=icon]:hidden">Todas as ferramentas</span>
               </Button>
             </div>
-            <SidebarMenu className="px-2 py-1">
-              {visibleMenuItems.map(item => {
-                const isActive = location === item.path || (item.path !== activeProduct?.homePath && location.startsWith(`${item.path}/`));
-                const label = appUser?.role === 'consultant' && item.path === '/techboard/resources'
-                  ? 'Meu Cadastro'
-                  : appUser?.role === 'consultant' && item.path === '/techboard/absences'
-                  ? 'Minhas Férias'
-                  : item.label;
+            <div className="space-y-1 px-2 pb-3">
+              {visibleProducts.map(product => {
+                const ProductIcon = product.icon;
+                const open = isCollapsed || Boolean(expandedProducts[product.id]);
                 return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <Collapsible key={product.id} open={open} onOpenChange={value => setExpandedProducts(current => ({ ...current, [product.id]: value }))}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        variant={activeProduct?.id === product.id ? "secondary" : "ghost"}
+                        className="h-10 w-full justify-start gap-2 px-2 font-semibold group-data-[collapsible=icon]:justify-center"
+                        title={product.name}
+                      >
+                        <ProductIcon className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">{product.name}</span>
+                        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${open ? "rotate-180" : ""}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="group-data-[collapsible=icon]:hidden">
+                      <SidebarMenu className="mt-1 border-l pl-3">
+                        {product.visibleMenus.map(item => {
+                          const isActive = location === item.path || (item.path !== product.homePath && location.startsWith(`${item.path}/`));
+                          const label = appUser?.role === 'consultant' && item.path === '/techboard/resources'
+                            ? 'Meu Cadastro'
+                            : appUser?.role === 'consultant' && item.path === '/techboard/absences'
+                            ? 'Minhas Férias'
+                            : item.label;
+                          return (
+                            <SidebarMenuItem key={item.path}>
+                              <SidebarMenuButton isActive={isActive} onClick={() => navigateFromSidebar(item.path)} tooltip={label} className="h-9 font-normal">
+                                <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                                <span>{label}</span>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          );
+                        })}
+                      </SidebarMenu>
+                    </CollapsibleContent>
+                  </Collapsible>
                 );
               })}
-            </SidebarMenu>
+            </div>
           </SidebarContent>
 
           <SidebarFooter className="p-3">

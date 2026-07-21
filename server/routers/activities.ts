@@ -1,18 +1,37 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { Activity, AppUser, Project } from "../../shared/types";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as activityStore from "../activityStore";
+import * as activityTemplateStore from "../activityTemplateStore";
+import { syncActivityTemplates } from "../activityTemplateSync";
 import { flushActivityEmailOutbox } from "../activityMailer";
 import { syncActivitiesFromSources, syncActivityStatusToSource } from "../activitySync";
 import * as plannerStore from "../plannerStore";
 import { storagePut } from "../storage";
+import * as projectAccess from "../projectAccess";
+import * as approvalStore from "../approvalStore";
 
 const statusSchema = z.enum(["A fazer", "Em andamento", "Bloqueada", "Em validação", "Concluída"]);
 const prioritySchema = z.enum(["Baixa", "Média", "Alta", "Crítica"]);
+const stageSchema = z.enum(["DCD", "BDCQ", "TESTE", "GERAL"]);
 const isoDateSchema = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
+const templateInputSchema = z.object({
+  title: z.string().trim().min(1).max(500),
+  description: z.string().max(10000).default(""),
+  priority: prioritySchema.default("Média"),
+  recurrence: z.enum(["none", "weekly", "monthly"]).default("none"),
+  weekday: z.number().int().min(0).max(6).default(1),
+  monthDay: z.number().int().min(1).max(31).default(1),
+  dueOffsetDays: z.number().int().min(0).max(3650).default(0),
+  ownerRole: z.enum(["manager", "technical_lead", "consultant"]).default("manager"),
+  appliesToAllProjects: z.boolean().default(true),
+  active: z.boolean().default(true),
+  projects: z.array(z.object({ projectId: z.string().min(1), assigneeUserId: z.string().default("") })).max(1000).default([]),
+});
 const importRowSchema = z.object({
   rowNumber: z.number().int().positive(), id: z.string().default(""), scope: z.enum(["project", "internal"]),
+  stage: stageSchema.optional(),
   projectId: z.string().default(""), title: z.string().trim().min(1).max(500), description: z.string().max(10000).default(""),
   status: statusSchema.default("A fazer"), priority: prioritySchema.default("Média"), assigneeUserId: z.string().default(""),
   participantUserIds: z.array(z.string()).default([]), dueDate: isoDateSchema.default(""),
@@ -49,24 +68,32 @@ function involved(activity: Activity, user: AppUser) {
 async function canView(activity: Activity, user: AppUser) {
   if (user.role === "admin") return true;
   if (activity.scope === "internal") return user.role === "manager" || involved(activity, user);
+  const membership = await projectAccess.getProjectMembership(activity.projectId, user.id);
+  if (membership) return involved(activity, user) || Boolean(membership.active && membership.capabilities?.viewKanban && membership.profile === "gp_internal");
   if (user.role === "technical_lead") return true;
   const project = await plannerStore.getProjectById(activity.projectId);
   return Boolean(involved(activity, user) || (project && await managedProject(user, project)));
 }
 
-function canEdit(activity: Activity, user: AppUser) {
-  return user.role === "admin" || involved(activity, user);
+async function canEdit(activity: Activity, user: AppUser) {
+  if (user.role === "admin") return true;
+  if (!involved(activity, user)) return false;
+  if (activity.scope !== "project") return true;
+  const membership = await projectAccess.getProjectMembership(activity.projectId, user.id);
+  return !membership || Boolean(membership.active && membership.capabilities?.editAssignedActivity);
 }
 
 async function requireActivity(activityId: string, user: AppUser, edit = false) {
   const activity = await activityStore.getActivity(activityId);
   if (!activity) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada" });
-  if (!(await canView(activity, user)) || (edit && !canEdit(activity, user))) forbidden();
+  if (!(await canView(activity, user)) || (edit && !(await canEdit(activity, user)))) forbidden();
   return activity;
 }
 
 async function projectMemberIds(project: Project) {
   const [users, allocations] = await Promise.all([plannerStore.listAppUsers(), plannerStore.listAllocations()]);
+  const explicit = await projectAccess.listProjectMemberships(project.id);
+  if (explicit.length) return new Set(explicit.filter(item => item.active && item.user?.active).map(item => item.appUserId));
   const resourceIds = new Set(allocations.filter(item => item.projectId === project.id).map(item => item.resourceId));
   const manager = normalize(project.manager);
   return new Set(users.filter(user => user.active && (
@@ -90,7 +117,7 @@ async function notify(activity: Activity, actor: AppUser, eventType: string, mes
     activityId: activity.id,
     eventKey: `${activity.id}:${eventType}:${activity.updatedAt}:${Date.now()}`,
     eventType,
-    title: activity.title,
+    title: activity.displayTitle,
     message,
     userIds: recipients,
   });
@@ -102,6 +129,9 @@ async function syncAndList(user: AppUser) {
   const activities = await activityStore.listActivities();
   if (user.role === "admin") return activities;
 
+  const memberships = await projectAccess.listProjectMemberships(undefined, user.id);
+  const explicitProjectIds = new Set(memberships.filter(item => item.active && item.capabilities?.viewKanban && item.profile === "gp_internal").map(item => item.projectId));
+
   const projectIds = new Set(activities.filter(activity => activity.scope === "project" && !involved(activity, user)).map(activity => activity.projectId));
   const projects = projectIds.size ? (await plannerStore.listProjects()).filter(project => projectIds.has(project.id)) : [];
   const visibleProjectIds = new Set<string>();
@@ -112,6 +142,7 @@ async function syncAndList(user: AppUser) {
   for (const activity of activities) {
     if (involved(activity, user)) visible.push(activity);
     else if (activity.scope === "internal" && user.role === "manager") visible.push(activity);
+    else if (activity.scope === "project" && explicitProjectIds.has(activity.projectId)) visible.push(activity);
     else if (activity.scope === "project" && visibleProjectIds.has(activity.projectId)) visible.push(activity);
   }
   return visible;
@@ -130,6 +161,38 @@ function scheduleSourceSync() {
 }
 
 export const activitiesRouter = router({
+  templates: router({
+    list: adminProcedure.query(() => activityTemplateStore.listActivityTemplates()),
+    options: adminProcedure.query(async () => {
+      const [projects, users, allocations] = await Promise.all([plannerStore.listProjects(), plannerStore.listAppUsers(), plannerStore.listAllocations()]);
+      return projects.map(project => {
+        const resourceIds = new Set(allocations.filter(item => item.projectId === project.id).map(item => item.resourceId));
+        const managerKey = normalize(project.manager);
+        const candidates = users.filter(user => user.active && (
+          resourceIds.has(user.resourceId || "") || [user.name, user.email, user.resourceId].some(value => normalize(value) === managerKey)
+        ));
+        return { project, candidates: candidates.map(user => ({ id: user.id, name: user.name, role: user.role })) };
+      });
+    }),
+    create: adminProcedure.input(templateInputSchema).mutation(async ({ ctx, input }) => {
+      const created = await activityTemplateStore.createActivityTemplate(input, ctx.appUser.id);
+      await syncActivityTemplates();
+      return created;
+    }),
+    update: adminProcedure.input(z.object({ id: z.string().min(1), data: templateInputSchema })).mutation(async ({ input }) => {
+      const updated = await activityTemplateStore.updateActivityTemplate(input.id, input.data);
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Modelo de atividade não encontrado" });
+      await syncActivityTemplates();
+      return updated;
+    }),
+    setActive: adminProcedure.input(z.object({ id: z.string().min(1), active: z.boolean() })).mutation(async ({ input }) => {
+      const updated = await activityTemplateStore.setActivityTemplateActive(input.id, input.active);
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Modelo de atividade não encontrado" });
+      if (input.active) await syncActivityTemplates();
+      return updated;
+    }),
+    sync: adminProcedure.mutation(() => syncActivityTemplates()),
+  }),
   list: activityViewProcedure.query(async ({ ctx }) => {
     return syncAndList(ctx.appUser);
   }),
@@ -147,6 +210,7 @@ export const activitiesRouter = router({
 
   create: activityCreateProcedure.input(z.object({
     scope: z.enum(["project", "internal"]), projectId: z.string().default(""), title: z.string().trim().min(1).max(500),
+    stage: stageSchema.default("GERAL"),
     description: z.string().max(10000).default(""), priority: prioritySchema.default("Média"),
     assigneeUserId: z.string().default(""), participantUserIds: z.array(z.string()).default([]), dueDate: isoDateSchema.default(""),
   })).mutation(async ({ ctx, input }) => {
@@ -155,6 +219,8 @@ export const activitiesRouter = router({
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
       const members = await projectMemberIds(project);
       if (ctx.appUser.role !== "admin" && !members.has(ctx.appUser.id)) forbidden("Somente membros do projeto podem criar atividades nele");
+      const membership = await projectAccess.getProjectMembership(input.projectId, ctx.appUser.id);
+      if (membership && !membership.capabilities?.createActivity) forbidden("Seu perfil não permite criar atividades neste projeto");
       for (const userId of [input.assigneeUserId, ...input.participantUserIds]) if (userId && !members.has(userId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Todos os envolvidos devem participar do projeto" });
     } else {
       for (const userId of [input.assigneeUserId, ...input.participantUserIds]) await assertEligibleUser({ scope: "internal", projectId: "" }, userId);
@@ -183,7 +249,7 @@ export const activitiesRouter = router({
         }
 
         if (!row.id) {
-          const created = await activityStore.createActivity({ ...row, creatorUserId: ctx.appUser.id, participantUserIds });
+          const created = await activityStore.createActivity({ ...row, stage: row.stage || "GERAL", creatorUserId: ctx.appUser.id, participantUserIds });
           if (!created) throw new Error("Não foi possível criar a atividade");
           await activityStore.addHistory(created.id, ctx.appUser, "EXCEL_IMPORTED", { rowNumber: row.rowNumber });
           results.push({ rowNumber: row.rowNumber, id: created.id, action: "created" });
@@ -193,6 +259,7 @@ export const activitiesRouter = router({
         const current = await requireActivity(row.id, ctx.appUser, true);
         if (current.sourceType !== "manual") throw new Error("Atividades automáticas não podem ser alteradas por Excel");
         if (current.scope !== row.scope || current.projectId !== row.projectId) throw new Error("Escopo e projeto não podem ser alterados por Excel");
+        if (row.stage && current.stage !== row.stage) throw new Error("A etapa não pode ser alterada por Excel");
         if (row.status === "Concluída" && current.checklist.some(item => item.required && !item.completed)) throw new Error("Há itens obrigatórios pendentes no checklist");
         const updated = await activityStore.updateActivity(row.id, {
           title: row.title, description: row.description, status: row.status, priority: row.priority,
@@ -218,6 +285,7 @@ export const activitiesRouter = router({
       status: statusSchema.optional(), priority: prioritySchema.optional(), assigneeUserId: z.string().optional(), dueDate: isoDateSchema.optional() }),
   })).mutation(async ({ ctx, input }) => {
     const activity = await requireActivity(input.id, ctx.appUser, true);
+    await approvalStore.assertEntityEditable("activity", activity.id);
     if (input.expectedUpdatedAt && activity.updatedAt !== input.expectedUpdatedAt) throw new TRPCError({ code: "CONFLICT", message: "A atividade foi alterada por outra pessoa. Recarregue e tente novamente." });
     if (activity.sourceType !== "manual" && (input.data.title !== undefined || input.data.description !== undefined || input.data.priority !== undefined)) throw new TRPCError({ code: "BAD_REQUEST", message: "Título, descrição e prioridade são controlados pela origem desta atividade" });
     if (input.data.assigneeUserId !== undefined) await assertEligibleUser(activity, input.data.assigneeUserId);
@@ -225,6 +293,8 @@ export const activitiesRouter = router({
       if (activity.checklist.some(item => item.required && !item.completed)) throw new TRPCError({ code: "BAD_REQUEST", message: "Conclua todos os itens obrigatórios do checklist" });
       if (activity.sourceType.startsWith("allocation_") && !activity.sourceResolved) throw new TRPCError({ code: "BAD_REQUEST", message: "Este alerta será concluído quando a condição de alocação for resolvida" });
     }
+    if (["bdcq_question", "workflow_test", "approval"].includes(activity.sourceType) && input.data.status !== undefined)
+      throw new TRPCError({ code: "BAD_REQUEST", message: "O status desta pendência é controlado pelo item de origem" });
     const updated = await activityStore.updateActivity(activity.id, input.data);
     if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada" });
     if (input.data.status) await syncActivityStatusToSource(activity, input.data.status);

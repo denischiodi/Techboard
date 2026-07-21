@@ -18,10 +18,11 @@ import {
   AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
   GripVertical, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users,
 } from "lucide-react";
-import type { Activity, ActivityPriority, ActivityScope, ActivityStatus } from "../../../shared/types";
+import type { Activity, ActivityPriority, ActivityScope, ActivityStage, ActivityStatus } from "../../../shared/types";
 
 const STATUSES: ActivityStatus[] = ["A fazer", "Em andamento", "Bloqueada", "Em validação", "Concluída"];
 const PRIORITIES: ActivityPriority[] = ["Baixa", "Média", "Alta", "Crítica"];
+const STAGES: ActivityStage[] = ["DCD", "BDCQ", "TESTE", "GERAL"];
 
 const statusStyles: Record<ActivityStatus, string> = {
   "A fazer": "border-slate-300 bg-slate-50/60",
@@ -53,7 +54,7 @@ function ActivityCard({ activity, onOpen }: { activity: Activity; onOpen: () => 
     >
       <CardHeader className="space-y-2 p-3 pb-1">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-sm leading-snug">{activity.title}</CardTitle>
+          <CardTitle className="text-sm leading-snug">{activity.displayTitle}</CardTitle>
           <button {...draggable.listeners} {...draggable.attributes} onClick={event => event.stopPropagation()} className="cursor-grab text-muted-foreground" aria-label="Mover atividade">
             <GripVertical className="h-4 w-4" />
           </button>
@@ -127,12 +128,12 @@ export default function Activities() {
   const excelInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("activityId"));
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", dueDate: "" });
+  const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", stage: "GERAL" as ActivityStage, title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", dueDate: "" });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const eligibleUsers = trpc.activities.eligibleUsers.useQuery({ scope: createForm.scope, projectId: createForm.projectId }, { enabled: createOpen && (createForm.scope === "internal" || Boolean(createForm.projectId)) });
   const updateActivity = trpc.activities.update.useMutation({ onSuccess: async () => { await utils.activities.list.invalidate(); }, onError: error => toast.error(error.message) });
-  const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", title: "", description: "", priority: "Média", assigneeUserId: "", dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
+  const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", stage: "GERAL", title: "", description: "", priority: "Média", assigneeUserId: "", dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
   const importExcel = trpc.activities.importExcel.useMutation({
     onSuccess: async result => {
       await utils.activities.list.invalidate();
@@ -265,8 +266,9 @@ export default function Activities() {
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}><div className="flex gap-3 overflow-x-auto pb-4">{STATUSES.map(status => <KanbanColumn key={status} status={status} activities={filtered.filter(activity => activity.status === status)} onOpen={activity => setSelectedId(activity.id)} />)}</div></DndContext>}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>Nova atividade</DialogTitle></DialogHeader><div className="space-y-4">
-        <div><Label>Quadro</Label><Select value={createForm.scope} onValueChange={(scope: ActivityScope) => setCreateForm(form => ({ ...form, scope, projectId: "", assigneeUserId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="project">Projeto</SelectItem><SelectItem value="internal">Operação interna</SelectItem></SelectContent></Select></div>
+        <div><Label>Quadro</Label><Select value={createForm.scope} onValueChange={(scope: ActivityScope) => setCreateForm(form => ({ ...form, scope, projectId: "", stage: scope === "internal" ? "GERAL" : form.stage, assigneeUserId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="project">Projeto</SelectItem><SelectItem value="internal">Operação interna</SelectItem></SelectContent></Select></div>
         {createForm.scope === "project" && <div><Label>Projeto</Label><Select value={createForm.projectId} onValueChange={projectId => setCreateForm(form => ({ ...form, projectId, assigneeUserId: "" }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>}
+        {createForm.scope === "project" && <div><Label>Etapa de origem</Label><Select value={createForm.stage} onValueChange={(stage: ActivityStage) => setCreateForm(form => ({ ...form, stage }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STAGES.map(stage => <SelectItem key={stage} value={stage}>{stage}</SelectItem>)}</SelectContent></Select></div>}
         <div><Label>Título</Label><Input value={createForm.title} onChange={event => setCreateForm(form => ({ ...form, title: event.target.value }))} /></div>
         <div><Label>Descrição</Label><Textarea value={createForm.description} onChange={event => setCreateForm(form => ({ ...form, description: event.target.value }))} /></div>
         <div className="grid gap-3 sm:grid-cols-2"><div><Label>Responsável</Label><Select value={createForm.assigneeUserId || "none"} onValueChange={value => setCreateForm(form => ({ ...form, assigneeUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligibleUsers.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prioridade</Label><Select value={createForm.priority} onValueChange={(priority: ActivityPriority) => setCreateForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div></div>
@@ -313,7 +315,7 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
     } catch (error) { toast.error(errorMessage(error)); }
   };
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle className="pr-8">{activity.title}</DialogTitle></DialogHeader>
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle className="pr-8">{activity.displayTitle}</DialogTitle></DialogHeader>
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}</div>
       {!canEdit && <Button variant="outline" onClick={() => join.mutate({ id: activity.id })}><UserPlus className="mr-2 h-4 w-4" />Participar para colaborar</Button>}

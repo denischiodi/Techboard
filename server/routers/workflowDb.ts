@@ -15,6 +15,7 @@ import {
   workflowAuditLog,
   workflowPrompts,
   workflowBdcqTemplates as bdcqTemplateLibrary,
+  workflowConfigurationTemplates as configurationTemplateLibrary,
   workflowTestCases,
   workflowTestSteps,
 } from "../../drizzle/schema";
@@ -344,7 +345,7 @@ export async function updateBdcqTemplate(
     "workflow_bdcq_templates",
     id,
     data,
-    ["question", "category", "modules", "scopeItemKeys", "active"],
+    ["question", "category", "modules", "scopeItemKeys", "required", "active"],
     ["modules", "scopeItemKeys"]
   );
 }
@@ -395,6 +396,13 @@ export async function getBdcqAnswerByQuestion(
   return (
     (result.rows[0] as typeof bdcqAnswers.$inferSelect | undefined) || null
   );
+}
+
+export async function getBdcqAnswerById(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query('SELECT * FROM "bdcq_answers" WHERE "id" = $1 LIMIT 1', [id]);
+  return (result.rows[0] as typeof bdcqAnswers.$inferSelect | undefined) || null;
 }
 export async function updateBdcqAnswer(
   id: string,
@@ -687,20 +695,19 @@ export async function listConfigurations(
 export async function createConfiguration(
   data: typeof configurations.$inferInsert
 ) {
-  return insertRow("configurations", data);
+  return insertRow("configurations", data, ["scopeItemIds"]);
 }
 export async function updateConfiguration(
   id: string,
   data: Partial<typeof configurations.$inferInsert>
 ) {
-  return updateRow("configurations", id, data, [
-    "module",
-    "category",
-    "description",
-    "responsible",
-    "status",
-    "notes",
-  ]);
+  return updateRow(
+    "configurations",
+    id,
+    data,
+    ["module", "category", "description", "responsible", "status", "notes", "scopeItemIds"],
+    ["scopeItemIds"]
+  );
 }
 export async function deleteConfiguration(id: string) {
   return deleteRow("configurations", id);
@@ -710,6 +717,38 @@ export async function bulkUpdateConfigurations(
   data: Partial<typeof configurations.$inferInsert>
 ) {
   return bulkUpdateRows("configurations", ids, data, ["responsible", "status"]);
+}
+
+export async function listConfigurationTemplates() {
+  const pool = getPgPool();
+  if (!pool) return [] as Array<typeof configurationTemplateLibrary.$inferSelect>;
+  const result = await pool.query(
+    'SELECT * FROM "workflow_configuration_templates" ORDER BY "category", "description"'
+  );
+  return result.rows as Array<typeof configurationTemplateLibrary.$inferSelect>;
+}
+
+export async function createConfigurationTemplate(
+  data: typeof configurationTemplateLibrary.$inferInsert
+) {
+  return insertRow("workflow_configuration_templates", data, ["modules", "scopeItemKeys"]);
+}
+
+export async function updateConfigurationTemplate(
+  id: string,
+  data: Partial<typeof configurationTemplateLibrary.$inferInsert>
+) {
+  return updateRow(
+    "workflow_configuration_templates",
+    id,
+    data,
+    ["description", "category", "modules", "scopeItemKeys", "active"],
+    ["modules", "scopeItemKeys"]
+  );
+}
+
+export async function deleteConfigurationTemplate(id: string) {
+  return deleteRow("workflow_configuration_templates", id);
 }
 
 // ===== Unit and Integrated Tests =====
@@ -728,6 +767,12 @@ export async function createWorkflowTestCase(
   data: typeof workflowTestCases.$inferInsert
 ) {
   return insertRow("workflow_test_cases", data);
+}
+export async function getWorkflowTestCaseById(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query('SELECT * FROM "workflow_test_cases" WHERE "id"=$1 LIMIT 1', [id]);
+  return (result.rows[0] as typeof workflowTestCases.$inferSelect | undefined) || null;
 }
 export async function updateWorkflowTestCase(
   id: string,
@@ -772,6 +817,12 @@ export async function listWorkflowTestSteps(testCaseId: string) {
     testCaseId
   )) as Array<typeof workflowTestSteps.$inferSelect>;
   return rows.sort((a, b) => a.position - b.position);
+}
+export async function getWorkflowTestStepById(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query('SELECT * FROM "workflow_test_steps" WHERE "id"=$1 LIMIT 1', [id]);
+  return (result.rows[0] as typeof workflowTestSteps.$inferSelect | undefined) || null;
 }
 export async function listWorkflowTestStepsByProject(projectId: string) {
   const pool = getPgPool();

@@ -12,6 +12,8 @@ import { ensureDatabaseSchema } from "../plannerStore";
 import { checkDatabaseReadiness } from "../db";
 import { registerTechEduca } from "../techeduca";
 import { registerWorkflowStream } from "../workflowStream";
+import { syncActivitiesFromSources } from "../activitySync";
+import { flushActivityEmailOutbox } from "../activityMailer";
 
 function isAllowedOrigin(req: express.Request) {
   const origin = req.headers.origin;
@@ -88,6 +90,13 @@ async function startServer() {
   server.listen(port, host, () => {
     console.log(`Server running on http://${host}:${port}/`);
   });
+
+  const runActivityScheduler = () => syncActivitiesFromSources()
+    .then(() => flushActivityEmailOutbox())
+    .catch(error => console.warn("Falha na sincronização programada de atividades", error));
+  void runActivityScheduler();
+  const activityTimer = setInterval(() => void runActivityScheduler(), 60 * 60 * 1000);
+  activityTimer.unref();
 }
 
 startServer().catch(console.error);

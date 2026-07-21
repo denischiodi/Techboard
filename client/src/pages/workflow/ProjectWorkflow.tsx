@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
-import { FileSpreadsheet, MessageSquare, Users, FileText, AlertTriangle, Settings2, ArrowRight, History, Search, Download, DatabaseZap, FlaskConical } from "lucide-react";
+import { FileSpreadsheet, MessageSquare, Users, FileText, AlertTriangle, Settings2, ArrowRight, History, Search, Download, DatabaseZap, FlaskConical, ShieldCheck } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ const steps = [
   { id: "gaps", title: "Gaps", description: "Lista de gaps extraída automaticamente do DCD", icon: AlertTriangle, path: "/techmove/gaps", color: "bg-red-500" },
   { id: "configurations", title: "Configurações", description: "Checklist de configurações a executar", icon: Settings2, path: "/techmove/configurations", color: "bg-teal-500" },
   { id: "tests", title: "Testes", description: "Testes unitários e integrados com evidências e rastreabilidade", icon: FlaskConical, path: "/techmove/tests", color: "bg-indigo-500" },
+  { id: "governance", title: "Governança", description: "Aprovadores, quórum e políticas por tipo de entrega", icon: ShieldCheck, path: "/techmove/governance", color: "bg-slate-700" },
 ];
 
 export default function ProjectWorkflow() {

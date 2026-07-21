@@ -138,10 +138,7 @@
     "vitest": "^2.1.4"
   },
   "lint-staged": {
-    "*.{js,mjs,cjs,ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
+    "*.{js,mjs,cjs,ts,tsx}": ["eslint --fix", "prettier --write"],
     "*.{json,jsonc,css,md,mdx,yml,yaml}": "prettier --write"
   },
   "packageManager": "pnpm@11.7.0"
