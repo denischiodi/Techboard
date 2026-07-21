@@ -153,9 +153,16 @@ export interface Allocation {
 
 export type AppTab = 'dashboard' | 'resources' | 'projects' | 'absences' | 'planner' | 'activities' | 'gpChecklist' | 'organogram' | 'techmove' | 'access' | 'settings';
 
+export type AppScreen =
+  | 'techboard.overview' | 'techboard.resources' | 'techboard.projects' | 'techboard.absences' | 'techboard.planner' | 'techboard.organogram'
+  | 'techlead.overview' | 'techlead.gpTrack' | 'techlead.teams' | 'techlead.indicators'
+  | 'techmove.projects' | 'techmove.scopeItems' | 'techmove.bdcq' | 'techmove.workshops' | 'techmove.dcd' | 'techmove.gaps' | 'techmove.configurations' | 'techmove.tests' | 'techmove.governance'
+  | 'techtask.overview' | 'techtask.board' | 'techtask.myWork'
+  | 'admin.overview' | 'admin.users' | 'admin.registrations' | 'admin.standards';
+
 export type AppProduct = 'techboard' | 'techlead' | 'techmove' | 'techtask' | 'admin';
 export type PermissionAction = 'view' | 'create' | 'modify';
-export type ModuleActionPermissions = Partial<Record<AppTab, Record<PermissionAction, boolean>>>;
+export type ModuleActionPermissions = Partial<Record<AppTab | AppScreen, Record<PermissionAction, boolean>>>;
 
 export type UserRole = 'admin' | 'manager' | 'technical_lead' | 'consultant' | 'viewer';
 
@@ -186,6 +193,81 @@ export interface AppUser {
   active: boolean;
   resourceId?: string;
   teamFronts?: ResourceFront[];
+}
+
+export type ProjectMemberProfile = 'gp_internal' | 'internal_team' | 'key_user' | 'approver' | 'reader';
+
+export interface ProjectCapabilities {
+  viewProject: boolean;
+  viewKanban: boolean;
+  createActivity: boolean;
+  editAssignedActivity: boolean;
+  fillAssignedBdcq: boolean;
+  executeAssignedTests: boolean;
+  submitForApproval: boolean;
+  approveAssigned: boolean;
+  viewWorkflowArtifacts: boolean;
+  configureGovernance: boolean;
+  manageMembers: boolean;
+  reopenApproved: boolean;
+}
+
+export interface ProjectMembership {
+  id: string;
+  projectId: string;
+  appUserId: string;
+  profile: ProjectMemberProfile;
+  jobTitle: string;
+  capabilityOverrides: Partial<ProjectCapabilities>;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  user?: Pick<AppUser, 'id' | 'name' | 'email' | 'active'>;
+  project?: Pick<Project, 'id' | 'name' | 'client' | 'status'>;
+  capabilities?: ProjectCapabilities;
+}
+
+export type ApprovalEntityType = 'bdcq_answer' | 'dcd' | 'gap' | 'test_case' | 'activity';
+export type ApprovalQuorum = 'any' | 'all' | 'minimum';
+export type ApprovalRoundStatus = 'pending' | 'approved' | 'rejected' | 'superseded';
+export type ApprovalDecisionValue = 'pending' | 'approved' | 'rejected' | 'waived';
+
+export interface ProjectApprovalPolicy {
+  id: string;
+  projectId: string;
+  entityType: ApprovalEntityType;
+  enabled: boolean;
+  quorum: ApprovalQuorum;
+  minimumApprovals: number;
+  approverMembershipIds: string[];
+  updatedAt: string;
+}
+
+export interface ApprovalDecision {
+  id: string;
+  roundId: string;
+  approverMembershipId: string;
+  decision: ApprovalDecisionValue;
+  comment: string;
+  decidedAt: string;
+  approverName?: string;
+}
+
+export interface ApprovalRound {
+  id: string;
+  projectId: string;
+  entityType: ApprovalEntityType;
+  entityId: string;
+  version: number;
+  status: ApprovalRoundStatus;
+  quorum: ApprovalQuorum;
+  minimumApprovals: number;
+  snapshot: Record<string, unknown>;
+  requestedByUserId: string;
+  requestedAt: string;
+  completedAt: string;
+  reopenedFromRoundId: string;
+  decisions: ApprovalDecision[];
 }
 
 export interface ProjectFrontGap {
@@ -236,7 +318,34 @@ export const DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
 export type ActivityStatus = 'A fazer' | 'Em andamento' | 'Bloqueada' | 'Em validação' | 'Concluída';
 export type ActivityPriority = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
 export type ActivityScope = 'project' | 'internal';
-export type ActivitySourceType = 'manual' | 'gp_checklist' | 'gp_fit_step' | 'techmove_question' | 'techmove_gap' | 'techmove_configuration' | 'allocation_missing_front' | 'allocation_overallocated' | 'allocation_end_date' | 'allocation_unallocated' | 'techlead';
+export type ActivityStage = 'DCD' | 'BDCQ' | 'TESTE' | 'GERAL';
+export type ActivitySourceType = 'manual' | 'activity_template' | 'gp_checklist' | 'gp_fit_step' | 'techmove_question' | 'bdcq_question' | 'workflow_test' | 'workflow_configuration' | 'approval' | 'techmove_gap' | 'techmove_configuration' | 'allocation_missing_front' | 'allocation_overallocated' | 'allocation_end_date' | 'allocation_unallocated' | 'techlead';
+
+export type ActivityTemplateRecurrence = 'none' | 'weekly' | 'monthly';
+export type ActivityTemplateOwnerRole = 'manager' | 'technical_lead' | 'consultant';
+
+export interface ActivityTemplateProject {
+  projectId: string;
+  assigneeUserId: string;
+}
+
+export interface ActivityTemplate {
+  id: string;
+  title: string;
+  description: string;
+  priority: ActivityPriority;
+  recurrence: ActivityTemplateRecurrence;
+  weekday: number;
+  monthDay: number;
+  dueOffsetDays: number;
+  ownerRole: ActivityTemplateOwnerRole;
+  appliesToAllProjects: boolean;
+  active: boolean;
+  projects: ActivityTemplateProject[];
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface ActivityChecklistItem {
   id: string;
@@ -290,6 +399,10 @@ export interface Activity {
   projectId: string;
   projectName: string;
   title: string;
+  displayTitle: string;
+  trackingCode: string;
+  stage: ActivityStage;
+  sequenceNumber: number;
   description: string;
   status: ActivityStatus;
   priority: ActivityPriority;

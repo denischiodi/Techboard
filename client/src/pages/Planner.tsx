@@ -1370,6 +1370,7 @@ export default function Planner() {
 
     return filteredResources
       .filter((resource: Resource) => {
+        if (resource.skipAllocationCheck) return false;
         if (resource.status === 'Inativo') return false;
         const resourceStart = resource.startDate && resource.startDate > '1900-01-01' && isValid(parseISO(resource.startDate))
           ? parseISO(resource.startDate)
@@ -2390,6 +2391,8 @@ export default function Planner() {
                       phases={phases}
                       days={monthDays}
                       projects={projects}
+                      workflowStage={workflowStageByProject.get(project.id)}
+                      onOpenWorkflow={openProjectWorkflow}
                     />
                   ))}
                   {showResourceTimeline && filteredResources.map(resource => (
@@ -2788,3 +2791,4 @@ export default function Planner() {
     </div>
   );
 }
+

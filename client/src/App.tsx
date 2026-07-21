@@ -29,6 +29,8 @@ import ProductOverview from "./pages/ProductOverview";
 import TechLeadDashboard from "./pages/TechLeadDashboard";
 import TechTaskDashboard from "./pages/TechTaskDashboard";
 import TechLeadTeams from "./pages/TechLeadTeams";
+import StandardConfigurations from "./pages/StandardConfigurations";
+import GovernancePage from "./pages/workflow/GovernancePage";
 
 function AppRoutes() {
   return (
@@ -46,7 +48,7 @@ function AppRoutes() {
               <Route path={"/techboard/org-chart"} component={OrgChart} />
               <Route path={"/techlead"} component={TechLeadDashboard} />
               <Route path={"/techlead/gp-track"} component={GpChecklist} />
-              <Route path={"/techlead/teams"} component={TechLeadTeams} />
+              <Route path={"/techlead/teams"}>{() => <TechLeadTeams />}</Route>
               <Route path={"/techlead/indicators"}>{() => <TechLeadTeams indicators />}</Route>
               <Route path={"/techmove"} component={ProjectWorkflow} />
               <Route path={"/techmove/scope-items"} component={ScopeItemsPage} />
@@ -56,6 +58,7 @@ function AppRoutes() {
               <Route path={"/techmove/gaps"} component={GapsPage} />
               <Route path={"/techmove/configurations"} component={ConfigurationsPage} />
               <Route path={"/techmove/tests"} component={TestsPage} />
+              <Route path={"/techmove/governance"} component={GovernancePage} />
               <Route path={"/workflow"}><Redirect to="/techmove" /></Route>
               <Route path={"/workflow/scope-items"}><Redirect to="/techmove/scope-items" /></Route>
               <Route path={"/workflow/bdcq"}><Redirect to="/techmove/bdcq" /></Route>
@@ -70,6 +73,7 @@ function AppRoutes() {
               <Route path={"/admin"}>{() => <ProductOverview productId="admin" />}</Route>
               <Route path={"/admin/users"} component={Access} />
               <Route path={"/admin/registrations"} component={Cadastros} />
+              <Route path={"/admin/standards"} component={StandardConfigurations} />
               <Route path={"/dashboard"}><Redirect to="/techboard" /></Route>
               <Route path={"/cadastros"}><Redirect to="/admin/registrations" /></Route>
               <Route path={"/resources"}><Redirect to="/techboard/resources" /></Route>

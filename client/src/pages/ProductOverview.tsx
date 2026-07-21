@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { PRODUCT_CATALOG, type ProductId } from "@/lib/productCatalog";
+import { canViewMenuItem, PRODUCT_CATALOG, type ProductId } from "@/lib/productCatalog";
 import { ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -13,7 +13,9 @@ export default function ProductOverview({ productId }: { productId: ProductId })
   const { data: appUser } = trpc.access.getByEmail.useQuery({ email: user?.email || "" }, { enabled: Boolean(user?.email) });
   const permissions = appUser?.permissions || DEFAULT_PERMISSIONS.viewer;
   const Icon = product.icon;
-  const links = product.menus.filter(item => item.path !== product.homePath && permissions[item.permission]);
+  const links = product.menus.filter(
+    item => item.path !== product.homePath && canViewMenuItem(item, permissions),
+  );
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className={`overflow-hidden rounded-2xl bg-gradient-to-r ${product.accent} p-6 text-white shadow-sm`}>

@@ -2,9 +2,13 @@ import type { Activity, ActivityPriority, ActivitySourceType, ActivityStatus, Ap
 import * as activityStore from "./activityStore";
 import * as gpStore from "./gpChecklistStore";
 import * as plannerStore from "./plannerStore";
+import { syncActivityTemplates } from "./activityTemplateSync";
+import * as workflowDb from "./routers/workflowDb";
+import { flushActivityEmailOutbox } from "./activityMailer";
+import * as approvalStore from "./approvalStore";
 
 const automaticTypes = new Set<ActivitySourceType>([
-  "gp_checklist", "gp_fit_step", "techmove_question", "techmove_gap", "techmove_configuration",
+  "activity_template", "gp_checklist", "gp_fit_step", "techmove_question", "bdcq_question", "workflow_test", "workflow_configuration", "approval", "techmove_gap", "techmove_configuration",
   "allocation_missing_front", "allocation_overallocated", "allocation_end_date", "allocation_unallocated", "techlead",
 ]);
 
@@ -49,7 +53,7 @@ function priorityFromSeverity(value: string | undefined): ActivityPriority {
 async function reconcileResolved(activeKeys: Set<string>) {
   const activities = await activityStore.listActivities();
   for (const activity of activities) {
-    if (!automaticTypes.has(activity.sourceType) || activity.sourceType.startsWith("gp_") || activity.sourceType.startsWith("techmove_")) continue;
+    if (!automaticTypes.has(activity.sourceType) || activity.sourceType === "activity_template" || activity.sourceType === "approval" || activity.sourceType === "bdcq_question" || activity.sourceType === "workflow_test" || activity.sourceType.startsWith("gp_") || activity.sourceType.startsWith("techmove_")) continue;
     const compound = `${activity.sourceType}:${activity.sourceKey}`;
     if (!activeKeys.has(compound) && !activity.sourceResolved) {
       const pendingRequired = activity.checklist.some(item => item.required && !item.completed);
@@ -94,6 +98,7 @@ export async function syncActivitiesFromSources() {
       });
     }
     await syncTechMoveProject(project, techmove, users, manager);
+    await syncWorkflowAssignments(project, users, manager, activeKeys);
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -148,6 +153,7 @@ export async function syncActivitiesFromSources() {
     }
   }
   await reconcileResolved(activeKeys);
+  await syncActivityTemplates(today);
   const currentActivities = await activityStore.listActivities();
   for (const activity of currentActivities.filter(item => item.status !== "Concluída" && item.dueDate && item.dueDate <= today)) {
     const overdue = activity.dueDate < today;
@@ -155,10 +161,69 @@ export async function syncActivitiesFromSources() {
       activityId: activity.id,
       eventKey: `${activity.id}:deadline:${activity.dueDate}:${overdue ? "overdue" : "due"}`,
       eventType: overdue ? "overdue" : "due_today",
-      title: activity.title,
+      title: activity.displayTitle,
       message: overdue ? `A atividade venceu em ${activity.dueDate}.` : "A atividade vence hoje.",
       userIds: [activity.assigneeUserId, ...activity.participantUserIds],
     });
+  }
+  void flushActivityEmailOutbox().catch(error => console.warn("Falha ao enviar e-mails de atividades", error));
+}
+
+async function notifyAssignment(sourceType: ActivitySourceType, sourceKey: string, assigneeUserId: string) {
+  const activity = await activityStore.findBySource(sourceType, sourceKey);
+  if (!activity || !assigneeUserId) return;
+  await activityStore.createNotifications({ activityId: activity.id, eventKey: `${sourceType}:${sourceKey}:assigned:${assigneeUserId}`,
+    eventType: "assigned", title: activity.displayTitle, message: "Uma nova pendência foi atribuída a você.", userIds: [assigneeUserId] });
+}
+
+async function syncWorkflowAssignments(project: Project, users: AppUser[], manager: AppUser, activeKeys: Set<string>) {
+  const [questions, answers, keyUsers, tests, configurations, scopeItems] = await Promise.all([
+    workflowDb.listBdcqQuestions(project.id), workflowDb.listBdcqAnswers(project.id),
+    workflowDb.listProjectKeyUsers(project.id), workflowDb.listWorkflowTestCases(project.id),
+    workflowDb.listConfigurations(project.id), workflowDb.listScopeItems(project.id),
+  ]);
+  const answerByQuestion = new Map(answers.map((item: any) => [item.questionId, item]));
+  const keyUserById = new Map(keyUsers.map((item: any) => [item.id, item]));
+  for (const question of questions as any[]) {
+    const keyUser = keyUserById.get(question.keyUserId) as any;
+    const assignee = findUser(users, keyUser?.email || keyUser?.name || question.consultantResourceId);
+    if (!assignee) continue;
+    const answer = answerByQuestion.get(question.id) as any;
+    const answered = Boolean(String(answer?.answer || "").trim());
+    const approved = Boolean(answer?.id && await approvalStore.isEntityLocked("bdcq_answer", answer.id));
+    await activityStore.upsertSourceActivity({ scope: "project", projectId: project.id, title: question.question,
+      description: `BDCQ · ${question.module}${question.category ? ` · ${question.category}` : ""}`,
+      status: approved ? "Concluída" : answered ? "Em validação" : "A fazer", priority: "Média", assigneeUserId: assignee.id,
+      creatorUserId: manager.id, participantUserIds: [manager.id], sourceType: "bdcq_question", sourceKey: question.id,
+      sourceUrl: `/techmove/bdcq?projectId=${encodeURIComponent(project.id)}&questionId=${encodeURIComponent(question.id)}`, sourceResolved: approved });
+    await notifyAssignment("bdcq_question", question.id, assignee.id);
+  }
+  for (const test of tests as any[]) {
+    const assignee = findUser(users, test.responsible) || manager;
+    const status: ActivityStatus = test.status === "Aprovado" ? "Concluída" : test.status === "Reprovado" || test.status === "Bloqueado" ? "Bloqueada" : test.status === "Em execução" ? "Em andamento" : "A fazer";
+    await activityStore.upsertSourceActivity({ scope: "project", projectId: project.id, title: test.title,
+      description: `Teste ${test.type}${test.module ? ` · ${test.module}` : ""}`, status, priority: "Média",
+      assigneeUserId: assignee.id, creatorUserId: manager.id, participantUserIds: [manager.id], sourceType: "workflow_test",
+      sourceKey: test.id, sourceUrl: `/techmove/tests?projectId=${encodeURIComponent(project.id)}&testCaseId=${encodeURIComponent(test.id)}`,
+      sourceResolved: test.status === "Aprovado" });
+    await notifyAssignment("workflow_test", test.id, assignee.id);
+  }
+  const scopeById = new Map((scopeItems as any[]).map(item => [item.id, item]));
+  for (const configuration of configurations as any[]) {
+    activeKeys.add(`workflow_configuration:${configuration.id}`);
+    const assignee = findUser(users, configuration.responsible) || manager;
+    const status: ActivityStatus = configuration.status === "Concluído" ? "Concluída" : configuration.status === "Bloqueado" ? "Bloqueada" : configuration.status === "Em Progresso" || configuration.status === "Em andamento" ? "Em andamento" : "A fazer";
+    const scopes = (configuration.scopeItemIds || []).map((id: string) => scopeById.get(id) as any).filter(Boolean);
+    const sourceLabel = configuration.source === "bdcq" ? "BDCQ" : configuration.source === "template" ? "Modelo administrativo" : configuration.source === "dcd" ? "DCD" : "Manual";
+    await activityStore.upsertSourceActivity({
+      scope: "project", projectId: project.id, title: configuration.description,
+      description: [`Configuração · ${sourceLabel}`, configuration.module, scopes.map((item: any) => item.code || item.name).join(", ")].filter(Boolean).join(" · "),
+      status, priority: "Média", assigneeUserId: assignee.id, creatorUserId: manager.id,
+      participantUserIds: [manager.id], sourceType: "workflow_configuration", sourceKey: configuration.id,
+      sourceUrl: `/techmove/configurations?projectId=${encodeURIComponent(project.id)}&configurationId=${encodeURIComponent(configuration.id)}`,
+      sourceResolved: configuration.status === "Concluído",
+    });
+    await notifyAssignment("workflow_configuration", configuration.id, assignee.id);
   }
 }
 
@@ -201,6 +266,12 @@ export async function syncActivityStatusToSource(activity: Activity, status: Act
   }
   if (activity.sourceType === "gp_fit_step") {
     await gpStore.updateFitToStandardStep(activity.projectId, activity.sourceKey, { status: gpSourceStatus(status) });
+    return;
+  }
+  if (activity.sourceType === "workflow_configuration") {
+    await workflowDb.updateConfiguration(activity.sourceKey, {
+      status: status === "Concluída" ? "Concluído" : status === "Bloqueada" ? "Bloqueado" : status === "Em andamento" || status === "Em validação" ? "Em Progresso" : "Pendente",
+    });
     return;
   }
   if (!activity.sourceType.startsWith("techmove_")) return;

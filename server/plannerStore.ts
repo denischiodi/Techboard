@@ -50,6 +50,10 @@ async function query<T extends QueryResultRow = QueryResultRow>(sql: string, par
   return db.query<T>(sql, params);
 }
 
+export function isCanonicalMigrationFile(file: string) {
+  return /^\d+_[^\s]+\.sql$/.test(file);
+}
+
 export async function ensureDatabaseSchema() {
   if (!hasDatabase() || schemaReady) return;
   if (
@@ -62,7 +66,7 @@ export async function ensureDatabaseSchema() {
 
   const migrationsDir = join(process.cwd(), "drizzle");
   const migrationFiles = (await readdir(migrationsDir))
-    .filter(file => /^\d+_.+\.sql$/.test(file))
+    .filter(isCanonicalMigrationFile)
     .sort();
 
   for (const migrationFile of migrationFiles) {

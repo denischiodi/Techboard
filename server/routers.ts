@@ -5,6 +5,8 @@ import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_
 import { TRPCError } from "@trpc/server";
 import { workflowRouter } from "./routers/workflow";
 import { activitiesRouter } from "./routers/activities";
+import { approvalsRouter } from "./routers/approvals";
+import * as projectAccess from "./projectAccess";
 import { z } from "zod";
 import type { Resource, Project, Phase, Absence, Allocation, ResourceFront, AppUser, UserRole, LookupItem, AppTab, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateAlert, ResourceEndDateImpact, TechMoveData } from "../shared/types";
 import { DEFAULT_PERMISSIONS } from "../shared/types";
@@ -659,6 +661,7 @@ export const appRouter = router({
   system: systemRouter,
   workflow: workflowRouter,
   activities: activitiesRouter,
+  approvals: approvalsRouter,
   auth: router({
     me: publicProcedure.query(async opts => {
       const user = opts.ctx.user;
@@ -927,18 +930,22 @@ export const appRouter = router({
   // ===== PROJECTS =====
   projects: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.appUser?.permissions.gpChecklist && !ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
+      const explicit = await projectAccess.listProjectMemberships(undefined, ctx.appUser.id);
+      if (!explicit.some(item => item.active && item.capabilities?.viewProject) && !ctx.appUser?.permissions.gpChecklist && !ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para acessar projetos" });
       }
       const [projects, allocations] = await Promise.all([store.listProjects(), store.listAllocations()]);
+      if (explicit.length) return projectAccess.filterProjectsByMembership(projects, ctx.appUser);
       return filterProjectsForUser(projects, allocations, ctx.appUser);
     }),
     getById: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
-      if (!ctx.appUser?.permissions.gpChecklist && !ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
+      const membership = await projectAccess.getProjectMembership(input.id, ctx.appUser.id);
+      if (!membership?.capabilities?.viewProject && !ctx.appUser?.permissions.gpChecklist && !ctx.appUser?.permissions.projects && !ctx.appUser?.permissions.planner) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Sem permissao para acessar projetos" });
       }
       const project = await store.getProjectById(input.id);
       if (!project) return null;
+      if (membership?.active && membership.capabilities?.viewProject) return project;
       const allocations = await store.listAllocations();
       const visible = await filterProjectsForUser([project], allocations, ctx.appUser);
       if (visible.length === 0) {
@@ -1710,6 +1717,19 @@ export const appRouter = router({
     list: adminProcedure.query(() => {
       return store.listAppUsers();
     }),
+
+    projectMemberships: adminProcedure.input(z.object({ projectId: z.string().optional(), appUserId: z.string().optional() }).optional()).query(({ input }) =>
+      projectAccess.listProjectMemberships(input?.projectId, input?.appUserId)),
+
+    upsertProjectMembership: adminProcedure.input(z.object({
+      projectId: z.string().min(1), appUserId: z.string().min(1),
+      profile: z.enum(["gp_internal", "internal_team", "key_user", "approver", "reader"]),
+      jobTitle: z.string().max(255).default(""),
+      capabilityOverrides: z.record(z.string(), z.boolean()).default({}), active: z.boolean().default(true),
+    })).mutation(({ input }) => projectAccess.upsertProjectMembership(input)),
+
+    deactivateProjectMembership: adminProcedure.input(z.object({ id: z.string().min(1) })).mutation(({ input }) =>
+      projectAccess.deactivateProjectMembership(input.id)),
 
     getByEmail: protectedProcedure.input(z.object({ email: z.string() })).query(async ({ ctx, input }) => {
       if (ctx.appUser?.role !== "admin" && ctx.user.email !== input.email) {

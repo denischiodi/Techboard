@@ -11,8 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Shield, ShieldCheck, Eye, Users } from "lucide-react";
-import type { AppUser, UserRole, UserPermissions } from "../../../shared/types";
+import type { AppScreen, AppTab, AppUser, ProjectMemberProfile, UserRole, UserPermissions } from "../../../shared/types";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
+import { PRODUCTS, type ProductId } from "@/lib/productCatalog";
 
 type AccessAction = 'view' | 'modify' | 'create';
 
@@ -32,23 +33,30 @@ const ROLE_COLORS: Record<UserRole, string> = {
   viewer: 'bg-gray-100 text-gray-800 border-gray-200',
 };
 
-const TAB_LABELS = {
-  dashboard: 'Dashboard',
-  resources: 'Recursos',
-  projects: 'Projetos',
-  absences: 'Férias/Ausências',
-  planner: 'Planner Gantt',
-  activities: 'Atividades',
-  gpChecklist: 'Trilha do GP',
-  organogram: 'Organograma',
-  techmove: 'TechMove',
-  access: 'Gestão de Acesso',
-  settings: 'Cadastros e Configurações',
-} as const;
+const SCREEN_DEFINITIONS = PRODUCTS.flatMap(product => product.menus.map(item => ({
+  key: item.accessKey,
+  label: item.label,
+  moduleId: product.id,
+  moduleName: product.name,
+  legacyPermission: item.permission,
+})));
+const TAB_LABELS = Object.fromEntries(SCREEN_DEFINITIONS.map(screen => [screen.key, screen.label])) as Record<AppScreen, string>;
 
-type AccessTab = keyof typeof TAB_LABELS;
+type AccessTab = AppScreen;
 type AccessLevelMatrix = Record<AccessTab, Record<AccessAction, boolean>>;
 type RoleFilter = 'all' | UserRole;
+type ProjectAccessDraft = { projectId: string; profile: ProjectMemberProfile; jobTitle: string; capabilityOverrides: Record<string, boolean> };
+
+const PROJECT_PROFILE_LABELS: Record<ProjectMemberProfile, string> = {
+  gp_internal: 'GP interno', internal_team: 'Equipe interna', key_user: 'Key user', approver: 'Aprovador', reader: 'Leitor',
+};
+const PROJECT_PROFILE_DEFAULTS: Record<ProjectMemberProfile, Record<string, boolean>> = {
+  gp_internal: { fillAssignedBdcq: true, approveAssigned: true, manageMembers: true },
+  internal_team: { fillAssignedBdcq: true, approveAssigned: false, manageMembers: false },
+  key_user: { fillAssignedBdcq: true, approveAssigned: false, manageMembers: false },
+  approver: { fillAssignedBdcq: false, approveAssigned: true, manageMembers: false },
+  reader: { fillAssignedBdcq: false, approveAssigned: false, manageMembers: false },
+};
 
 const ACCESS_ACTION_LABELS: Record<AccessAction, string> = {
   view: 'Exibir',
@@ -56,7 +64,7 @@ const ACCESS_ACTION_LABELS: Record<AccessAction, string> = {
   create: 'Criar',
 };
 
-const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
+const LEGACY_DEFAULT_ACCESS_LEVELS: Record<UserRole, Record<AppTab, Record<AccessAction, boolean>>> = {
   admin: {
     dashboard: { view: true, modify: true, create: true },
     resources: { view: true, modify: true, create: true },
@@ -124,30 +132,45 @@ const DEFAULT_ACCESS_LEVELS: Record<UserRole, AccessLevelMatrix> = {
   },
 };
 
-const ACCESS_TABS = Object.keys(TAB_LABELS) as AccessTab[];
+const ACCESS_TABS = SCREEN_DEFINITIONS.map(screen => screen.key);
+const DEFAULT_ACCESS_LEVELS = (Object.keys(LEGACY_DEFAULT_ACCESS_LEVELS) as UserRole[]).reduce((roles, role) => {
+  roles[role] = SCREEN_DEFINITIONS.reduce((screens, screen) => {
+    screens[screen.key] = { ...LEGACY_DEFAULT_ACCESS_LEVELS[role][screen.legacyPermission] };
+    return screens;
+  }, {} as AccessLevelMatrix);
+  return roles;
+}, {} as Record<UserRole, AccessLevelMatrix>);
 
 function levelsFromPermissions(role: UserRole, permissions: UserPermissions): AccessLevelMatrix {
   return ACCESS_TABS.reduce((acc, tab) => {
-    acc[tab] = permissions[tab]
-      ? { ...(permissions.actions?.[tab] || DEFAULT_ACCESS_LEVELS[role][tab]), view: true }
+    const screen = SCREEN_DEFINITIONS.find(item => item.key === tab)!;
+    const screenAccess = permissions.actions?.[tab];
+    const legacyAccess = permissions.actions?.[screen.legacyPermission];
+    const legacyEnabled = permissions[screen.legacyPermission];
+    acc[tab] = screenAccess
+      ? { ...screenAccess }
+      : legacyEnabled
+      ? { ...(legacyAccess || DEFAULT_ACCESS_LEVELS[role][tab]), view: true }
       : { view: false, modify: false, create: false };
     return acc;
   }, {} as AccessLevelMatrix);
 }
 
 function permissionsFromLevels(levels: AccessLevelMatrix, previous: UserPermissions): UserPermissions {
-  const permissions = ACCESS_TABS.reduce((acc, tab) => {
-    acc[tab] = levels[tab].view || levels[tab].modify || levels[tab].create;
-    return acc;
-  }, { ...previous });
-  permissions.actions = Object.fromEntries(ACCESS_TABS.map(tab => [tab, { ...levels[tab] }]));
-  permissions.products = {
-    techboard: permissions.dashboard || permissions.resources || permissions.projects || permissions.absences || permissions.planner || permissions.organogram,
-    techlead: permissions.gpChecklist,
-    techmove: permissions.techmove,
-    techtask: permissions.activities,
-    admin: permissions.access || permissions.settings,
-  };
+  const permissions = { ...previous };
+  const legacyKeys = [...new Set(SCREEN_DEFINITIONS.map(screen => screen.legacyPermission))];
+  const screenActions = Object.fromEntries(ACCESS_TABS.map(tab => [tab, { ...levels[tab] }]));
+  const legacyActions = Object.fromEntries(legacyKeys.map(key => {
+    const matching = SCREEN_DEFINITIONS.filter(screen => screen.legacyPermission === key).map(screen => levels[screen.key]);
+    const aggregate = (action: AccessAction) => matching.some(level => level[action]);
+    permissions[key] = aggregate('view') || aggregate('modify') || aggregate('create');
+    return [key, { view: aggregate('view'), modify: aggregate('modify'), create: aggregate('create') }];
+  }));
+  permissions.actions = { ...legacyActions, ...screenActions };
+  permissions.products = Object.fromEntries(PRODUCTS.map(product => [
+    product.id,
+    product.menus.some(item => levels[item.accessKey]?.view),
+  ])) as Partial<Record<ProductId, boolean>>;
   return permissions;
 }
 
@@ -175,15 +198,17 @@ function summarizeAccessLevels(levels: AccessLevelMatrix, tab: AccessTab) {
 export default function Access() {
   const utils = trpc.useUtils();
   const { data: users = [], isLoading } = trpc.access.list.useQuery();
+  const { data: projects = [] } = trpc.projects.list.useQuery();
+  const { data: memberships = [] } = trpc.access.projectMemberships.useQuery({});
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
   const fronts = lookups?.fronts?.filter(item => item.active).map(item => item.value) || [];
   const createUser = trpc.access.create.useMutation({
-    onSuccess: () => { utils.access.list.invalidate(); toast.success("Usuário criado!"); setDialogOpen(false); },
+    onSuccess: () => { utils.access.list.invalidate(); toast.success("Usuário criado!"); },
     onError: () => toast.error("Erro ao criar usuário"),
   });
   const updateUser = trpc.access.update.useMutation({
-    onSuccess: () => { utils.access.list.invalidate(); toast.success("Usuário atualizado!"); setDialogOpen(false); },
+    onSuccess: () => { utils.access.list.invalidate(); toast.success("Usuário atualizado!"); },
     onError: () => toast.error("Erro ao atualizar usuário"),
   });
   const updateGroupUser = trpc.access.update.useMutation();
@@ -191,6 +216,8 @@ export default function Access() {
     onSuccess: () => { utils.access.list.invalidate(); toast.success("Usuário removido!"); },
     onError: () => toast.error("Erro ao remover usuário"),
   });
+  const upsertMembership = trpc.access.upsertProjectMembership.useMutation();
+  const deactivateMembership = trpc.access.deactivateProjectMembership.useMutation();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -209,6 +236,7 @@ export default function Access() {
     resourceId: '',
     teamFronts: [] as string[],
   });
+  const [projectAccess, setProjectAccess] = useState<ProjectAccessDraft[]>([]);
 
   useEffect(() => {
     if (groupLevelsLoaded || users.length === 0) return;
@@ -248,6 +276,7 @@ export default function Access() {
       resourceId: '',
       teamFronts: [],
     });
+    setProjectAccess([]);
     setDialogOpen(true);
   };
 
@@ -262,6 +291,9 @@ export default function Access() {
       resourceId: user.resourceId || '',
       teamFronts: user.teamFronts || [],
     });
+    setProjectAccess(memberships.filter((item: any) => item.appUserId === user.id && item.active).map((item: any) => ({
+      projectId: item.projectId, profile: item.profile, jobTitle: item.jobTitle || '', capabilityOverrides: item.capabilityOverrides || {},
+    })));
     setDialogOpen(true);
   };
 
@@ -290,7 +322,7 @@ export default function Access() {
   };
 
   const toggleGroupAccessLevel = (tab: AccessTab, action: AccessAction) => {
-    if (tab === 'access' && editingGroup !== 'admin') return;
+    if (tab === 'admin.users' && editingGroup !== 'admin') return;
     setGroupFormLevels(prev => ({
       ...prev,
       [tab]: (() => {
@@ -327,14 +359,29 @@ export default function Access() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name || !form.email) {
       toast.error("Nome e email são obrigatórios");
       return;
     }
     const groupPermissions = permissionsFromLevels(groupPermissionLevels[form.role], DEFAULT_PERMISSIONS[form.role]);
-    if (editingUser) {
-      updateUser.mutate({
+    if (projectAccess.length) {
+      groupPermissions.activities = true;
+      groupPermissions.techmove = true;
+      groupPermissions.products = { ...groupPermissions.products, techtask: true, techmove: true };
+      groupPermissions.actions = {
+        ...groupPermissions.actions,
+        activities: { view: true, modify: true, create: false },
+        techmove: { view: true, modify: true, create: false },
+        'techmove.projects': { view: true, modify: false, create: false },
+        'techmove.bdcq': { view: true, modify: true, create: false },
+        'techmove.tests': { view: true, modify: true, create: false },
+        'techtask.board': { view: true, modify: true, create: false },
+        'techtask.myWork': { view: true, modify: true, create: false },
+      };
+    }
+    try {
+      const saved = editingUser ? await updateUser.mutateAsync({
         id: editingUser.id,
         name: form.name,
         email: form.email,
@@ -343,9 +390,7 @@ export default function Access() {
         active: form.active,
         resourceId: form.resourceId,
         teamFronts: form.teamFronts,
-      });
-    } else {
-      createUser.mutate({
+      }) : await createUser.mutateAsync({
         name: form.name,
         email: form.email,
         role: form.role,
@@ -353,6 +398,16 @@ export default function Access() {
         resourceId: form.resourceId,
         teamFronts: form.teamFronts,
       });
+      const appUserId = saved.id;
+      await Promise.all(projectAccess.map(item => upsertMembership.mutateAsync({ ...item, appUserId, active: true })));
+      if (editingUser) {
+        const kept = new Set(projectAccess.map(item => item.projectId));
+        await Promise.all(memberships.filter((item: any) => item.appUserId === editingUser.id && item.active && !kept.has(item.projectId)).map((item: any) => deactivateMembership.mutateAsync({ id: item.id })));
+      }
+      await Promise.all([utils.access.projectMemberships.invalidate(), utils.projects.list.invalidate()]);
+      setDialogOpen(false);
+    } catch (error: any) {
+      toast.error(error?.message || 'Erro ao salvar usuário e projetos');
     }
   };
 
@@ -492,16 +547,16 @@ export default function Access() {
                 <TableHead>Nome</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Grupo de acesso</TableHead>
-                {ACCESS_TABS.map(tab => <TableHead key={tab} className="min-w-[120px] text-center">{TAB_LABELS[tab]}</TableHead>)}
+                <TableHead className="min-w-[260px]">Telas liberadas</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="w-20">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={ACCESS_TABS.length + 5} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
               ) : filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={ACCESS_TABS.length + 5} className="text-center py-8 text-muted-foreground">Nenhum usuário encontrado para este tipo de acesso.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhum usuário encontrado para este tipo de acesso.</TableCell></TableRow>
               ) : (
                 filteredUsers.map((user: AppUser) => (
                   <TableRow key={user.id} className={!user.active ? 'opacity-50' : ''}>
@@ -513,21 +568,17 @@ export default function Access() {
                         <span className="ml-1">{ROLE_LABELS[user.role]}</span>
                       </Badge>
                     </TableCell>
-                    {ACCESS_TABS.map(tab => (
-                      <TableCell key={tab} className="text-center">
-                        <div className="flex flex-wrap justify-center gap-1">
-                          {summarizeAccessLevels(levelsFromPermissions(user.role, { ...DEFAULT_PERMISSIONS[user.role], ...user.permissions }), tab).map(label => (
-                            <Badge
-                              key={label}
-                              variant={label === 'Sem acesso' ? 'secondary' : 'outline'}
-                              className={`text-[10px] ${label === 'Sem acesso' ? 'text-muted-foreground' : 'border-green-200 bg-green-50 text-green-700'}`}
-                            >
-                              {label}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                    ))}
+                    <TableCell>
+                      {(() => {
+                        const levels = levelsFromPermissions(user.role, { ...DEFAULT_PERMISSIONS[user.role], ...user.permissions });
+                        const enabled = ACCESS_TABS.filter(tab => levels[tab].view);
+                        return <div className="flex flex-wrap gap-1">
+                          {enabled.slice(0, 4).map(tab => <Badge key={tab} variant="secondary" className="text-[10px]">{TAB_LABELS[tab]}</Badge>)}
+                          {enabled.length > 4 && <Badge variant="outline" className="text-[10px]">+{enabled.length - 4} telas</Badge>}
+                          {enabled.length === 0 && <span className="text-xs text-muted-foreground">Sem acesso</span>}
+                        </div>;
+                      })()}
+                    </TableCell>
                     <TableCell className="text-center">
                       <Badge variant={user.active ? "default" : "secondary"} className="text-xs">
                         {user.active ? 'Ativo' : 'Inativo'}
@@ -636,12 +687,42 @@ export default function Access() {
                 </p>
               </div>
             )}
+
+            <div className="space-y-3 rounded-lg border p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div><Label>Projetos e permissões</Label><p className="text-xs text-muted-foreground">O acesso é negado aos projetos que não estiverem nesta lista.</p></div>
+                <Button type="button" variant="outline" size="sm" onClick={() => {
+                  const project = projects.find((item: any) => !projectAccess.some(access => access.projectId === item.id));
+                  if (!project) return toast.info('Todos os projetos já foram adicionados');
+                  setProjectAccess(current => [...current, { projectId: project.id, profile: 'key_user', jobTitle: '', capabilityOverrides: {} }]);
+                }}><Plus className="mr-1 h-4 w-4" />Projeto</Button>
+              </div>
+              {projectAccess.length === 0 ? <p className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">Nenhum projeto associado.</p> : projectAccess.map((access, index) => (
+                <div key={`${access.projectId}:${index}`} className="space-y-3 rounded-md bg-muted/40 p-3">
+                  <div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
+                    <Select value={access.projectId} onValueChange={projectId => setProjectAccess(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, projectId } : item))}>
+                      <SelectTrigger><SelectValue placeholder="Projeto" /></SelectTrigger><SelectContent>{projects.filter((project: any) => project.id === access.projectId || !projectAccess.some(item => item.projectId === project.id)).map((project: any) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Select value={access.profile} onValueChange={profile => setProjectAccess(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, profile: profile as ProjectMemberProfile, capabilityOverrides: {} } : item))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{Object.entries(PROJECT_PROFILE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => setProjectAccess(current => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                  </div>
+                  <Input value={access.jobTitle} onChange={event => setProjectAccess(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, jobTitle: event.target.value } : item))} placeholder="Função no projeto (ex.: Fiscal, Compras)" />
+                  <div className="grid gap-2 text-xs sm:grid-cols-3">
+                    {([['fillAssignedBdcq', 'Preencher BDCQ'], ['approveAssigned', 'Aprovar'], ['manageMembers', 'Gerenciar membros']] as const).map(([capability, label]) => (
+                      <label key={capability} className="flex items-center gap-2"><Switch checked={access.capabilityOverrides[capability] ?? PROJECT_PROFILE_DEFAULTS[access.profile][capability]} onCheckedChange={checked => setProjectAccess(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, capabilityOverrides: { ...item.capabilityOverrides, [capability]: checked } } : item))} /><span>{label}</span></label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={createUser.isPending || updateUser.isPending}>
-              {(createUser.isPending || updateUser.isPending) ? 'Salvando...' : 'Salvar'}
+            <Button onClick={handleSave} disabled={createUser.isPending || updateUser.isPending || upsertMembership.isPending}>
+              {(createUser.isPending || updateUser.isPending || upsertMembership.isPending) ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -662,7 +743,8 @@ export default function Access() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[170px]">Aba</TableHead>
+                    <TableHead className="min-w-[120px]">Módulo</TableHead>
+                    <TableHead className="min-w-[170px]">Tela</TableHead>
                     {(Object.keys(ACCESS_ACTION_LABELS) as AccessAction[]).map(action => (
                       <TableHead key={action} className="min-w-[110px] text-center">
                         {ACCESS_ACTION_LABELS[action]}
@@ -673,9 +755,10 @@ export default function Access() {
                 <TableBody>
                   {ACCESS_TABS.map(tab => (
                     <TableRow key={tab}>
+                      <TableCell className="text-sm text-muted-foreground">{SCREEN_DEFINITIONS.find(screen => screen.key === tab)?.moduleName}</TableCell>
                       <TableCell className="font-medium">{TAB_LABELS[tab]}</TableCell>
                       {(Object.keys(ACCESS_ACTION_LABELS) as AccessAction[]).map(action => {
-                        const disabled = tab === 'access' && editingGroup !== 'admin';
+                        const disabled = tab === 'admin.users' && editingGroup !== 'admin';
                         return (
                           <TableCell key={action} className="text-center">
                             <Switch

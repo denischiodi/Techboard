@@ -14,12 +14,12 @@ import { Bug, FlaskConical, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkflowProject } from "./useWorkflowProject";
 
-type TestType = "Unitário consultor" | "Unitário key user" | "Integrado 1" | "Integrado 2";
+type TestType = "Unitário" | "Integrado";
 type TestStatus = "Não iniciado" | "Em execução" | "Aprovado" | "Reprovado" | "Bloqueado";
 type IssueKind = "Defeito" | "Tarefa";
-const testTypes: TestType[] = ["Unitário consultor", "Unitário key user", "Integrado 1", "Integrado 2"];
+const testTypes: TestType[] = ["Unitário", "Integrado"];
 const statuses: TestStatus[] = ["Não iniciado", "Em execução", "Aprovado", "Reprovado", "Bloqueado"];
-const emptyForm = { type: "Unitário consultor" as TestType, code: "", title: "", description: "", module: "", requirementId: "", scopeItemId: "", dcdId: "", preconditions: "", steps: "", expectedResult: "", responsible: "" };
+const emptyForm = { type: "Unitário" as TestType, code: "", title: "", description: "", module: "", requirementId: "", scopeItemId: "", dcdId: "", preconditions: "", steps: "", expectedResult: "", responsible: "" };
 
 export default function TestsPage() {
   const { projectId } = useWorkflowProject();
@@ -67,6 +67,6 @@ export default function TestsPage() {
       <div><Label>Descrição</Label><Textarea rows={6} value={issueForm.description} onChange={event => setIssueForm(current => ({ ...current, description: event.target.value }))} /></div>
       <div className="grid gap-3 sm:grid-cols-2"><div><Label>Responsável pelo ajuste</Label><Select value={issueForm.assigneeUserId || "none"} onValueChange={assigneeUserId => setIssueForm(current => ({ ...current, assigneeUserId: assigneeUserId === "none" ? "" : assigneeUserId }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Não atribuído</SelectItem>{eligibleUsers.map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prazo</Label><Input type="date" value={issueForm.dueDate} onChange={event => setIssueForm(current => ({ ...current, dueDate: event.target.value }))} /></div></div>
       <p className="text-xs text-muted-foreground">Após criar, a atividade será aberta para incluir comentários e anexar prints.</p>
-    </div><DialogFooter><Button variant="outline" onClick={() => setIssueTest(null)}>Cancelar</Button><Button disabled={!issueForm.title.trim() || createIssue.isPending} onClick={() => createIssue.mutate({ scope: "project", projectId, title: issueForm.title, description: issueForm.description, priority: issueForm.priority, assigneeUserId: issueForm.assigneeUserId, participantUserIds: [], dueDate: issueForm.dueDate })}>Criar {issueForm.kind.toLowerCase()}</Button></DialogFooter></DialogContent></Dialog>
+    </div><DialogFooter><Button variant="outline" onClick={() => setIssueTest(null)}>Cancelar</Button><Button disabled={!issueForm.title.trim() || createIssue.isPending} onClick={() => createIssue.mutate({ scope: "project", projectId, stage: "TESTE", title: issueForm.title, description: issueForm.description, priority: issueForm.priority, assigneeUserId: issueForm.assigneeUserId, participantUserIds: [], dueDate: issueForm.dueDate })}>Criar {issueForm.kind.toLowerCase()}</Button></DialogFooter></DialogContent></Dialog>
   </div>;
 }

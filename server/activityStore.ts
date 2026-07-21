@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type {
   Activity,
   ActivityAttachment,
@@ -9,13 +10,14 @@ import type {
   ActivityPriority,
   ActivityScope,
   ActivitySourceType,
+  ActivityStage,
   ActivityStatus,
   AppUser,
 } from "../shared/types";
 import { getPgPool } from "./db";
 import * as plannerStore from "./plannerStore";
 
-type ActivityRow = Omit<Activity, "projectName" | "assigneeName" | "creatorName" | "participantUserIds" | "participants" | "checklist" | "comments" | "attachments" | "history">;
+type ActivityRow = Omit<Activity, "projectName" | "displayTitle" | "trackingCode" | "assigneeName" | "creatorName" | "participantUserIds" | "participants" | "checklist" | "comments" | "attachments" | "history">;
 
 const memoryActivities = new Map<string, ActivityRow>();
 const memoryParticipants = new Map<string, Set<string>>();
@@ -25,6 +27,7 @@ const memoryAttachments = new Map<string, ActivityAttachment[]>();
 const memoryHistory = new Map<string, ActivityHistoryEvent[]>();
 const memoryNotifications: ActivityNotification[] = [];
 const memoryNotificationKeys = new Set<string>();
+const memorySequenceCounters = new Map<string, number>();
 
 function id(prefix: string) {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
@@ -39,11 +42,52 @@ function now() {
   return new Date().toISOString();
 }
 
+function normalizedStage(scope: ActivityScope, stage?: ActivityStage): ActivityStage {
+  return scope === "internal" ? "GERAL" : stage || "GERAL";
+}
+
+export function activityStageForSource(sourceType?: ActivitySourceType, sourceUrl = ""): ActivityStage {
+  if (sourceType === "bdcq_question" || sourceType === "techmove_question") return "BDCQ";
+  if (sourceType === "workflow_test") return "TESTE";
+  if (["workflow_configuration", "techmove_gap", "techmove_configuration"].includes(sourceType || "")) return "DCD";
+  if (sourceType === "approval") {
+    if (sourceUrl.includes("/bdcq")) return "BDCQ";
+    if (sourceUrl.includes("/tests")) return "TESTE";
+    if (sourceUrl.includes("/dcd")) return "DCD";
+  }
+  return "GERAL";
+}
+
+function sequenceKey(scope: ActivityScope, projectId: string, stage: ActivityStage) {
+  return `${scope}:${projectId}:${stage}`;
+}
+
+function nextMemorySequence(scope: ActivityScope, projectId: string, stage: ActivityStage) {
+  const key = sequenceKey(scope, projectId, stage);
+  const next = (memorySequenceCounters.get(key) || 0) + 1;
+  memorySequenceCounters.set(key, next);
+  return next;
+}
+
+async function nextDatabaseSequence(client: PoolClient, scope: ActivityScope, projectId: string, stage: ActivityStage) {
+  const key = sequenceKey(scope, projectId, stage);
+  const result = await client.query<{ lastNumber: number }>(
+    `INSERT INTO "activity_sequence_counters" ("counterKey","scope","projectId","stage","lastNumber")
+     VALUES ($1,$2,$3,$4,1)
+     ON CONFLICT ("counterKey") DO UPDATE SET "lastNumber"="activity_sequence_counters"."lastNumber"+1,"updatedAt"=now()
+     RETURNING "lastNumber"`,
+    [key, scope, projectId, stage],
+  );
+  return Number(result.rows[0].lastNumber);
+}
+
 function rowFromDb(row: any): ActivityRow {
   return {
     id: row.id,
     scope: row.scope,
     projectId: row.projectId || "",
+    stage: row.stage || "GERAL",
+    sequenceNumber: Number(row.sequenceNumber || 1),
     title: row.title,
     description: row.description || "",
     status: row.status,
@@ -108,35 +152,54 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
     historyRows = history.rows;
   }
 
+  const groupByActivity = <T extends { activityId: string }>(items: T[]) => {
+    const grouped = new Map<string, T[]>();
+    for (const item of items) {
+      const group = grouped.get(item.activityId);
+      if (group) group.push(item);
+      else grouped.set(item.activityId, [item]);
+    }
+    return grouped;
+  };
+  const participantsByActivity = groupByActivity(participantRows);
+  const checklistByActivity = groupByActivity(checklistRows);
+  const commentsByActivity = groupByActivity(commentRows);
+  const attachmentsByActivity = groupByActivity(attachmentRows);
+  const historyByActivity = groupByActivity(historyRows);
+
   return rows.map(row => {
     const participantIds = db
-      ? participantRows.filter(item => item.activityId === row.id).map(item => item.userId)
+      ? (participantsByActivity.get(row.id) || []).map(item => item.userId)
       : [...(memoryParticipants.get(row.id) || new Set())];
     const checklist = db
-      ? checklistRows.filter(item => item.activityId === row.id).map(item => checklistFromDb(item, usersById))
+      ? (checklistByActivity.get(row.id) || []).map(item => checklistFromDb(item, usersById))
       : (memoryChecklist.get(row.id) || []).map(item => ({ ...item, assigneeName: usersById.get(item.assigneeUserId)?.name || "" }));
     const comments = db
-      ? commentRows.filter(item => item.activityId === row.id).map(item => ({
+      ? (commentsByActivity.get(row.id) || []).map(item => ({
           id: item.id, activityId: item.activityId, authorUserId: item.authorUserId,
           authorName: usersById.get(item.authorUserId)?.name || "Usuário", content: item.content, createdAt: iso(item.createdAt),
         }))
       : memoryComments.get(row.id) || [];
     const attachments = db
-      ? attachmentRows.filter(item => item.activityId === row.id).map(item => ({
+      ? (attachmentsByActivity.get(row.id) || []).map(item => ({
           id: item.id, activityId: item.activityId, fileName: item.fileName, contentType: item.contentType,
           url: item.url, uploadedByUserId: item.uploadedByUserId,
           uploadedByName: usersById.get(item.uploadedByUserId)?.name || "Usuário", createdAt: iso(item.createdAt),
         }))
       : memoryAttachments.get(row.id) || [];
     const history = db
-      ? historyRows.filter(item => item.activityId === row.id).map(item => ({
+      ? (historyByActivity.get(row.id) || []).map(item => ({
           id: item.id, activityId: item.activityId, actorUserId: item.actorUserId,
           actorName: item.actorName, action: item.action, details: item.details || {}, createdAt: iso(item.createdAt),
         }))
       : memoryHistory.get(row.id) || [];
+    const projectName = projectsById.get(row.projectId)?.name || (row.scope === "internal" ? "Operação interna" : "Projeto");
+    const trackingCode = `${projectName} - ${row.stage} - ${String(row.sequenceNumber).padStart(3, "0")}`;
     return {
       ...row,
-      projectName: projectsById.get(row.projectId)?.name || (row.scope === "internal" ? "Operação interna" : ""),
+      projectName,
+      trackingCode,
+      displayTitle: `${trackingCode} - ${row.title}`,
       assigneeName: usersById.get(row.assigneeUserId)?.name || "",
       creatorName: usersById.get(row.creatorUserId)?.name || "Sistema",
       participantUserIds: participantIds,
@@ -174,6 +237,7 @@ export async function getActivity(activityId: string) {
 export type CreateActivityInput = {
   scope: ActivityScope;
   projectId?: string;
+  stage?: ActivityStage;
   title: string;
   description?: string;
   status?: ActivityStatus;
@@ -190,8 +254,10 @@ export type CreateActivityInput = {
 
 export async function createActivity(input: CreateActivityInput) {
   const timestamp = now();
+  const projectId = input.scope === "internal" ? "" : input.projectId || "";
+  const stage = normalizedStage(input.scope, input.stage || activityStageForSource(input.sourceType, input.sourceUrl));
   const row: ActivityRow = {
-    id: id("act"), scope: input.scope, projectId: input.projectId || "", title: input.title,
+    id: id("act"), scope: input.scope, projectId, stage, sequenceNumber: 0, title: input.title,
     description: input.description || "", status: input.status || "A fazer", priority: input.priority || "Média",
     assigneeUserId: input.assigneeUserId || "", creatorUserId: input.creatorUserId, dueDate: input.dueDate || "",
     sourceType: input.sourceType || "manual", sourceKey: input.sourceKey || "", sourceUrl: input.sourceUrl || "",
@@ -201,15 +267,17 @@ export async function createActivity(input: CreateActivityInput) {
   const participantIds = [...new Set([input.creatorUserId, ...(input.participantUserIds || []), input.assigneeUserId || ""].filter(Boolean))];
   const db = getPgPool();
   if (!db) {
+    row.sequenceNumber = nextMemorySequence(row.scope, row.projectId, row.stage);
     memoryActivities.set(row.id, row);
     memoryParticipants.set(row.id, new Set(participantIds));
   } else {
     const client = await db.connect();
     try {
       await client.query("BEGIN");
+      row.sequenceNumber = await nextDatabaseSequence(client, row.scope, row.projectId, row.stage);
       await client.query(
-        'INSERT INTO "activities" ("id","scope","projectId","title","description","status","priority","assigneeUserId","creatorUserId","dueDate","sourceType","sourceKey","sourceUrl","sourceResolved","completedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',
-        [row.id, row.scope, row.projectId, row.title, row.description, row.status, row.priority, row.assigneeUserId, row.creatorUserId, row.dueDate, row.sourceType, row.sourceKey, row.sourceUrl, row.sourceResolved, row.completedAt || null],
+        'INSERT INTO "activities" ("id","scope","projectId","stage","sequenceNumber","title","description","status","priority","assigneeUserId","creatorUserId","dueDate","sourceType","sourceKey","sourceUrl","sourceResolved","completedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)',
+        [row.id, row.scope, row.projectId, row.stage, row.sequenceNumber, row.title, row.description, row.status, row.priority, row.assigneeUserId, row.creatorUserId, row.dueDate, row.sourceType, row.sourceKey, row.sourceUrl, row.sourceResolved, row.completedAt || null],
       );
       for (const userId of participantIds) {
         await client.query('INSERT INTO "activity_participants" ("activityId","userId") VALUES ($1,$2) ON CONFLICT DO NOTHING', [row.id, userId]);
@@ -275,6 +343,30 @@ export async function removeParticipant(activityId: string, userId: string) {
   const db = getPgPool();
   if (!db) memoryParticipants.get(activityId)?.delete(userId);
   else await db.query('DELETE FROM "activity_participants" WHERE "activityId" = $1 AND "userId" = $2', [activityId, userId]);
+  return getActivity(activityId);
+}
+
+export async function replaceParticipants(activityId: string, userIds: string[]) {
+  const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+  const db = getPgPool();
+  if (!db) {
+    memoryParticipants.set(activityId, new Set(uniqueUserIds));
+  } else {
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query('DELETE FROM "activity_participants" WHERE "activityId" = $1', [activityId]);
+      for (const userId of uniqueUserIds) {
+        await client.query('INSERT INTO "activity_participants" ("activityId","userId") VALUES ($1,$2) ON CONFLICT DO NOTHING', [activityId, userId]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   return getActivity(activityId);
 }
 
@@ -417,20 +509,41 @@ export async function upsertSourceActivity(input: CreateActivityInput) {
   const db = getPgPool();
   if (db) {
     const existingResult = await db.query('SELECT * FROM "activities" WHERE "sourceType" = $1 AND "sourceKey" = $2 LIMIT 1', [input.sourceType, input.sourceKey]);
-    const existing = existingResult.rows[0];
+    let existing = existingResult.rows[0];
     if (!existing) {
       const activityId = id("act");
       const status = input.status || "A fazer";
-      await db.query(
-        'INSERT INTO "activities" ("id","scope","projectId","title","description","status","priority","assigneeUserId","creatorUserId","dueDate","sourceType","sourceKey","sourceUrl","sourceResolved","completedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT ("sourceType","sourceKey") WHERE "sourceKey" <> \'\' DO NOTHING',
-        [activityId, input.scope, input.projectId || "", input.title, input.description || "", status, input.priority || "Média", input.assigneeUserId || "", input.creatorUserId, input.dueDate || "", input.sourceType, input.sourceKey, input.sourceUrl || "", input.sourceResolved || false, status === "Concluída" ? new Date() : null],
-      );
-      for (const userId of [...new Set([input.creatorUserId, input.assigneeUserId || "", ...(input.participantUserIds || [])].filter(Boolean))]) {
-        await db.query('INSERT INTO "activity_participants" ("activityId","userId") SELECT "id", $3 FROM "activities" WHERE "sourceType" = $1 AND "sourceKey" = $2 ON CONFLICT DO NOTHING', [input.sourceType, input.sourceKey, userId]);
+      const projectId = input.scope === "internal" ? "" : input.projectId || "";
+      const stage = normalizedStage(input.scope, input.stage || activityStageForSource(input.sourceType, input.sourceUrl));
+      const client = await db.connect();
+      let created = false;
+      try {
+        await client.query("BEGIN");
+        const sequenceNumber = await nextDatabaseSequence(client, input.scope, projectId, stage);
+        existing = (await client.query('SELECT * FROM "activities" WHERE "sourceType"=$1 AND "sourceKey"=$2 LIMIT 1', [input.sourceType, input.sourceKey])).rows[0];
+        if (existing) {
+          await client.query("ROLLBACK");
+        } else {
+          await client.query(
+            'INSERT INTO "activities" ("id","scope","projectId","stage","sequenceNumber","title","description","status","priority","assigneeUserId","creatorUserId","dueDate","sourceType","sourceKey","sourceUrl","sourceResolved","completedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)',
+            [activityId, input.scope, projectId, stage, sequenceNumber, input.title, input.description || "", status, input.priority || "Média", input.assigneeUserId || "", input.creatorUserId, input.dueDate || "", input.sourceType, input.sourceKey, input.sourceUrl || "", input.sourceResolved || false, status === "Concluída" ? new Date() : null],
+          );
+          for (const userId of [...new Set([input.creatorUserId, input.assigneeUserId || "", ...(input.participantUserIds || [])].filter(Boolean))]) {
+            await client.query('INSERT INTO "activity_participants" ("activityId","userId") VALUES ($1,$2) ON CONFLICT DO NOTHING', [activityId, userId]);
+          }
+          await client.query("COMMIT");
+          created = true;
+        }
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
       }
-      const row = await db.query('SELECT "id" FROM "activities" WHERE "sourceType" = $1 AND "sourceKey" = $2', [input.sourceType, input.sourceKey]);
-      if (row.rows[0]) await addHistory(row.rows[0].id, null, "SOURCE_CREATED", { sourceType: input.sourceType, sourceKey: input.sourceKey });
-      return null;
+      if (created) {
+        await addHistory(activityId, null, "SOURCE_CREATED", { sourceType: input.sourceType, sourceKey: input.sourceKey });
+        return null;
+      }
     }
     const pending = await db.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM "activity_checklist_items" WHERE "activityId" = $1 AND "required" = true AND "completed" = false', [existing.id]);
     const requestedStatus = input.status || existing.status;

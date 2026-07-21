@@ -1,4 +1,13 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean as mysqlBoolean, json } from "drizzle-orm/mysql-core";
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  boolean as mysqlBoolean,
+  json,
+} from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -33,9 +42,13 @@ export const resources = mysqlTable("resources", {
   birthDate: varchar("birthDate", { length: 10 }).default(""),
   startDate: varchar("startDate", { length: 10 }).default(""),
   endDate: varchar("endDate", { length: 10 }).default(""),
-  contractType: varchar("contractType", { length: 64 }).notNull().default("CLT"),
+  contractType: varchar("contractType", { length: 64 })
+    .notNull()
+    .default("CLT"),
   vacationDaysEntitled: int("vacationDaysEntitled").notNull().default(30),
-  skipAllocationCheck: mysqlBoolean("skipAllocationCheck").notNull().default(false),
+  skipAllocationCheck: mysqlBoolean("skipAllocationCheck")
+    .notNull()
+    .default(false),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -103,7 +116,9 @@ export const allocations = mysqlTable("allocations", {
   startDate: varchar("startDate", { length: 10 }).notNull(),
   endDate: varchar("endDate", { length: 10 }).notNull(),
   hoursPerDay: int("hoursPerDay").notNull().default(8),
-  allocationType: varchar("allocationType", { length: 64 }).notNull().default("Projeto"),
+  allocationType: varchar("allocationType", { length: 64 })
+    .notNull()
+    .default("Projeto"),
   status: varchar("status", { length: 64 }).notNull().default("Confirmada"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -118,21 +133,30 @@ export const appUsers = mysqlTable("app_users", {
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email", { length: 320 }).notNull(),
   role: varchar("role", { length: 32 }).notNull().default("viewer"),
-  permissions: json("permissions").$type<{
-    dashboard: boolean;
-    resources: boolean;
-    projects: boolean;
-    absences: boolean;
-    planner: boolean;
-    activities: boolean;
-    gpChecklist: boolean;
-    organogram: boolean;
-    techmove: boolean;
-    access: boolean;
-    settings: boolean;
-    products?: Partial<Record<"techboard" | "techlead" | "techmove" | "techtask" | "admin", boolean>>;
-    actions?: Partial<Record<string, { view: boolean; create: boolean; modify: boolean }>>;
-  }>().notNull(),
+  permissions: json("permissions")
+    .$type<{
+      dashboard: boolean;
+      resources: boolean;
+      projects: boolean;
+      absences: boolean;
+      planner: boolean;
+      activities: boolean;
+      gpChecklist: boolean;
+      organogram: boolean;
+      techmove: boolean;
+      access: boolean;
+      settings: boolean;
+      products?: Partial<
+        Record<
+          "techboard" | "techlead" | "techmove" | "techtask" | "admin",
+          boolean
+        >
+      >;
+      actions?: Partial<
+        Record<string, { view: boolean; create: boolean; modify: boolean }>
+      >;
+    }>()
+    .notNull(),
   active: int("active").notNull().default(1),
   resourceId: varchar("resourceId", { length: 64 }).default(""),
   teamFronts: json("teamFronts").$type<string[]>().default([]),
@@ -168,11 +192,15 @@ export const activities = mysqlTable("activities", {
   id: varchar("id", { length: 64 }).primaryKey(),
   scope: varchar("scope", { length: 16 }).notNull().default("project"),
   projectId: varchar("projectId", { length: 64 }).notNull().default(""),
+  stage: varchar("stage", { length: 16 }).notNull().default("GERAL"),
+  sequenceNumber: int("sequenceNumber").notNull().default(1),
   title: text("title").notNull(),
   description: text("description"),
   status: varchar("status", { length: 32 }).notNull().default("A fazer"),
   priority: varchar("priority", { length: 16 }).notNull().default("Média"),
-  assigneeUserId: varchar("assigneeUserId", { length: 64 }).notNull().default(""),
+  assigneeUserId: varchar("assigneeUserId", { length: 64 })
+    .notNull()
+    .default(""),
   creatorUserId: varchar("creatorUserId", { length: 64 }).notNull(),
   dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
   sourceType: varchar("sourceType", { length: 64 }).notNull().default("manual"),
@@ -182,6 +210,15 @@ export const activities = mysqlTable("activities", {
   archivedAt: timestamp("archivedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const activitySequenceCounters = mysqlTable("activity_sequence_counters", {
+  counterKey: varchar("counterKey", { length: 160 }).primaryKey(),
+  scope: varchar("scope", { length: 16 }).notNull(),
+  projectId: varchar("projectId", { length: 64 }).notNull().default(""),
+  stage: varchar("stage", { length: 16 }).notNull().default("GERAL"),
+  lastNumber: int("lastNumber").notNull().default(0),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -195,7 +232,9 @@ export const activityChecklistItems = mysqlTable("activity_checklist_items", {
   id: varchar("id", { length: 64 }).primaryKey(),
   activityId: varchar("activityId", { length: 64 }).notNull(),
   description: text("description").notNull(),
-  assigneeUserId: varchar("assigneeUserId", { length: 64 }).notNull().default(""),
+  assigneeUserId: varchar("assigneeUserId", { length: 64 })
+    .notNull()
+    .default(""),
   dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
   required: mysqlBoolean("required").notNull().default(true),
   completed: mysqlBoolean("completed").notNull().default(false),
@@ -243,7 +282,9 @@ export const activityNotifications = mysqlTable("activity_notifications", {
   title: text("title").notNull(),
   message: text("message"),
   readAt: timestamp("readAt"),
-  emailStatus: varchar("emailStatus", { length: 16 }).notNull().default("pending"),
+  emailStatus: varchar("emailStatus", { length: 16 })
+    .notNull()
+    .default("pending"),
   emailAttempts: int("emailAttempts").notNull().default(0),
   lastEmailError: text("lastEmailError"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -278,8 +319,75 @@ export const bdcqQuestions = mysqlTable("bdcq_questions", {
   question: text("question").notNull(),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
+  consultantResourceId: varchar("consultantResourceId", { length: 64 }).notNull().default(""),
+  keyUserId: varchar("keyUserId", { length: 64 }).notNull().default(""),
+  required: mysqlBoolean("required").notNull().default(false),
   isDefault: int("isDefault").notNull().default(0),
   sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const workflowProjectKeyUsers = mysqlTable("workflow_project_key_users", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull().default(""),
+  role: varchar("role", { length: 255 }).notNull().default(""),
+  active: int("active").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const projectMemberships = mysqlTable("project_memberships", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  appUserId: varchar("appUserId", { length: 64 }).notNull(),
+  profile: varchar("profile", { length: 32 }).notNull().default("reader"),
+  jobTitle: varchar("jobTitle", { length: 255 }).notNull().default(""),
+  capabilityOverrides: json("capabilityOverrides").$type<Record<string, boolean>>().default({}),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const projectApprovalPolicies = mysqlTable("project_approval_policies", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  entityType: varchar("entityType", { length: 32 }).notNull(),
+  enabled: mysqlBoolean("enabled").notNull().default(false),
+  quorum: varchar("quorum", { length: 16 }).notNull().default("any"),
+  minimumApprovals: int("minimumApprovals").notNull().default(1),
+  approverMembershipIds: json("approverMembershipIds").$type<string[]>().default([]),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const approvalRounds = mysqlTable("approval_rounds", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  entityType: varchar("entityType", { length: 32 }).notNull(),
+  entityId: varchar("entityId", { length: 64 }).notNull(),
+  version: int("version").notNull().default(1),
+  status: varchar("status", { length: 16 }).notNull().default("pending"),
+  quorum: varchar("quorum", { length: 16 }).notNull().default("any"),
+  minimumApprovals: int("minimumApprovals").notNull().default(1),
+  snapshot: json("snapshot").$type<Record<string, unknown>>().default({}),
+  requestedByUserId: varchar("requestedByUserId", { length: 64 }).notNull(),
+  requestedAt: timestamp("requestedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  reopenedFromRoundId: varchar("reopenedFromRoundId", { length: 64 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const approvalDecisions = mysqlTable("approval_decisions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  roundId: varchar("roundId", { length: 64 }).notNull(),
+  approverMembershipId: varchar("approverMembershipId", { length: 64 }).notNull(),
+  decision: varchar("decision", { length: 16 }).notNull().default("pending"),
+  comment: text("comment"),
+  decidedAt: timestamp("decidedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -290,7 +398,20 @@ export const workflowBdcqTemplates = mysqlTable("workflow_bdcq_templates", {
   category: varchar("category", { length: 256 }).notNull().default(""),
   modules: json("modules").$type<string[]>().default([]),
   scopeItemKeys: json("scopeItemKeys").$type<string[]>().default([]),
+  required: mysqlBoolean("required").notNull().default(false),
   active: int("active").notNull().default(1),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const workflowConfigurationTemplates = mysqlTable("workflow_configuration_templates", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  description: text("description").notNull(),
+  category: varchar("category", { length: 256 }).notNull().default("Configuração"),
+  modules: json("modules").$type<string[]>().default([]),
+  scopeItemKeys: json("scopeItemKeys").$type<string[]>().default([]),
+  active: mysqlBoolean("active").notNull().default(true),
   createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -431,6 +552,10 @@ export const configurations = mysqlTable("configurations", {
   responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Pendente"),
   notes: text("notes"),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  bdcqQuestionId: varchar("bdcqQuestionId", { length: 64 }).notNull().default(""),
+  scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
+  source: varchar("source", { length: 32 }).notNull().default("manual"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -439,7 +564,7 @@ export const configurations = mysqlTable("configurations", {
 export const workflowTestCases = mysqlTable("workflow_test_cases", {
   id: varchar("id", { length: 64 }).primaryKey(),
   projectId: varchar("projectId", { length: 64 }).notNull(),
-  type: varchar("type", { length: 32 }).notNull().default("Unitário consultor"),
+  type: varchar("type", { length: 32 }).notNull().default("Unitário"),
   code: varchar("code", { length: 128 }).notNull().default(""),
   title: varchar("title", { length: 512 }).notNull(),
   description: text("description"),
@@ -454,6 +579,25 @@ export const workflowTestCases = mysqlTable("workflow_test_cases", {
   responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   evidence: text("evidence"),
   status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Executable steps of an E2E test scenario, independently assigned to key users. */
+export const workflowTestSteps = mysqlTable("workflow_test_steps", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  testCaseId: varchar("testCaseId", { length: 64 }).notNull(),
+  position: int("position").notNull().default(1),
+  title: varchar("title", { length: 512 }).notNull(),
+  instruction: text("instruction"),
+  expectedResult: text("expectedResult"),
+  actualResult: text("actualResult"),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  evidences: json("evidences")
+    .$type<Array<{ name: string; url: string; contentType: string }>>()
+    .default([]),
   executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

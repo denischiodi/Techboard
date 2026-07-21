@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Search, Settings2, BrainCircuit, RotateCcw, Pencil, Sparkles } from "lucide-react";
+import { Plus, Trash2, Search, Settings2, BrainCircuit, RotateCcw, Pencil, Sparkles, ClipboardCheck, BookTemplate } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 import { useWorkflowProject } from "./useWorkflowProject";
@@ -22,7 +22,7 @@ export default function ConfigurationsPage() {
   const isAdmin = (user as any)?.appRole === "admin" || user?.role === "admin";
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ description: "", module: "", category: "Configuração", responsible: "" });
+  const [form, setForm] = useState({ description: "", module: "", category: "Configuração", responsible: "", scopeItemIds: [] as string[] });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkResponsible, setBulkResponsible] = useState("");
@@ -32,6 +32,7 @@ export default function ConfigurationsPage() {
   const { data: configs = [], refetch } = trpc.workflow.configurations.list.useQuery({ projectId: PROJECT_ID });
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: dcds = [] } = trpc.workflow.dcd.list.useQuery({ projectId: PROJECT_ID });
+  const { data: scopeItems = [] } = trpc.workflow.scopeItems.list.useQuery({ projectId: PROJECT_ID });
   const { data: lookups } = trpc.settings.getLookups.useQuery();
   const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
   const { data: prompts = [], refetch: refetchPrompts } = trpc.workflow.prompts.list.useQuery();
@@ -43,6 +44,8 @@ export default function ConfigurationsPage() {
   const updatePrompt = trpc.workflow.prompts.update.useMutation({ onSuccess: () => { refetchPrompts(); setEditingPrompt(null); toast.success("Prompt atualizado"); }, onError: error => toast.error(error.message) });
   const resetPrompt = trpc.workflow.prompts.reset.useMutation({ onSuccess: () => { refetchPrompts(); setEditingPrompt(null); toast.success("Prompt padrão restaurado"); }, onError: error => toast.error(error.message) });
   const generateFromDcd = trpc.workflow.configurations.generateFromDcd.useMutation({ onSuccess: data => { refetch(); toast.success(`${data.added} configurações extraídas${data.ignored ? ` · ${data.ignored} já existentes` : ""}`); }, onError: error => toast.error(error.message) });
+  const generateFromBdcq = trpc.workflow.configurations.generateFromBdcq.useMutation({ onSuccess: data => { refetch(); toast.success(`${data.added} configurações geradas do BDCQ${data.ignored ? ` · ${data.ignored} já existentes` : ""}`); }, onError: error => toast.error(error.message) });
+  const applyTemplates = trpc.workflow.configurations.templates.applyToProject.useMutation({ onSuccess: data => { refetch(); toast.success(`${data.added} modelos aplicados${data.ignored ? ` · ${data.ignored} não aplicáveis ou existentes` : ""}`); }, onError: error => toast.error(error.message) });
 
   const filtered = configs.filter((c: any) => c.description?.toLowerCase().includes(search.toLowerCase()) || c.category?.toLowerCase().includes(search.toLowerCase()) || c.module?.toLowerCase().includes(search.toLowerCase()));
   const doneCount = configs.filter((c: any) => c.status === "Concluído").length;
@@ -62,6 +65,8 @@ export default function ConfigurationsPage() {
           <p className="text-muted-foreground text-sm">Checklist de configurações a executar no sistema</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="outline" onClick={() => generateFromBdcq.mutate({ projectId: PROJECT_ID })} disabled={generateFromBdcq.isPending}><ClipboardCheck className="mr-2 h-4 w-4" />{generateFromBdcq.isPending ? "Gerando..." : "Gerar do BDCQ"}</Button>
+          <Button variant="outline" onClick={() => applyTemplates.mutate({ projectId: PROJECT_ID })} disabled={applyTemplates.isPending}><BookTemplate className="mr-2 h-4 w-4" />{applyTemplates.isPending ? "Aplicando..." : "Aplicar modelos"}</Button>
           <Select value={sourceDcdId} onValueChange={setSourceDcdId}><SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Selecione um DCD" /></SelectTrigger><SelectContent>{dcds.map((dcd: any) => <SelectItem key={dcd.id} value={dcd.id}>{dcd.title}</SelectItem>)}</SelectContent></Select>
           <Button variant="outline" onClick={() => generateFromDcd.mutate({ projectId: PROJECT_ID, dcdId: sourceDcdId })} disabled={!sourceDcdId || generateFromDcd.isPending}><Sparkles className="mr-2 h-4 w-4" />{generateFromDcd.isPending ? "Extraindo..." : "Gerar do DCD"}</Button>
           <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Nova Configuração</Button>
@@ -122,6 +127,7 @@ export default function ConfigurationsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2"><Settings2 className="h-4 w-4 text-teal-500" />{c.description}</div>
+                    <div className="mt-1 flex flex-wrap gap-1"><Badge variant="outline" className="text-[10px]">{c.source === "bdcq" ? "Origem: BDCQ" : c.source === "template" ? "Origem: modelo admin" : c.source === "dcd" ? "Origem: DCD" : "Origem: manual"}</Badge>{(c.scopeItemIds || []).map((id: string) => { const scope = scopeItems.find((item: any) => item.id === id); return scope ? <Badge key={id} variant="secondary" className="text-[10px]">Scope: {scope.code || scope.name}</Badge> : null; })}</div>
                   </TableCell>
                   <TableCell><div className="flex gap-1">{c.module && <Badge variant="secondary">{c.module}</Badge>}<Badge variant="outline">{c.category || "Configuração"}</Badge></div></TableCell>
                   <TableCell><Select value={c.responsible || "unassigned"} onValueChange={responsible => updateMut.mutate({ id: c.id, data: { responsible: responsible === "unassigned" ? "" : responsible } })}><SelectTrigger className="h-7 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sem responsável</SelectItem>{resources.map((resource: any) => <SelectItem key={resource.id} value={resource.name}>{resource.name}</SelectItem>)}</SelectContent></Select></TableCell>
@@ -165,6 +171,7 @@ export default function ConfigurationsPage() {
               <div><Label>Frente/Módulo</Label><Select value={form.module || "unassigned"} onValueChange={module => setForm(current => ({ ...current, module: module === "unassigned" ? "" : module }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sem frente definida</SelectItem>{modules.map((module: string) => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div><Label>Responsável</Label><Select value={form.responsible || "unassigned"} onValueChange={responsible => setForm(current => ({ ...current, responsible: responsible === "unassigned" ? "" : responsible }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sem responsável</SelectItem>{resources.map((resource: any) => <SelectItem key={resource.id} value={resource.name}>{resource.name}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Scope items relacionados</Label><div className="mt-1 max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">{scopeItems.filter((item: any) => !form.module || item.module === form.module).map((item: any) => <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"><Checkbox checked={form.scopeItemIds.includes(item.id)} onCheckedChange={() => setForm(current => ({ ...current, scopeItemIds: current.scopeItemIds.includes(item.id) ? current.scopeItemIds.filter(id => id !== item.id) : [...current.scopeItemIds, item.id] }))} /><span>{item.code ? `${item.code} - ` : ""}{item.name}</span><Badge variant="outline" className="ml-auto">{item.module}</Badge></label>)}</div></div>
           </div>
           <DialogFooter><Button onClick={() => createMut.mutate({ projectId: PROJECT_ID, ...form })} disabled={!form.description}>Criar</Button></DialogFooter>
         </DialogContent>
