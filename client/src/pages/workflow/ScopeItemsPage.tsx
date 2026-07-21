@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Plus, Upload, Trash2, Search } from "lucide-react";
 import { useWorkflowProject } from "./useWorkflowProject";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { parseDdaWorkbook } from "../../../../shared/ddaImport";
 
 export default function ScopeItemsPage() {
   const PAGE_SIZE = 50;
@@ -30,36 +31,38 @@ export default function ScopeItemsPage() {
   const modules = [...new Set([...(lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value), "Geral"])];
   const createMut = trpc.workflow.scopeItems.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("Scope item criado"); } });
   const deleteMut = trpc.workflow.scopeItems.delete.useMutation({ onSuccess: () => { refetch(); toast.success("Removido"); } });
-  const bulkMut = trpc.workflow.scopeItems.bulkCreate.useMutation({ onSuccess: () => { refetch(); toast.success("Importação concluída"); } });
+  const bulkMut = trpc.workflow.scopeItems.bulkCreate.useMutation({
+    onSuccess: items => { refetch(); toast.success(`${items.length} scope item(s) importado(s)`); },
+  });
 
   const linkedResource = resources.find((resource: any) => resource.id === appUser?.resourceId || resource.email?.toLowerCase() === user?.email?.toLowerCase());
   const scopedFronts = appUser?.role === "technical_lead" ? appUser.teamFronts || [] : appUser?.role === "consultant" ? linkedResource?.fronts || [linkedResource?.front].filter(Boolean) : [];
   const visibleItems = scopedFronts.length ? items.filter((item: any) => scopedFronts.includes(item.module)) : items;
   const filtered = visibleItems.filter((i: any) => i.name?.toLowerCase().includes(search.toLowerCase()) || i.code?.toLowerCase().includes(search.toLowerCase()) || i.module?.toLowerCase().includes(search.toLowerCase()));
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const text = ev.target?.result as string;
-        const lines = text.split("\n").filter(Boolean);
-        if (lines.length < 2) { toast.error("Arquivo vazio ou inválido"); return; }
-        const headers = lines[0].split(/[,;\t]/).map((h: string) => h.trim().toLowerCase());
-        const nameIdx = headers.findIndex((h: string) => h.includes("name") || h.includes("nome") || h.includes("description"));
-        const moduleIdx = headers.findIndex((h: string) => h.includes("module") || h.includes("módulo") || h.includes("lob") || h.includes("line"));
-        const codeIdx = headers.findIndex((h: string) => h.includes("code") || h.includes("código") || h.includes("id"));
-        if (nameIdx === -1) { toast.error("Coluna 'name' não encontrada"); return; }
-        const parsed = lines.slice(1).map((line: string) => {
-          const cols = line.split(/[,;\t]/).map((c: string) => c.trim());
-          return { name: cols[nameIdx] || "", module: moduleIdx >= 0 ? cols[moduleIdx] : "Geral", code: codeIdx >= 0 ? cols[codeIdx] : "" };
-        }).filter((r: any) => r.name);
-        bulkMut.mutate({ projectId: PROJECT_ID, items: parsed });
-      } catch { toast.error("Erro ao processar arquivo"); }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+    try {
+      const parsed = parseDdaWorkbook(await file.arrayBuffer(), file.name);
+      if (!parsed.length) throw new Error("Nenhum scope item foi encontrado. Verifique os cabeçalhos da planilha.");
+      await bulkMut.mutateAsync({
+        projectId: PROJECT_ID,
+        items: parsed.map(item => ({
+          name: item.name,
+          module: item.module || "Geral",
+          code: item.code,
+          processArea: item.processArea,
+          description: item.description,
+          active: item.active ? 1 : 0,
+        })),
+      });
+      setPage(0);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao processar o arquivo DDA");
+    } finally {
+      e.target.value = "";
+    }
   };
 
   return (
@@ -70,7 +73,7 @@ export default function ScopeItemsPage() {
           <p className="text-muted-foreground text-sm">Scope items do projeto SAP S/4HANA</p>
         </div>
         <div className="flex flex-col gap-2 min-[420px]:flex-row sm:flex-wrap sm:justify-end">
-          <Button variant="outline" asChild><label className="cursor-pointer"><Upload className="h-4 w-4 mr-2" />Importar CSV<input type="file" accept=".csv,.txt,.tsv" className="hidden" onChange={handleFileUpload} /></label></Button>
+          <Button variant="outline" asChild disabled={bulkMut.isPending}><label className="cursor-pointer"><Upload className="h-4 w-4 mr-2" />{bulkMut.isPending ? "Importando..." : "Importar DDA"}<input type="file" accept=".xlsx,.xls,.csv,.txt,.tsv" className="hidden" onChange={handleFileUpload} /></label></Button>
           <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Novo Item</Button>
         </div>
       </div>
@@ -93,7 +96,7 @@ export default function ScopeItemsPage() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum scope item. Importe um CSV ou adicione manualmente.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum scope item. Importe uma planilha DDA ou adicione manualmente.</TableCell></TableRow>
               ) : filtered.map((item: any) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-mono text-xs">{item.code}</TableCell>
