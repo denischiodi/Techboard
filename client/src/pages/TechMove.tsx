@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import {
   AlertCircle,
   ArrowLeft,
@@ -30,6 +29,7 @@ import { appPath, assetPath } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { parseDdaWorkbook } from "../../../shared/ddaImport";
 import { ProjectName } from "@/components/ProjectLogo";
 import { EmailCodeLogin } from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -86,82 +86,13 @@ function asList(value?: string[]) {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeHeader(value: unknown) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function textValue(row: Record<string, unknown>, labels: string[]) {
-  const wanted = labels.map(normalizeHeader);
-  const entry = Object.entries(row).find(([key]) => wanted.includes(normalizeHeader(key)));
-  return entry ? String(entry[1] ?? "").trim() : "";
-}
-
-function normalizePriority(value: string) {
-  const priority = value.trim().toLowerCase();
-  if (priority.startsWith("alt")) return "Alta";
-  if (priority.startsWith("baix")) return "Baixa";
-  if (priority.startsWith("med")) return "Média";
-  return value || "Normal";
-}
-
 function readDdaScopeItems(file: File): Promise<TechMoveScopeItem[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Nao foi possivel ler a planilha DDA."));
     reader.onload = () => {
       try {
-        const workbook = XLSX.read(reader.result as ArrayBuffer, { type: "array", cellDates: false });
-        const sheetName =
-          workbook.SheetNames.find(name => normalizeHeader(name).includes("scope")) ||
-          workbook.SheetNames[0];
-        const sheet = sheetName ? workbook.Sheets[sheetName] : null;
-        if (!sheet) {
-          reject(new Error("A planilha nao possui abas para importar."));
-          return;
-        }
-
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-        const importedAt = new Date().toISOString();
-        const items = rows
-          .map((row, index): TechMoveScopeItem | null => {
-            const code = textValue(row, ["Código", "Codigo", "Code", "Scope Item ID"]);
-            const name = textValue(row, ["Scope Item", "Nome", "Name", "Descrição", "Descricao"]);
-            const module = textValue(row, ["Módulo", "Modulo", "Module", "Frente"]) || "Geral";
-            const lob = textValue(row, ["LOB SAP", "LOB", "Linha de Negócio", "Linha de Negocio"]);
-            const processArea = textValue(row, ["Processo", "Process Area", "Área de Processo", "Area de Processo"]) || lob || module;
-            const priority = normalizePriority(textValue(row, ["Prioridade", "Priority"]));
-            const fitToStandard = textValue(row, ["Fit-to-Standard", "Fit to Standard", "FTS"]);
-            const userStory = textValue(row, ["User Story", "História", "Historia"]);
-            const status = textValue(row, ["Status"]);
-
-            if (!code && !name) return null;
-
-            return {
-              id: uid("scope"),
-              module,
-              code: code || `DDA-${index + 1}`,
-              name: name || code || `Scope item ${index + 1}`,
-              processArea,
-              lob,
-              priority,
-              fitToStandard,
-              userStory,
-              status,
-              description: [lob ? `LOB SAP: ${lob}` : "", processArea ? `Processo: ${processArea}` : ""].filter(Boolean).join(" | "),
-              documentRef: file.name,
-              sourceFile: file.name,
-              importedAt,
-              consultantName: "",
-              active: true,
-            };
-          })
-          .filter((item): item is TechMoveScopeItem => Boolean(item));
-
-        resolve(items);
+        resolve(parseDdaWorkbook(reader.result as ArrayBuffer, file.name));
       } catch (error) {
         reject(error instanceof Error ? error : new Error("Erro ao processar a planilha DDA."));
       }
