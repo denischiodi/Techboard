@@ -417,6 +417,32 @@ export const workflowConfigurationTemplates = mysqlTable("workflow_configuration
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export type WorkshopPresentationFile = {
+  name: string;
+  url: string;
+  contentType: string;
+};
+
+export const workflowWorkshopTemplates = mysqlTable("workflow_workshop_templates", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  title: varchar("title", { length: 512 }).notNull(),
+  objective: text("objective"),
+  content: text("content"),
+  duration: varchar("duration", { length: 64 }).notNull().default(""),
+  modules: json("modules").$type<string[]>().default([]),
+  projectIds: json("projectIds").$type<string[]>().default([]),
+  scopeItemKeys: json("scopeItemKeys").$type<string[]>().default([]),
+  agenda: json("agenda").$type<string[]>().default([]),
+  expectedOutcomes: json("expectedOutcomes").$type<string[]>().default([]),
+  prerequisites: json("prerequisites").$type<string[]>().default([]),
+  requiredRoles: json("requiredRoles").$type<string[]>().default([]),
+  presentationFiles: json("presentationFiles").$type<WorkshopPresentationFile[]>().default([]),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 /**
  * BDCQ Answers - respostas do BDCQ
  */
@@ -450,6 +476,16 @@ export const workshops = mysqlTable("workshops", {
   projectId: varchar("projectId", { length: 64 }).notNull(),
   title: varchar("title", { length: 512 }).notNull(),
   module: varchar("module", { length: 128 }).notNull().default(""),
+  modules: json("modules").$type<string[]>().default([]),
+  scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
+  objective: text("objective"),
+  content: text("content"),
+  expectedOutcomes: json("expectedOutcomes").$type<string[]>().default([]),
+  prerequisites: json("prerequisites").$type<string[]>().default([]),
+  requiredRoles: json("requiredRoles").$type<string[]>().default([]),
+  presentationFiles: json("presentationFiles").$type<WorkshopPresentationFile[]>().default([]),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  source: varchar("source", { length: 32 }).notNull().default("manual"),
   scheduledDate: varchar("scheduledDate", { length: 10 }).notNull().default(""),
   duration: varchar("duration", { length: 64 }).notNull().default(""),
   participants: json("participants").$type<string[]>().default([]),

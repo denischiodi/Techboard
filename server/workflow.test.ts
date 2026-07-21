@@ -20,7 +20,12 @@ vi.mock("./routers/workflowDb", () => ({
   listBdcqAnswerHistory: vi.fn().mockResolvedValue([]),
   listWorkshops: vi.fn().mockResolvedValue([]),
   createWorkshop: vi.fn().mockResolvedValue({ id: "w-1" }),
+  updateWorkshop: vi.fn().mockResolvedValue(undefined),
   deleteWorkshop: vi.fn().mockResolvedValue(undefined),
+  listWorkshopTemplates: vi.fn().mockResolvedValue([]),
+  createWorkshopTemplate: vi.fn().mockResolvedValue({ id: "wt-1" }),
+  updateWorkshopTemplate: vi.fn().mockResolvedValue(undefined),
+  deleteWorkshopTemplate: vi.fn().mockResolvedValue(undefined),
   listTranscripts: vi.fn().mockResolvedValue([]),
   createTranscript: vi.fn().mockResolvedValue({ id: "t-1" }),
   getMinutesByWorkshop: vi.fn().mockResolvedValue(null),
@@ -89,6 +94,7 @@ describe("workflow router module structure", () => {
     expect(db.listBdcqAnswerHistory).toBeDefined();
     expect(db.listWorkshops).toBeDefined();
     expect(db.createWorkshop).toBeDefined();
+    expect(db.listWorkshopTemplates).toBeDefined();
     expect(db.listTranscripts).toBeDefined();
     expect(db.createTranscript).toBeDefined();
     expect(db.getMinutesByWorkshop).toBeDefined();
@@ -150,6 +156,25 @@ describe("workflow router module structure", () => {
     expect(result.added).toBe(1);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       projectId: "project-1", templateId: "ct-1", module: "MM", scopeItemIds: ["scope-mm"], source: "template",
+    }));
+  });
+
+  it("applies an applicable workshop model once and resolves its scope items", async () => {
+    const db = await import("./routers/workflowDb");
+    const plannerStore = await import("./plannerStore");
+    vi.spyOn(plannerStore, "getProjectById").mockResolvedValueOnce({ id: "project-1", fronts: ["MM"] } as any);
+    vi.mocked(db.listScopeItems).mockResolvedValueOnce([{ id: "scope-mm", projectId: "project-1", code: "J45", name: "Compras", module: "MM", active: 1 } as any]);
+    vi.mocked(db.listWorkshopTemplates).mockResolvedValueOnce([{ id: "wt-1", title: "Fit-to-Standard de Compras", modules: ["MM"], projectIds: [], scopeItemKeys: ["J45"], agenda: ["Demonstrar processo"], requiredRoles: ["Key user de Compras"], active: true } as any]);
+    vi.mocked(db.listWorkshops).mockResolvedValueOnce([]);
+    const create = vi.mocked(db.createWorkshop);
+    create.mockClear();
+    const { applyWorkshopTemplates } = await import("./routers/workflow");
+
+    const result = await applyWorkshopTemplates("project-1", ["wt-1"]);
+
+    expect(result.added).toBe(1);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "project-1", templateId: "wt-1", modules: ["MM"], scopeItemIds: ["scope-mm"], source: "template",
     }));
   });
 });

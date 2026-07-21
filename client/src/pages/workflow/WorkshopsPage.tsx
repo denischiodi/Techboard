@@ -8,8 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, FileText, Sparkles, Upload, Calendar, Lightbulb, ClipboardList, CheckCircle2, GanttChart, LayoutGrid, Users, UserCheck, AudioLines } from "lucide-react";
+import { Plus, Trash2, FileText, Sparkles, Upload, Calendar, Lightbulb, ClipboardList, CheckCircle2, GanttChart, LayoutGrid, Users, UserCheck, AudioLines, Library, Paperclip, ExternalLink, Pencil } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 import { useWorkflowProject } from "./useWorkflowProject";
 
@@ -21,34 +23,60 @@ function normalizeAudioType(file: File): SupportedAudioType | null {
   return byExtension[file.name.split(".").pop()?.toLowerCase() || ""] || null;
 }
 
+const lines = (value: string) => value.split("\n").map(item => item.trim()).filter(Boolean);
+const joinLines = (value: string[] | undefined) => (value || []).join("\n");
+const emptyWorkshopForm = { title: "", objective: "", content: "", modules: [] as string[], scopeItemIds: [] as string[], date: "", startTime: "", endTime: "", duration: "", notes: "", participants: [] as string[], agenda: "", expectedOutcomes: "", prerequisites: "", requiredRoles: "", presentationFiles: [] as Array<{ name: string; url: string; contentType: string }> };
+const emptyTemplateForm = { id: "", title: "", objective: "", content: "", duration: "", modules: [] as string[], projectIds: [] as string[], scopeItemKeys: [] as string[], agenda: "", expectedOutcomes: "", prerequisites: "", requiredRoles: "", presentationFiles: [] as Array<{ name: string; url: string; contentType: string }>, active: true };
+
 export default function WorkshopsPage() {
   const { projectId: PROJECT_ID } = useWorkflowProject();
+  const { user } = useAuth();
+  const isAdmin = (user as any)?.appRole === "admin" || user?.role === "admin";
   const [showAdd, setShowAdd] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
   const [selectedWs, setSelectedWs] = useState<any>(null);
   const [showAgenda, setShowAgenda] = useState(false);
   const [agendaSuggestion, setAgendaSuggestion] = useState("");
   const [view, setView] = useState<"cards" | "timeline">("timeline");
-  const [form, setForm] = useState({ title: "", module: "", date: "", startTime: "", endTime: "", notes: "", participants: [] as string[] });
+  const [form, setForm] = useState(emptyWorkshopForm);
+  const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
 
   const { data: workshops = [], refetch } = trpc.workflow.workshops.list.useQuery({ projectId: PROJECT_ID });
+  const { data: scopeItems = [] } = trpc.workflow.scopeItems.list.useQuery({ projectId: PROJECT_ID });
+  const { data: keyUsers = [] } = trpc.workflow.bdcq.keyUsers.list.useQuery({ projectId: PROJECT_ID });
+  const { data: templates = [], refetch: refetchTemplates } = trpc.workflow.workshops.templates.list.useQuery({ projectId: PROJECT_ID });
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: allocations = [] } = trpc.allocations.list.useQuery();
   const { data: absences = [] } = trpc.absences.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
   const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
-  const createWs = trpc.workflow.workshops.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("Workshop criado"); } });
+  const createWs = trpc.workflow.workshops.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); setForm(emptyWorkshopForm); toast.success("Workshop criado"); }, onError: error => toast.error(error.message) });
   const deleteWs = trpc.workflow.workshops.delete.useMutation({ onSuccess: () => { refetch(); toast.success("Removido"); } });
   const suggestAgenda = trpc.workflow.workshops.suggestAgenda.useMutation({
     onSuccess: (data: any) => { setAgendaSuggestion(data.suggestion); setShowAgenda(true); },
     onError: () => toast.error("Erro ao gerar sugestão"),
   });
+  const uploadPresentation = trpc.workflow.workshops.uploadPresentation.useMutation({ onError: error => toast.error(error.message) });
+  const createTemplate = trpc.workflow.workshops.templates.create.useMutation({ onSuccess: () => { refetchTemplates(); setTemplateForm(emptyTemplateForm); toast.success("Workshop padrão criado"); }, onError: error => toast.error(error.message) });
+  const updateTemplate = trpc.workflow.workshops.templates.update.useMutation({ onSuccess: () => { refetchTemplates(); setTemplateForm(emptyTemplateForm); toast.success("Workshop padrão atualizado"); }, onError: error => toast.error(error.message) });
+  const deleteTemplate = trpc.workflow.workshops.templates.delete.useMutation({ onSuccess: () => { refetchTemplates(); toast.success("Workshop padrão removido"); }, onError: error => toast.error(error.message) });
+  const applyTemplates = trpc.workflow.workshops.templates.applyToProject.useMutation({ onSuccess: data => { refetch(); setSelectedTemplateIds([]); toast.success(`${data.added} workshop(s) padrão aplicado(s)`); }, onError: error => toast.error(error.message) });
   const sortedWorkshops = [...workshops].sort((a: any, b: any) => (a.scheduledDate || "9999").localeCompare(b.scheduledDate || "9999"));
   const availableResources = resources.filter((resource: any) => allocations.some((allocation: any) =>
     allocation.projectId === PROJECT_ID && allocation.resourceId === resource.id &&
-    (!form.module || allocation.front === form.module) &&
+    (form.modules.length === 0 || form.modules.includes(allocation.front)) &&
     (!form.date || (allocation.startDate <= form.date && allocation.endDate >= form.date))
   ) && !absences.some((absence: any) => absence.resourceId === resource.id && form.date && absence.startDate <= form.date && absence.endDate >= form.date));
   const toggleParticipant = (name: string) => setForm(current => ({ ...current, participants: current.participants.includes(name) ? current.participants.filter(item => item !== name) : [...current.participants, name] }));
+  const toggle = (items: string[], value: string) => items.includes(value) ? items.filter(item => item !== value) : [...items, value];
+  const uploadFile = async (file: File | undefined, target: "workshop" | "template") => {
+    if (!file) return;
+    const fileData = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
+    const uploaded = await uploadPresentation.mutateAsync({ projectId: PROJECT_ID, fileName: file.name, contentType: file.type || "application/octet-stream", fileData });
+    if (target === "workshop") setForm(current => ({ ...current, presentationFiles: [...current.presentationFiles, uploaded] }));
+    else setTemplateForm(current => ({ ...current, presentationFiles: [...current.presentationFiles, uploaded] }));
+  };
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
@@ -58,6 +86,7 @@ export default function WorkshopsPage() {
           <p className="text-muted-foreground text-sm">Gestão de workshops de levantamento</p>
         </div>
         <div className="flex flex-col gap-2 min-[420px]:flex-row sm:flex-wrap sm:justify-end">
+          <Button variant="outline" onClick={() => setShowLibrary(true)}><Library className="mr-2 h-4 w-4" />Workshops padrão</Button>
           <Button variant="outline" onClick={() => suggestAgenda.mutate({ projectId: PROJECT_ID })} disabled={suggestAgenda.isPending}>
             <Lightbulb className="h-4 w-4 mr-2" />{suggestAgenda.isPending ? "Gerando..." : "Sugerir Agenda (IA)"}
           </Button>
@@ -71,7 +100,7 @@ export default function WorkshopsPage() {
         {sortedWorkshops.length === 0 ? <p className="py-4 text-center text-muted-foreground">Nenhum workshop agendado.</p> : <div className="relative ml-4 border-l-2 border-primary/20 pl-6">
           {sortedWorkshops.map((ws: any) => <button key={ws.id} className="relative mb-5 block w-full rounded-lg border bg-background p-4 text-left transition-shadow hover:shadow-md" onClick={() => setSelectedWs(ws)}>
             <span className="absolute -left-[2.05rem] top-5 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3></div><div className="flex gap-2">{ws.module && <Badge variant="secondary">{ws.module}</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge></div></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3>{ws.objective && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ws.objective}</p>}</div><div className="flex flex-wrap gap-2">{(ws.modules?.length ? ws.modules : ws.module ? [ws.module] : []).map((module: string) => <Badge key={module} variant="secondary">{module}</Badge>)}{ws.source === "template" && <Badge>Modelo padrão</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge></div></div>
             <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">{ws.duration && <span>{ws.duration}</span>}<span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.participants?.length || 0} participantes</span></div>
           </button>)}
         </div>}
@@ -101,18 +130,50 @@ export default function WorkshopsPage() {
           <DialogHeader><DialogTitle>Novo Workshop</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div><Label>Título *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
-            <div><Label>Frente/Módulo</Label><Select value={form.module} onValueChange={module => setForm(current => ({ ...current, module, participants: [] }))}><SelectTrigger><SelectValue placeholder="Selecione uma frente" /></SelectTrigger><SelectContent>{modules.map((module: string) => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Objetivo</Label><Textarea value={form.objective} onChange={e => setForm(current => ({ ...current, objective: e.target.value }))} placeholder="Qual decisão ou entendimento o workshop deve produzir?" /></div>
+            <div><Label>O que será apresentado</Label><Textarea value={form.content} onChange={e => setForm(current => ({ ...current, content: e.target.value }))} rows={4} placeholder="Descreva processos, demonstrações, cenários e tópicos que serão apresentados." /></div>
+            <div className="grid gap-2"><Label>Frentes/Módulos</Label><div className="flex flex-wrap gap-2">{modules.map((module: string) => <Button key={module} type="button" size="sm" variant={form.modules.includes(module) ? "default" : "outline"} onClick={() => setForm(current => ({ ...current, modules: toggle(current.modules, module), participants: [] }))}>{module}</Button>)}</div><span className="text-xs text-muted-foreground">Sem seleção significa workshop geral.</span></div>
+            <div className="grid gap-2"><Label>Scope items relacionados</Label><div className="max-h-44 space-y-1 overflow-auto rounded-md border p-2">{scopeItems.filter((item: any) => form.modules.length === 0 || form.modules.includes(item.module)).map((item: any) => <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"><Checkbox checked={form.scopeItemIds.includes(item.id)} onCheckedChange={() => setForm(current => ({ ...current, scopeItemIds: toggle(current.scopeItemIds, item.id) }))} /><span>{item.code ? `${item.code} - ` : ""}{item.name}</span><Badge variant="outline" className="ml-auto">{item.module}</Badge></label>)}</div></div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div><Label>Data</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value, participants: [] }))} /></div>
               <div><Label>Início</Label><Input type="time" value={form.startTime} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))} /></div>
               <div><Label>Fim</Label><Input type="time" value={form.endTime} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))} /></div>
             </div>
+            <div className="grid gap-3 sm:grid-cols-2"><div><Label>Agenda (um item por linha)</Label><Textarea value={form.agenda} onChange={e => setForm(current => ({ ...current, agenda: e.target.value }))} rows={5} /></div><div><Label>Funções necessárias (uma por linha)</Label><Textarea value={form.requiredRoles} onChange={e => setForm(current => ({ ...current, requiredRoles: e.target.value }))} rows={5} placeholder="Dono do processo\nKey user de Compras\nConsultor funcional" /></div></div>
+            <div className="grid gap-3 sm:grid-cols-2"><div><Label>Resultados esperados</Label><Textarea value={form.expectedOutcomes} onChange={e => setForm(current => ({ ...current, expectedOutcomes: e.target.value }))} rows={4} /></div><div><Label>Pré-requisitos</Label><Textarea value={form.prerequisites} onChange={e => setForm(current => ({ ...current, prerequisites: e.target.value }))} rows={4} /></div></div>
             <div className="space-y-2"><div className="flex items-center justify-between"><Label>Participantes sugeridos</Label><span className="text-xs text-muted-foreground">Com base nas alocações e ausências</span></div>
-              {!form.date ? <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Informe a data para verificar disponibilidade.</p> : availableResources.length === 0 ? <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Nenhum recurso alocado e disponível para os filtros.</p> : <div className="flex flex-wrap gap-2">{availableResources.map((resource: any) => <Button key={resource.id} type="button" size="sm" variant={form.participants.includes(resource.name) ? "default" : "outline"} onClick={() => toggleParticipant(resource.name)}><UserCheck className="mr-1.5 h-3.5 w-3.5" />{resource.name}</Button>)}</div>}
+              <div className="flex flex-wrap gap-2">{form.date && availableResources.map((resource: any) => <Button key={resource.id} type="button" size="sm" variant={form.participants.includes(resource.name) ? "default" : "outline"} onClick={() => toggleParticipant(resource.name)}><UserCheck className="mr-1.5 h-3.5 w-3.5" />{resource.name}</Button>)}{keyUsers.filter((item: any) => item.active).map((item: any) => <Button key={item.id} type="button" size="sm" variant={form.participants.includes(item.name) ? "default" : "outline"} onClick={() => toggleParticipant(item.name)}><Users className="mr-1.5 h-3.5 w-3.5" />{item.name}{item.role ? ` · ${item.role}` : " · Key user"}</Button>)}</div>
+              {!form.date && keyUsers.length === 0 && <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Informe a data para verificar os recursos internos; os key users ativos aparecem independentemente da data.</p>}
             </div>
+            <div className="space-y-2"><div className="flex items-center justify-between"><div><Label>Modelo da apresentação</Label><p className="text-xs text-muted-foreground">PPT, PPTX ou PDF, até 15 MB.</p></div><Button variant="outline" size="sm" asChild disabled={uploadPresentation.isPending}><label className="cursor-pointer"><Upload className="mr-2 h-4 w-4" />Anexar<input className="hidden" type="file" accept=".ppt,.pptx,.pdf" onChange={event => { void uploadFile(event.target.files?.[0], "workshop"); event.currentTarget.value = ""; }} /></label></Button></div>{form.presentationFiles.map((file, index) => <div key={`${file.url}-${index}`} className="flex items-center gap-2 rounded border p-2 text-sm"><Paperclip className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{file.name}</span><Button variant="ghost" size="icon" onClick={() => setForm(current => ({ ...current, presentationFiles: current.presentationFiles.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>
             <div><Label>Notas</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button onClick={() => createWs.mutate({ projectId: PROJECT_ID, title: form.title, module: form.module, scheduledDate: form.date, duration: form.startTime && form.endTime ? `${form.startTime}–${form.endTime}` : "", participants: form.participants, notes: form.notes })} disabled={!form.title}>Criar</Button></DialogFooter>
+          <DialogFooter><Button onClick={() => createWs.mutate({ projectId: PROJECT_ID, title: form.title, objective: form.objective, content: form.content, module: form.modules[0] || "", modules: form.modules, scopeItemIds: form.scopeItemIds, scheduledDate: form.date, duration: form.startTime && form.endTime ? `${form.startTime}–${form.endTime}` : form.duration, participants: form.participants, agenda: lines(form.agenda), expectedOutcomes: lines(form.expectedOutcomes), prerequisites: lines(form.prerequisites), requiredRoles: lines(form.requiredRoles), presentationFiles: form.presentationFiles, notes: form.notes })} disabled={!form.title || createWs.isPending}>Criar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLibrary} onOpenChange={setShowLibrary}>
+        <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+          <DialogHeader><DialogTitle>Biblioteca de workshops padrão</DialogTitle></DialogHeader>
+          <div className="grid gap-5 lg:grid-cols-[1fr_1.25fr]">
+            <div className="space-y-3 rounded-md border p-4">
+              <div><h3 className="font-medium">{templateForm.id ? "Editar workshop padrão" : "Novo workshop padrão"}</h3><p className="text-xs text-muted-foreground">Modelos sem projeto, frente ou scope item são gerais.</p></div>
+              <div><Label>Título *</Label><Input value={templateForm.title} onChange={e => setTemplateForm(current => ({ ...current, title: e.target.value }))} disabled={!isAdmin} /></div>
+              <div><Label>Objetivo</Label><Textarea value={templateForm.objective} onChange={e => setTemplateForm(current => ({ ...current, objective: e.target.value }))} disabled={!isAdmin} /></div>
+              <div><Label>O que será apresentado</Label><Textarea value={templateForm.content} onChange={e => setTemplateForm(current => ({ ...current, content: e.target.value }))} rows={4} disabled={!isAdmin} /></div>
+              <div><Label>Duração sugerida</Label><Input value={templateForm.duration} onChange={e => setTemplateForm(current => ({ ...current, duration: e.target.value }))} placeholder="Ex: 2h" disabled={!isAdmin} /></div>
+              <div className="grid gap-2"><Label>Frentes</Label><div className="flex flex-wrap gap-2">{modules.map((module: string) => <Button key={module} type="button" size="sm" variant={templateForm.modules.includes(module) ? "default" : "outline"} disabled={!isAdmin} onClick={() => setTemplateForm(current => ({ ...current, modules: toggle(current.modules, module) }))}>{module}</Button>)}</div></div>
+              <label className="flex items-center gap-2 text-sm"><Checkbox checked={templateForm.projectIds.includes(PROJECT_ID)} disabled={!isAdmin} onCheckedChange={() => setTemplateForm(current => ({ ...current, projectIds: toggle(current.projectIds, PROJECT_ID) }))} />Aplicar somente ao projeto atual</label>
+              <div className="grid gap-2"><Label>Scope items</Label><div className="max-h-40 space-y-1 overflow-auto rounded border p-2">{scopeItems.filter((item: any) => templateForm.modules.length === 0 || templateForm.modules.includes(item.module)).map((item: any) => { const key = item.code || item.name; return <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded p-1 text-sm hover:bg-muted"><Checkbox checked={templateForm.scopeItemKeys.includes(key)} disabled={!isAdmin} onCheckedChange={() => setTemplateForm(current => ({ ...current, scopeItemKeys: toggle(current.scopeItemKeys, key) }))} />{item.code ? `${item.code} - ` : ""}{item.name}</label>; })}</div></div>
+              <div className="grid gap-3 sm:grid-cols-2"><div><Label>Agenda</Label><Textarea rows={4} value={templateForm.agenda} onChange={e => setTemplateForm(current => ({ ...current, agenda: e.target.value }))} disabled={!isAdmin} /></div><div><Label>Funções necessárias</Label><Textarea rows={4} value={templateForm.requiredRoles} onChange={e => setTemplateForm(current => ({ ...current, requiredRoles: e.target.value }))} disabled={!isAdmin} /></div></div>
+              <div className="grid gap-3 sm:grid-cols-2"><div><Label>Resultados esperados</Label><Textarea rows={3} value={templateForm.expectedOutcomes} onChange={e => setTemplateForm(current => ({ ...current, expectedOutcomes: e.target.value }))} disabled={!isAdmin} /></div><div><Label>Pré-requisitos</Label><Textarea rows={3} value={templateForm.prerequisites} onChange={e => setTemplateForm(current => ({ ...current, prerequisites: e.target.value }))} disabled={!isAdmin} /></div></div>
+              <div className="space-y-2"><Button variant="outline" size="sm" asChild disabled={!isAdmin || uploadPresentation.isPending}><label className="cursor-pointer"><Upload className="mr-2 h-4 w-4" />Anexar apresentação<input className="hidden" type="file" accept=".ppt,.pptx,.pdf" onChange={event => { void uploadFile(event.target.files?.[0], "template"); event.currentTarget.value = ""; }} /></label></Button>{templateForm.presentationFiles.map((file, index) => <div key={file.url} className="flex items-center gap-2 rounded border p-2 text-sm"><Paperclip className="h-4 w-4" /><span className="flex-1 truncate">{file.name}</span><Button variant="ghost" size="icon" onClick={() => setTemplateForm(current => ({ ...current, presentationFiles: current.presentationFiles.filter((_, i) => i !== index) }))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>
+              {isAdmin && <div className="flex gap-2"><Button disabled={!templateForm.title.trim()} onClick={() => { const data = { title: templateForm.title, objective: templateForm.objective, content: templateForm.content, duration: templateForm.duration, modules: templateForm.modules, projectIds: templateForm.projectIds, scopeItemKeys: templateForm.scopeItemKeys, agenda: lines(templateForm.agenda), expectedOutcomes: lines(templateForm.expectedOutcomes), prerequisites: lines(templateForm.prerequisites), requiredRoles: lines(templateForm.requiredRoles), presentationFiles: templateForm.presentationFiles, active: templateForm.active }; templateForm.id ? updateTemplate.mutate({ id: templateForm.id, data }) : createTemplate.mutate(data); }}>{templateForm.id ? "Salvar alterações" : "Criar modelo"}</Button>{templateForm.id && <Button variant="outline" onClick={() => setTemplateForm(emptyTemplateForm)}>Cancelar</Button>}</div>}
+            </div>
+            <div className="space-y-3"><div className="flex items-center justify-between gap-3"><div><h3 className="font-medium">Modelos disponíveis ({templates.length})</h3><p className="text-xs text-muted-foreground">Selecione um ou mais modelos para aplicar ao projeto.</p></div><Button disabled={selectedTemplateIds.length === 0 || applyTemplates.isPending} onClick={() => applyTemplates.mutate({ projectId: PROJECT_ID, templateIds: selectedTemplateIds })}><Sparkles className="mr-2 h-4 w-4" />Aplicar selecionados</Button></div>
+              {templates.map((template: any) => <div key={template.id} className="rounded-md border p-3"><div className="flex items-start gap-3"><Checkbox checked={selectedTemplateIds.includes(template.id)} onCheckedChange={() => setSelectedTemplateIds(current => toggle(current, template.id))} /><div className="min-w-0 flex-1"><p className="font-medium">{template.title}</p><p className="mt-1 text-sm text-muted-foreground line-clamp-2">{template.objective || template.content}</p><div className="mt-2 flex flex-wrap gap-1">{template.projectIds?.length === 0 && template.modules?.length === 0 && template.scopeItemKeys?.length === 0 && <Badge>Geral</Badge>}{template.projectIds?.includes(PROJECT_ID) && <Badge variant="secondary">Projeto atual</Badge>}{template.modules?.map((item: string) => <Badge key={item} variant="outline">{item}</Badge>)}{template.scopeItemKeys?.map((item: string) => <Badge key={item} className="bg-blue-50 text-blue-800">Scope: {item}</Badge>)}</div></div>{isAdmin && <div className="flex"><Button variant="ghost" size="icon" onClick={() => setTemplateForm({ ...emptyTemplateForm, ...template, agenda: joinLines(template.agenda), expectedOutcomes: joinLines(template.expectedOutcomes), prerequisites: joinLines(template.prerequisites), requiredRoles: joinLines(template.requiredRoles) })}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => deleteTemplate.mutate({ id: template.id })}><Trash2 className="h-4 w-4" /></Button></div>}</div></div>)}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -177,6 +238,15 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="grid gap-4 rounded-lg border p-4 md:grid-cols-2">
+          <div><p className="text-xs font-medium uppercase text-muted-foreground">Objetivo</p><p className="mt-1 whitespace-pre-wrap text-sm">{ws.objective || "Não informado"}</p></div>
+          <div><p className="text-xs font-medium uppercase text-muted-foreground">O que será apresentado</p><p className="mt-1 whitespace-pre-wrap text-sm">{ws.content || "Não informado"}</p></div>
+          {ws.agenda?.length > 0 && <div><p className="text-xs font-medium uppercase text-muted-foreground">Agenda</p><ul className="mt-1 list-disc space-y-1 pl-5 text-sm">{ws.agenda.map((item: string) => <li key={item}>{item}</li>)}</ul></div>}
+          {ws.requiredRoles?.length > 0 && <div><p className="text-xs font-medium uppercase text-muted-foreground">Funções necessárias</p><div className="mt-2 flex flex-wrap gap-1">{ws.requiredRoles.map((item: string) => <Badge key={item} variant="secondary">{item}</Badge>)}</div></div>}
+          {ws.expectedOutcomes?.length > 0 && <div><p className="text-xs font-medium uppercase text-muted-foreground">Resultados esperados</p><ul className="mt-1 list-disc space-y-1 pl-5 text-sm">{ws.expectedOutcomes.map((item: string) => <li key={item}>{item}</li>)}</ul></div>}
+          {ws.prerequisites?.length > 0 && <div><p className="text-xs font-medium uppercase text-muted-foreground">Pré-requisitos</p><ul className="mt-1 list-disc space-y-1 pl-5 text-sm">{ws.prerequisites.map((item: string) => <li key={item}>{item}</li>)}</ul></div>}
+          {ws.presentationFiles?.length > 0 && <div className="md:col-span-2"><p className="text-xs font-medium uppercase text-muted-foreground">Modelo da apresentação</p><div className="mt-2 flex flex-wrap gap-2">{ws.presentationFiles.map((file: any) => <Button key={file.url} variant="outline" size="sm" asChild><a href={file.url} target="_blank" rel="noreferrer"><Paperclip className="mr-2 h-4 w-4" />{file.name}<ExternalLink className="ml-2 h-3 w-3" /></a></Button>)}</div></div>}
+        </div>
         <div className="space-y-3 rounded-lg border p-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold flex items-center gap-2"><ClipboardList className="h-4 w-4" />Requisitos do Cliente ({requirements.length})</h3>

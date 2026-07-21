@@ -106,7 +106,8 @@ export function canViewMenuItem(item: ProductMenuItem, permissions: UserPermissi
 }
 
 export function productForPath(path: string): ProductDefinition | undefined {
-  return PRODUCTS.find(product => path === product.homePath || path.startsWith(`${product.homePath}/`));
+  const pathname = path.split(/[?#]/, 1)[0];
+  return PRODUCTS.find(product => pathname === product.homePath || pathname.startsWith(`${product.homePath}/`));
 }
 
 export function canAccessProduct(product: ProductDefinition, permissions: UserPermissions) {
@@ -120,11 +121,12 @@ export function firstAccessiblePath(product: ProductDefinition, permissions: Use
 }
 
 export function canAccessPath(path: string, permissions: UserPermissions) {
-  if (path === "/") return true;
-  const product = productForPath(path);
+  const pathname = path.split(/[?#]/, 1)[0];
+  if (pathname === "/") return true;
+  const product = productForPath(pathname);
   if (!product || !canAccessProduct(product, permissions)) return false;
   const matches = product.menus
-    .filter(item => path === item.path || path.startsWith(`${item.path}/`))
+    .filter(item => pathname === item.path || pathname.startsWith(`${item.path}/`))
     .sort((a, b) => b.path.length - a.path.length);
   return matches.length === 0 || canViewMenuItem(matches[0], permissions);
 }

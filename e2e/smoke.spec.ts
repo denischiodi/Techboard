@@ -27,3 +27,17 @@ test("rotas legadas redirecionam para os módulos consolidados", async ({ page }
   await page.goto("./activities");
   await expect(page).toHaveURL(/\/techboard\/techtask\/board$/);
 });
+
+test("menu lateral lista módulos e permite voltar para todas as ferramentas", async ({ page, isMobile }) => {
+  await page.goto("./techmove/bdcq");
+  if (isMobile) await page.getByRole("button", { name: /toggle sidebar/i }).click();
+
+  await expect(page.getByRole("button", { name: "Todas as ferramentas" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "TechMove" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "TechBoard" })).toBeVisible();
+
+  await page.getByRole("button", { name: "TechBoard" }).click();
+  await expect(page.getByRole("button", { name: "Recursos" })).toBeVisible();
+  await page.getByRole("button", { name: "Todas as ferramentas" }).click();
+  await expect(page).toHaveURL(/\/techboard\/$/);
+});

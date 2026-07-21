@@ -1,5 +1,5 @@
-ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "stage" varchar(16) DEFAULT 'GERAL' NOT NULL;--> statement-breakpoint
-ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "sequenceNumber" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
+ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "stage" varchar(16) DEFAULT '' NOT NULL;--> statement-breakpoint
+ALTER TABLE "activities" ADD COLUMN IF NOT EXISTS "sequenceNumber" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 
 UPDATE "activities"
 SET "stage" = CASE
@@ -10,7 +10,8 @@ SET "stage" = CASE
   WHEN "sourceType" = 'approval' AND COALESCE("sourceUrl", '') LIKE '%/tests%' THEN 'TESTE'
   WHEN "sourceType" = 'approval' AND COALESCE("sourceUrl", '') LIKE '%/dcd%' THEN 'DCD'
   ELSE 'GERAL'
-END;--> statement-breakpoint
+END
+WHERE "stage" = '';--> statement-breakpoint
 
 WITH ranked AS (
   SELECT "id", ROW_NUMBER() OVER (
@@ -22,7 +23,10 @@ WITH ranked AS (
 UPDATE "activities" AS activity
 SET "sequenceNumber" = ranked.sequence_number
 FROM ranked
-WHERE ranked."id" = activity."id";--> statement-breakpoint
+WHERE ranked."id" = activity."id" AND activity."sequenceNumber" = 0;--> statement-breakpoint
+
+ALTER TABLE "activities" ALTER COLUMN "stage" SET DEFAULT 'GERAL';--> statement-breakpoint
+ALTER TABLE "activities" ALTER COLUMN "sequenceNumber" SET DEFAULT 1;--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "activity_sequence_counters" (
   "counterKey" varchar(160) PRIMARY KEY,

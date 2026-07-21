@@ -194,8 +194,11 @@ export default function Activities() {
     sheet["!autofilter"] = { ref: sheet["!ref"] || "A1:Y1" };
     const headers = Object.keys(rows[0] || { ID: "" });
     sheet["!cols"] = headers.map(header => ({ wch: Math.min(55, Math.max(12, header.length + 2, ...rows.map(row => String(row[header as keyof typeof row] || "").length + 2))) }));
-    const dueDateColumn = XLSX.utils.encode_col(headers.indexOf("Prazo"));
-    for (let row = 2; row <= rows.length + 1; row += 1) if (sheet[`${dueDateColumn}${row}`]) sheet[`${dueDateColumn}${row}`].z = "yyyy-mm-dd";
+    const dueDateIndex = headers.indexOf("Prazo");
+    if (dueDateIndex >= 0) {
+      const dueDateColumn = XLSX.utils.encode_col(dueDateIndex);
+      for (let row = 2; row <= rows.length + 1; row += 1) if (sheet[`${dueDateColumn}${row}`]) sheet[`${dueDateColumn}${row}`].z = "yyyy-mm-dd";
+    }
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, "Pendências Kanban");
     XLSX.writeFile(workbook, `pendencias-kanban-${new Date().toISOString().slice(0, 10)}.xlsx`);

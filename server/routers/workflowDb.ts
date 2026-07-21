@@ -16,6 +16,7 @@ import {
   workflowPrompts,
   workflowBdcqTemplates as bdcqTemplateLibrary,
   workflowConfigurationTemplates as configurationTemplateLibrary,
+  workflowWorkshopTemplates as workshopTemplateLibrary,
   workflowTestCases,
   workflowTestSteps,
 } from "../../drizzle/schema";
@@ -496,7 +497,10 @@ export async function listWorkshops(
   >;
 }
 export async function createWorkshop(data: typeof workshops.$inferInsert) {
-  return insertRow("workshops", data, ["participants", "agenda"]);
+  return insertRow("workshops", data, [
+    "modules", "scopeItemIds", "participants", "agenda", "expectedOutcomes",
+    "prerequisites", "requiredRoles", "presentationFiles",
+  ]);
 }
 export async function updateWorkshop(
   id: string,
@@ -509,18 +513,56 @@ export async function updateWorkshop(
     [
       "title",
       "module",
+      "modules",
+      "scopeItemIds",
+      "objective",
+      "content",
       "scheduledDate",
       "duration",
       "participants",
       "agenda",
+      "expectedOutcomes",
+      "prerequisites",
+      "requiredRoles",
+      "presentationFiles",
+      "templateId",
+      "source",
       "status",
       "notes",
     ],
-    ["participants", "agenda"]
+    ["modules", "scopeItemIds", "participants", "agenda", "expectedOutcomes", "prerequisites", "requiredRoles", "presentationFiles"]
   );
 }
 export async function deleteWorkshop(id: string) {
   return deleteRow("workshops", id);
+}
+
+export async function listWorkshopTemplates() {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const result = await pool.query(
+    `SELECT * FROM "workflow_workshop_templates" ORDER BY "title" ASC`
+  );
+  return result.rows as Array<typeof workshopTemplateLibrary.$inferSelect>;
+}
+
+export async function createWorkshopTemplate(data: typeof workshopTemplateLibrary.$inferInsert) {
+  return insertRow("workflow_workshop_templates", data, [
+    "modules", "projectIds", "scopeItemKeys", "agenda", "expectedOutcomes",
+    "prerequisites", "requiredRoles", "presentationFiles",
+  ]);
+}
+
+export async function updateWorkshopTemplate(id: string, data: Partial<typeof workshopTemplateLibrary.$inferInsert>) {
+  return updateRow(
+    "workflow_workshop_templates", id, data,
+    ["title", "objective", "content", "duration", "modules", "projectIds", "scopeItemKeys", "agenda", "expectedOutcomes", "prerequisites", "requiredRoles", "presentationFiles", "active"],
+    ["modules", "projectIds", "scopeItemKeys", "agenda", "expectedOutcomes", "prerequisites", "requiredRoles", "presentationFiles"]
+  );
+}
+
+export async function deleteWorkshopTemplate(id: string) {
+  return deleteRow("workflow_workshop_templates", id);
 }
 
 // ===== Workshop Transcripts =====

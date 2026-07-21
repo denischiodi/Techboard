@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { appRouter } from "./routers";
+import * as activityStore from "./activityStore";
 
 function context(email: string): TrpcContext {
   return {
@@ -22,7 +23,36 @@ describe("kanban de atividades", () => {
     });
     expect(created.creatorUserId).toBe("u3");
     expect(created.participantUserIds).toContain("u3");
+    expect(created.stage).toBe("GERAL");
+    expect(created.displayTitle).toBe(`${created.projectName} - GERAL - ${String(created.sequenceNumber).padStart(3, "0")} - Validar cenário de integração`);
     expect((await caller.activities.list()).some(item => item.id === created.id)).toBe(true);
+  });
+
+  it("numera de forma independente por projeto e etapa e preserva o número no upsert", async () => {
+    const projectId = `tracking-${Date.now()}-${Math.random()}`;
+    const base = { scope: "project" as const, projectId, description: "", priority: "Média" as const, creatorUserId: "u1" };
+    const [first, second] = await Promise.all([
+      activityStore.createActivity({ ...base, stage: "DCD", title: "Primeiro DCD" }),
+      activityStore.createActivity({ ...base, stage: "DCD", title: "Segundo DCD" }),
+    ]);
+    const bdcq = await activityStore.createActivity({ ...base, stage: "BDCQ", title: "Primeiro BDCQ" });
+
+    expect([first!.sequenceNumber, second!.sequenceNumber].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect(bdcq!.sequenceNumber).toBe(1);
+    expect(bdcq!.trackingCode).toBe("Projeto - BDCQ - 001");
+
+    const sourceKey = `${projectId}:test-case`;
+    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático", sourceType: "workflow_test", sourceKey });
+    const automatic = await activityStore.findBySource("workflow_test", sourceKey);
+    expect(automatic).toMatchObject({ stage: "TESTE", sequenceNumber: 1 });
+    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático atualizado", sourceType: "workflow_test", sourceKey });
+    expect(await activityStore.findBySource("workflow_test", sourceKey)).toMatchObject({ stage: "TESTE", sequenceNumber: 1, title: "Teste automático atualizado" });
+  });
+
+  it("força cartões internos para GERAL e usa Operação interna no acompanhamento", async () => {
+    const activity = await activityStore.createActivity({ scope: "internal", projectId: "ignorado", stage: "DCD", title: "Revisar capacidade", creatorUserId: "u1" });
+    expect(activity).toMatchObject({ projectId: "", projectName: "Operação interna", stage: "GERAL" });
+    expect(activity!.displayTitle).toContain("Operação interna - GERAL - ");
   });
 
   it("mostra para o admin uma atividade criada por outro usuário", async () => {
@@ -50,6 +80,12 @@ describe("kanban de atividades", () => {
     }] });
     expect(updated).toMatchObject({ created: 0, updated: 1, errors: [] });
     expect((await caller.activities.get({ id: activity!.id })).title).toBe("Importada e atualizada");
+    const immutableStage = await caller.activities.importExcel({ rows: [{
+      rowNumber: 2, id: activity!.id, scope: "project", projectId: "p1", stage: "DCD", title: "Tentativa de alterar etapa", description: "",
+      status: "Em andamento", priority: "Alta", assigneeUserId: "u3", participantUserIds: ["u3"], dueDate: "2035-07-02",
+    }] });
+    expect(immutableStage).toMatchObject({ created: 0, updated: 0 });
+    expect(immutableStage.errors[0]?.message).toMatch(/etapa não pode ser alterada/i);
   });
 
   it("bloqueia conclusão enquanto houver checklist obrigatório pendente", async () => {

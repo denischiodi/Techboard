@@ -1,6 +1,15 @@
 {
   "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
+  "exclude": [
+    "node_modules",
+    "node_modules.*",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/* 2.ts",
+    "**/* 2.tsx",
+    "**/*.icloud-backup"
+  ],
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",

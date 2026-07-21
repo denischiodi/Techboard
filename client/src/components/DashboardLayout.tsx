@@ -220,8 +220,9 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const pathname = location.split(/[?#]/, 1)[0];
   const activeProduct = productForPath(location);
-  const activeMenuItem = menuItems.filter(item => location === item.path || location.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
+  const activeMenuItem = menuItems.filter(item => pathname === item.path || pathname.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
   const isMobile = useIsMobile();
   const [expandedProducts, setExpandedProducts] = useState<Partial<Record<ProductId, boolean>>>(() => (
     activeProduct ? { [activeProduct.id]: true } : {}
@@ -266,7 +267,7 @@ function DashboardLayoutContent({
     .filter(product => product.visibleMenus.length > 0);
 
   // Check if current page is blocked
-  const isBlocked = location !== "/" && !canAccessPath(location, userPermissions);
+  const isBlocked = pathname !== "/" && !canAccessPath(pathname, userPermissions);
 
   // Auto-redirect to first allowed page when blocked
   useEffect(() => {
@@ -374,7 +375,7 @@ function DashboardLayoutContent({
                     <CollapsibleContent className="group-data-[collapsible=icon]:hidden">
                       <SidebarMenu className="mt-1 border-l pl-3">
                         {product.visibleMenus.map(item => {
-                          const isActive = location === item.path || (item.path !== product.homePath && location.startsWith(`${item.path}/`));
+                          const isActive = pathname === item.path || (item.path !== product.homePath && pathname.startsWith(`${item.path}/`));
                           const label = appUser?.role === 'consultant' && item.path === '/techboard/resources'
                             ? 'Meu Cadastro'
                             : appUser?.role === 'consultant' && item.path === '/techboard/absences'

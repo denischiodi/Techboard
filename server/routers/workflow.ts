@@ -323,6 +323,75 @@ async function getWorkflowAiConfig(key: WorkflowPromptKey) {
   };
 }
 
+const workshopFileSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  url: z.string().trim().min(1).max(2048),
+  contentType: z.string().trim().max(255).default("application/octet-stream"),
+});
+
+const workshopTemplateDataSchema = z.object({
+  title: z.string().trim().min(1).max(512),
+  objective: z.string().max(10000).default(""),
+  content: z.string().max(20000).default(""),
+  duration: z.string().trim().max(64).default(""),
+  modules: z.array(z.string().trim().min(1).max(128)).max(30).default([]),
+  projectIds: z.array(z.string().trim().min(1).max(64)).max(200).default([]),
+  scopeItemKeys: z.array(z.string().trim().min(1).max(512)).max(200).default([]),
+  agenda: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
+  expectedOutcomes: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
+  prerequisites: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
+  requiredRoles: z.array(z.string().trim().min(1).max(255)).max(100).default([]),
+  presentationFiles: z.array(workshopFileSchema).max(20).default([]),
+  active: z.boolean().default(true),
+});
+
+export async function applyWorkshopTemplates(projectId: string, selectedTemplateIds?: string[]) {
+  const [project, scopeItems, templates, existing] = await Promise.all([
+    plannerStore.getProjectById(projectId),
+    wdb.listScopeItems(projectId),
+    wdb.listWorkshopTemplates(),
+    wdb.listWorkshops(projectId),
+  ]);
+  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
+  const selected = selectedTemplateIds?.length ? new Set(selectedTemplateIds) : null;
+  const existingTemplateIds = new Set(existing.map((item: any) => item.templateId).filter(Boolean));
+  const projectModules = new Set([...(project.fronts || []), ...scopeItems.map((item: any) => item.module)].filter(Boolean));
+  const normalizedScope = new Map<string, any>();
+  for (const item of scopeItems) {
+    for (const value of [item.code, item.name]) {
+      const key = String(value || "").trim().toLocaleLowerCase("pt-BR");
+      if (key) normalizedScope.set(key, item);
+    }
+  }
+  let added = 0;
+  let ignored = 0;
+  for (const template of templates as any[]) {
+    if (!template.active || (selected && !selected.has(template.id)) || existingTemplateIds.has(template.id)) { ignored++; continue; }
+    if (template.projectIds?.length && !template.projectIds.includes(projectId)) { ignored++; continue; }
+    if (template.modules?.length && !template.modules.some((module: string) => projectModules.has(module))) { ignored++; continue; }
+    const matchedScopes = [...new Map((template.scopeItemKeys || []).map((key: string) => {
+      const scope = normalizedScope.get(key.trim().toLocaleLowerCase("pt-BR"));
+      return scope ? [scope.id, scope] : [key, null];
+    }).filter(([, scope]: [string, any]) => Boolean(scope))).values()] as any[];
+    if (template.scopeItemKeys?.length && matchedScopes.length === 0) { ignored++; continue; }
+    const modules = template.modules?.length
+      ? template.modules.filter((module: string) => projectModules.has(module))
+      : [...new Set(matchedScopes.map((item: any) => item.module).filter(Boolean))];
+    await wdb.createWorkshop({
+      id: nanoid(), projectId, title: template.title, objective: template.objective || "",
+      content: template.content || "", module: modules[0] || "", modules,
+      scopeItemIds: matchedScopes.map((item: any) => item.id), scheduledDate: "",
+      duration: template.duration || "", participants: [], agenda: template.agenda || [],
+      expectedOutcomes: template.expectedOutcomes || [], prerequisites: template.prerequisites || [],
+      requiredRoles: template.requiredRoles || [], presentationFiles: template.presentationFiles || [],
+      templateId: template.id, source: "template", status: "Planejado", notes: "",
+    });
+    existingTemplateIds.add(template.id);
+    added++;
+  }
+  return { added, ignored };
+}
+
 const workflowProjectProcedure = (write = false, capability?: keyof ProjectCapabilities) =>
   protectedProcedure.use(async ({ ctx, next, getRawInput }) => {
     const input = (await getRawInput()) as { projectId?: string } | null;
@@ -2055,6 +2124,27 @@ export const workflowRouter = router({
 
   // ===== Workshops =====
   workshops: router({
+    templates: router({
+      list: workflowProjectProcedure()
+        .input(z.object({ projectId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          const templates = await wdb.listWorkshopTemplates();
+          if (ctx.appUser.role === "admin") return templates;
+          return templates.filter((template: any) =>
+            template.active && (!template.projectIds?.length || template.projectIds.includes(input.projectId))
+          );
+        }),
+      create: adminProcedure.input(workshopTemplateDataSchema).mutation(({ ctx, input }) =>
+        wdb.createWorkshopTemplate({ id: nanoid(), ...input, createdBy: ctx.appUser.name || ctx.appUser.email })
+      ),
+      update: adminProcedure.input(z.object({ id: z.string().min(1), data: workshopTemplateDataSchema.partial() }))
+        .mutation(({ input }) => wdb.updateWorkshopTemplate(input.id, input.data)),
+      delete: adminProcedure.input(z.object({ id: z.string().min(1) }))
+        .mutation(({ input }) => wdb.deleteWorkshopTemplate(input.id)),
+      applyToProject: workflowProjectProcedure(true)
+        .input(z.object({ projectId: z.string().min(1), templateIds: z.array(z.string().min(1)).max(200).optional() }))
+        .mutation(({ input }) => applyWorkshopTemplates(input.projectId, input.templateIds)),
+    }),
     list: workflowProjectProcedure()
       .input(z.object({ projectId: z.string(), ...paginationInput }))
       .query(({ input }) => wdb.listWorkshops(input.projectId, input)),
@@ -2064,25 +2154,45 @@ export const workflowRouter = router({
           projectId: z.string(),
           title: z.string(),
           module: z.string().optional(),
+          modules: z.array(z.string()).max(30).optional(),
+          scopeItemIds: z.array(z.string()).max(200).optional(),
+          objective: z.string().max(10000).optional(),
+          content: z.string().max(20000).optional(),
           scheduledDate: z.string().optional(),
           duration: z.string().optional(),
           participants: z.array(z.string()).optional(),
           agenda: z.array(z.string()).optional(),
+          expectedOutcomes: z.array(z.string()).max(100).optional(),
+          prerequisites: z.array(z.string()).max(100).optional(),
+          requiredRoles: z.array(z.string()).max(100).optional(),
+          presentationFiles: z.array(workshopFileSchema).max(20).optional(),
           status: workshopStatusSchema.optional(),
           notes: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
+        if (input.scopeItemIds?.length)
+          await assertEntitiesBelongToProject("scope_items", input.scopeItemIds, input.projectId);
         const id = nanoid();
         return wdb.createWorkshop({
           id,
           projectId: input.projectId,
           title: input.title,
           module: input.module || "",
+          modules: input.modules || (input.module ? [input.module] : []),
+          scopeItemIds: input.scopeItemIds || [],
+          objective: input.objective || "",
+          content: input.content || "",
           scheduledDate: input.scheduledDate || "",
           duration: input.duration || "",
           participants: input.participants || [],
           agenda: input.agenda || [],
+          expectedOutcomes: input.expectedOutcomes || [],
+          prerequisites: input.prerequisites || [],
+          requiredRoles: input.requiredRoles || [],
+          presentationFiles: input.presentationFiles || [],
+          templateId: "",
+          source: "manual",
           status: input.status || "Planejado",
           notes: input.notes,
         });
@@ -2094,19 +2204,49 @@ export const workflowRouter = router({
           data: z.object({
             title: z.string().min(1).optional(),
             module: z.string().optional(),
+            modules: z.array(z.string()).max(30).optional(),
+            scopeItemIds: z.array(z.string()).max(200).optional(),
+            objective: z.string().max(10000).optional(),
+            content: z.string().max(20000).optional(),
             scheduledDate: z.string().optional(),
             duration: z.string().optional(),
             participants: z.array(z.string()).optional(),
             agenda: z.array(z.string()).optional(),
+            expectedOutcomes: z.array(z.string()).max(100).optional(),
+            prerequisites: z.array(z.string()).max(100).optional(),
+            requiredRoles: z.array(z.string()).max(100).optional(),
+            presentationFiles: z.array(workshopFileSchema).max(20).optional(),
             status: workshopStatusSchema.optional(),
             notes: z.string().optional(),
           }),
         })
       )
-      .mutation(({ input }) => wdb.updateWorkshop(input.id, input.data)),
+      .mutation(async ({ input }) => {
+        if (input.data.scopeItemIds?.length) {
+          const projectId = await wdb.getWorkflowEntityProjectId("workshops", input.id);
+          if (!projectId) throw new TRPCError({ code: "NOT_FOUND", message: "Workshop não encontrado" });
+          await assertEntitiesBelongToProject("scope_items", input.data.scopeItemIds, projectId);
+        }
+        return wdb.updateWorkshop(input.id, input.data);
+      }),
     delete: workflowEntityProcedure("workshops", true)
       .input(z.object({ id: z.string() }))
       .mutation(({ input }) => wdb.deleteWorkshop(input.id)),
+    uploadPresentation: workflowProjectProcedure(true)
+      .input(z.object({
+        projectId: z.string().min(1), fileName: z.string().trim().min(1).max(255),
+        contentType: z.string().trim().max(255), fileData: z.string().max(20_000_000),
+      }))
+      .mutation(async ({ input }) => {
+        if (!/\.(ppt|pptx|pdf)$/i.test(input.fileName))
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Envie um arquivo PPT, PPTX ou PDF" });
+        const buffer = Buffer.from(input.fileData.replace(/^data:[^;]+;base64,/, ""), "base64");
+        if (buffer.length > 15 * 1024 * 1024)
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo deve ter no máximo 15 MB" });
+        const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const stored = await storagePut(`workflow/${input.projectId}/workshop-presentations/${nanoid()}-${safeName}`, buffer, input.contentType);
+        return { name: input.fileName, url: stored.url, contentType: input.contentType };
+      }),
     suggestAgenda: workflowProjectProcedure(true)
       .input(z.object({ projectId: z.string() }))
       .mutation(async ({ input }) => {
@@ -2114,6 +2254,7 @@ export const workflowRouter = router({
         const questions = await wdb.listBdcqQuestions(input.projectId);
         const answers = await wdb.listBdcqAnswers(input.projectId);
         const requirements = await wdb.listClientRequirements(input.projectId);
+        const currentWorkshops = await wdb.listWorkshops(input.projectId);
         const answeredIds = new Set(answers.map((a: any) => a.questionId));
         const pendingQuestions = questions.filter(
           (q: any) => !answeredIds.has(q.id)
@@ -2133,7 +2274,13 @@ ${pendingQuestions
   .map((q: any) => `- [${q.module}/${q.category}] ${q.question}`)
   .join("\n")}
 
-Retorne a sugestão em formato markdown com workshops sugeridos, duração estimada e temas a cobrir.`;
+Requisitos identificados (${requirements.length} total):
+${requirements.slice(0, 20).map((item: any) => `- [${item.module || "Geral"}] ${item.title}: ${item.description}`).join("\n")}
+
+Workshops já cadastrados (${currentWorkshops.length} total — não repetir):
+${currentWorkshops.slice(0, 30).map((item: any) => `- ${item.title} (${(item.modules || [item.module]).filter(Boolean).join(", ") || "Geral"})`).join("\n")}
+
+Retorne a sugestão em formato markdown com workshops sugeridos, scope items cobertos, duração estimada, temas a apresentar, resultados esperados e funções de usuários que devem participar.`;
         const ai = await getWorkflowAiConfig("agenda_suggestion");
         const result = await invokeWorkflowLLM({
           model: ai.model,
