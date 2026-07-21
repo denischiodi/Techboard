@@ -36,6 +36,12 @@ function AppRoutes() {
   return (
     <WouterRouter base={APP_BASE_PATH}>
       <Switch>
+        <Route path={"/workflow"}>
+          <Redirect to="/techmove" />
+        </Route>
+        <Route path={"/activities"}>
+          <Redirect to="/techtask/board" />
+        </Route>
         <Route>
           <DashboardLayout>
             <Switch>
@@ -49,41 +55,84 @@ function AppRoutes() {
               <Route path={"/techlead"}>{() => <TechLeadDashboard />}</Route>
               <Route path={"/techlead/gp-track"} component={GpChecklist} />
               <Route path={"/techlead/teams"}>{() => <TechLeadTeams />}</Route>
-              <Route path={"/techlead/indicators"}>{() => <TechLeadTeams indicators />}</Route>
+              <Route path={"/techlead/indicators"}>
+                {() => <TechLeadTeams indicators />}
+              </Route>
               <Route path={"/techmove"} component={ProjectWorkflow} />
-              <Route path={"/techmove/scope-items"} component={ScopeItemsPage} />
+              <Route
+                path={"/techmove/scope-items"}
+                component={ScopeItemsPage}
+              />
               <Route path={"/techmove/bdcq"} component={BDCQPage} />
               <Route path={"/techmove/workshops"} component={WorkshopsPage} />
               <Route path={"/techmove/dcd"} component={DCDPage} />
               <Route path={"/techmove/gaps"} component={GapsPage} />
-              <Route path={"/techmove/configurations"} component={ConfigurationsPage} />
+              <Route
+                path={"/techmove/configurations"}
+                component={ConfigurationsPage}
+              />
               <Route path={"/techmove/tests"} component={TestsPage} />
               <Route path={"/techmove/governance"} component={GovernancePage} />
-              <Route path={"/workflow"}><Redirect to="/techmove" /></Route>
-              <Route path={"/workflow/scope-items"}><Redirect to="/techmove/scope-items" /></Route>
-              <Route path={"/workflow/bdcq"}><Redirect to="/techmove/bdcq" /></Route>
-              <Route path={"/workflow/workshops"}><Redirect to="/techmove/workshops" /></Route>
-              <Route path={"/workflow/dcd"}><Redirect to="/techmove/dcd" /></Route>
-              <Route path={"/workflow/gaps"}><Redirect to="/techmove/gaps" /></Route>
-              <Route path={"/workflow/configurations"}><Redirect to="/techmove/configurations" /></Route>
-              <Route path={"/workflow/tests"}><Redirect to="/techmove/tests" /></Route>
+              <Route path={"/workflow/scope-items"}>
+                <Redirect to="/techmove/scope-items" />
+              </Route>
+              <Route path={"/workflow/bdcq"}>
+                <Redirect to="/techmove/bdcq" />
+              </Route>
+              <Route path={"/workflow/workshops"}>
+                <Redirect to="/techmove/workshops" />
+              </Route>
+              <Route path={"/workflow/dcd"}>
+                <Redirect to="/techmove/dcd" />
+              </Route>
+              <Route path={"/workflow/gaps"}>
+                <Redirect to="/techmove/gaps" />
+              </Route>
+              <Route path={"/workflow/configurations"}>
+                <Redirect to="/techmove/configurations" />
+              </Route>
+              <Route path={"/workflow/tests"}>
+                <Redirect to="/techmove/tests" />
+              </Route>
               <Route path={"/techtask"} component={TechTaskDashboard} />
               <Route path={"/techtask/board"} component={Activities} />
               <Route path={"/techtask/my-work"} component={Activities} />
-              <Route path={"/admin"}>{() => <ProductOverview productId="admin" />}</Route>
+              <Route path={"/admin"}>
+                {() => <ProductOverview productId="admin" />}
+              </Route>
               <Route path={"/admin/users"} component={Access} />
               <Route path={"/admin/registrations"} component={Cadastros} />
-              <Route path={"/admin/standards"} component={StandardConfigurations} />
-              <Route path={"/dashboard"}><Redirect to="/techboard" /></Route>
-              <Route path={"/cadastros"}><Redirect to="/admin/registrations" /></Route>
-              <Route path={"/resources"}><Redirect to="/techboard/resources" /></Route>
-              <Route path={"/projects"}><Redirect to="/techboard/projects" /></Route>
-              <Route path={"/absences"}><Redirect to="/techboard/absences" /></Route>
-              <Route path={"/planner"}><Redirect to="/techboard/planner" /></Route>
-              <Route path={"/org-chart"}><Redirect to="/techboard/org-chart" /></Route>
-              <Route path={"/gp-checklist"}><Redirect to="/techlead/gp-track" /></Route>
-              <Route path={"/activities"}><Redirect to="/techtask/board" /></Route>
-              <Route path={"/access"}><Redirect to="/admin/users" /></Route>
+              <Route
+                path={"/admin/standards"}
+                component={StandardConfigurations}
+              />
+              <Route path={"/dashboard"}>
+                <Redirect to="/techboard" />
+              </Route>
+              <Route path={"/cadastros"}>
+                <Redirect to="/admin/registrations" />
+              </Route>
+              <Route path={"/resources"}>
+                <Redirect to="/techboard/resources" />
+              </Route>
+              <Route path={"/projects"}>
+                <Redirect to="/techboard/projects" />
+              </Route>
+              <Route path={"/absences"}>
+                <Redirect to="/techboard/absences" />
+              </Route>
+              <Route path={"/planner"}>
+                <Redirect to="/techboard/planner" />
+              </Route>
+              <Route path={"/org-chart"}>
+                <Redirect to="/techboard/org-chart" />
+              </Route>
+              <Route path={"/gp-checklist"}>
+                <Redirect to="/techlead/gp-track" />
+              </Route>
+              <Route path={"/access"}>
+                <Redirect to="/admin/users" />
+              </Route>
               <Route path={"/404"} component={NotFound} />
               <Route component={NotFound} />
             </Switch>
