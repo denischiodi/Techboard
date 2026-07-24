@@ -337,55 +337,132 @@ const workshopTemplateDataSchema = z.object({
   duration: z.string().trim().max(64).default(""),
   modules: z.array(z.string().trim().min(1).max(128)).max(30).default([]),
   projectIds: z.array(z.string().trim().min(1).max(64)).max(200).default([]),
-  scopeItemKeys: z.array(z.string().trim().min(1).max(512)).max(200).default([]),
+  scopeItemKeys: z
+    .array(z.string().trim().min(1).max(512))
+    .max(200)
+    .default([]),
   agenda: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
-  expectedOutcomes: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
-  prerequisites: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
-  requiredRoles: z.array(z.string().trim().min(1).max(255)).max(100).default([]),
+  expectedOutcomes: z
+    .array(z.string().trim().min(1).max(2000))
+    .max(100)
+    .default([]),
+  prerequisites: z
+    .array(z.string().trim().min(1).max(2000))
+    .max(100)
+    .default([]),
+  requiredRoles: z
+    .array(z.string().trim().min(1).max(255))
+    .max(100)
+    .default([]),
   presentationFiles: z.array(workshopFileSchema).max(20).default([]),
   active: z.boolean().default(true),
 });
 
-export async function applyWorkshopTemplates(projectId: string, selectedTemplateIds?: string[]) {
+export async function applyWorkshopTemplates(
+  projectId: string,
+  selectedTemplateIds?: string[]
+) {
   const [project, scopeItems, templates, existing] = await Promise.all([
     plannerStore.getProjectById(projectId),
     wdb.listScopeItems(projectId),
     wdb.listWorkshopTemplates(),
     wdb.listWorkshops(projectId),
   ]);
-  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
-  const selected = selectedTemplateIds?.length ? new Set(selectedTemplateIds) : null;
-  const existingTemplateIds = new Set(existing.map((item: any) => item.templateId).filter(Boolean));
-  const projectModules = new Set([...(project.fronts || []), ...scopeItems.map((item: any) => item.module)].filter(Boolean));
+  if (!project)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Projeto não encontrado",
+    });
+  const selected = selectedTemplateIds?.length
+    ? new Set(selectedTemplateIds)
+    : null;
+  const existingTemplateIds = new Set(
+    existing.map((item: any) => item.templateId).filter(Boolean)
+  );
+  const projectModules = new Set(
+    [
+      ...(project.fronts || []),
+      ...scopeItems.map((item: any) => item.module),
+    ].filter(Boolean)
+  );
   const normalizedScope = new Map<string, any>();
   for (const item of scopeItems) {
     for (const value of [item.code, item.name]) {
-      const key = String(value || "").trim().toLocaleLowerCase("pt-BR");
+      const key = String(value || "")
+        .trim()
+        .toLocaleLowerCase("pt-BR");
       if (key) normalizedScope.set(key, item);
     }
   }
   let added = 0;
   let ignored = 0;
   for (const template of templates as any[]) {
-    if (!template.active || (selected && !selected.has(template.id)) || existingTemplateIds.has(template.id)) { ignored++; continue; }
-    if (template.projectIds?.length && !template.projectIds.includes(projectId)) { ignored++; continue; }
-    if (template.modules?.length && !template.modules.some((module: string) => projectModules.has(module))) { ignored++; continue; }
-    const matchedScopes = [...new Map((template.scopeItemKeys || []).map((key: string) => {
-      const scope = normalizedScope.get(key.trim().toLocaleLowerCase("pt-BR"));
-      return scope ? [scope.id, scope] : [key, null];
-    }).filter(([, scope]: [string, any]) => Boolean(scope))).values()] as any[];
-    if (template.scopeItemKeys?.length && matchedScopes.length === 0) { ignored++; continue; }
+    if (
+      !template.active ||
+      (selected && !selected.has(template.id)) ||
+      existingTemplateIds.has(template.id)
+    ) {
+      ignored++;
+      continue;
+    }
+    if (
+      template.projectIds?.length &&
+      !template.projectIds.includes(projectId)
+    ) {
+      ignored++;
+      continue;
+    }
+    if (
+      template.modules?.length &&
+      !template.modules.some((module: string) => projectModules.has(module))
+    ) {
+      ignored++;
+      continue;
+    }
+    const matchedScopes = [
+      ...new Map(
+        (template.scopeItemKeys || [])
+          .map((key: string) => {
+            const scope = normalizedScope.get(
+              key.trim().toLocaleLowerCase("pt-BR")
+            );
+            return scope ? [scope.id, scope] : [key, null];
+          })
+          .filter(([, scope]: [string, any]) => Boolean(scope))
+      ).values(),
+    ] as any[];
+    if (template.scopeItemKeys?.length && matchedScopes.length === 0) {
+      ignored++;
+      continue;
+    }
     const modules = template.modules?.length
       ? template.modules.filter((module: string) => projectModules.has(module))
-      : [...new Set(matchedScopes.map((item: any) => item.module).filter(Boolean))];
+      : [
+          ...new Set(
+            matchedScopes.map((item: any) => item.module).filter(Boolean)
+          ),
+        ];
     await wdb.createWorkshop({
-      id: nanoid(), projectId, title: template.title, objective: template.objective || "",
-      content: template.content || "", module: modules[0] || "", modules,
-      scopeItemIds: matchedScopes.map((item: any) => item.id), scheduledDate: "",
-      duration: template.duration || "", participants: [], agenda: template.agenda || [],
-      expectedOutcomes: template.expectedOutcomes || [], prerequisites: template.prerequisites || [],
-      requiredRoles: template.requiredRoles || [], presentationFiles: template.presentationFiles || [],
-      templateId: template.id, source: "template", status: "Planejado", notes: "",
+      id: nanoid(),
+      projectId,
+      title: template.title,
+      objective: template.objective || "",
+      content: template.content || "",
+      module: modules[0] || "",
+      modules,
+      scopeItemIds: matchedScopes.map((item: any) => item.id),
+      scheduledDate: "",
+      duration: template.duration || "",
+      participants: [],
+      agenda: template.agenda || [],
+      expectedOutcomes: template.expectedOutcomes || [],
+      prerequisites: template.prerequisites || [],
+      requiredRoles: template.requiredRoles || [],
+      presentationFiles: template.presentationFiles || [],
+      templateId: template.id,
+      source: "template",
+      status: "Planejado",
+      notes: "",
     });
     existingTemplateIds.add(template.id);
     added++;
@@ -393,7 +470,10 @@ export async function applyWorkshopTemplates(projectId: string, selectedTemplate
   return { added, ignored };
 }
 
-const workflowProjectProcedure = (write = false, capability?: keyof ProjectCapabilities) =>
+const workflowProjectProcedure = (
+  write = false,
+  capability?: keyof ProjectCapabilities
+) =>
   protectedProcedure.use(async ({ ctx, next, getRawInput }) => {
     const input = (await getRawInput()) as { projectId?: string } | null;
     if (!input?.projectId)
@@ -401,7 +481,12 @@ const workflowProjectProcedure = (write = false, capability?: keyof ProjectCapab
         code: "BAD_REQUEST",
         message: "Projeto é obrigatório",
       });
-    await assertWorkflowProjectAccess(ctx.appUser, input.projectId, write, capability || (!write ? "viewWorkflowArtifacts" : undefined));
+    await assertWorkflowProjectAccess(
+      ctx.appUser,
+      input.projectId,
+      write,
+      capability || (!write ? "viewWorkflowArtifacts" : undefined)
+    );
     return next();
   });
 
@@ -425,55 +510,144 @@ const workflowEntityProcedure = (
         code: "NOT_FOUND",
         message: "Registro do Workflow não encontrado",
       });
-    await assertWorkflowProjectAccess(ctx.appUser, projectId, write, capability || (!write ? "viewWorkflowArtifacts" : undefined));
+    await assertWorkflowProjectAccess(
+      ctx.appUser,
+      projectId,
+      write,
+      capability || (!write ? "viewWorkflowArtifacts" : undefined)
+    );
     return next();
   });
 
-async function assertCanAnswerBdcq(appUser: any, projectId: string, questionId: string) {
+async function assertCanAnswerBdcq(
+  appUser: any,
+  projectId: string,
+  questionId: string
+) {
   if (appUser.role === "admin") return;
-  const membership = await projectAccess.getProjectMembership(projectId, appUser.id);
+  const membership = await projectAccess.getProjectMembership(
+    projectId,
+    appUser.id
+  );
   if (!membership) return;
   if (!membership.active || !membership.capabilities?.fillAssignedBdcq)
-    throw new TRPCError({ code: "FORBIDDEN", message: "Seu perfil não permite preencher BDCQ" });
-  if (membership.profile === "gp_internal" || membership.profile === "internal_team") return;
-  const question = (await wdb.listBdcqQuestions(projectId)).find((item: any) => item.id === questionId);
-  if (!question) throw new TRPCError({ code: "NOT_FOUND", message: "Pergunta não encontrada" });
-  const keyUser = (await wdb.listProjectKeyUsers(projectId)).find((item: any) => item.id === question.keyUserId);
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Seu perfil não permite preencher BDCQ",
+    });
+  if (
+    membership.profile === "gp_internal" ||
+    membership.profile === "internal_team"
+  )
+    return;
+  const question = (await wdb.listBdcqQuestions(projectId)).find(
+    (item: any) => item.id === questionId
+  );
+  if (!question)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Pergunta não encontrada",
+    });
+  const keyUser = (await wdb.listProjectKeyUsers(projectId)).find(
+    (item: any) => item.id === question.keyUserId
+  );
   if (!keyUser || keyUser.email?.toLowerCase() !== appUser.email.toLowerCase())
-    throw new TRPCError({ code: "FORBIDDEN", message: "Esta pergunta está atribuída a outro key user" });
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Esta pergunta está atribuída a outro key user",
+    });
 }
 
-async function visibleBdcqQuestionIds(appUser: any, projectId: string, questions?: any[]) {
+async function visibleBdcqQuestionIds(
+  appUser: any,
+  projectId: string,
+  questions?: any[]
+) {
   if (appUser.role === "admin") return null;
-  const membership = await projectAccess.getProjectMembership(projectId, appUser.id);
-  if (!membership || membership.profile === "gp_internal" || membership.profile === "internal_team" || membership.capabilities?.viewWorkflowArtifacts) return null;
-  const rows = questions || await wdb.listBdcqQuestions(projectId);
+  const membership = await projectAccess.getProjectMembership(
+    projectId,
+    appUser.id
+  );
+  if (
+    !membership ||
+    membership.profile === "gp_internal" ||
+    membership.profile === "internal_team" ||
+    membership.capabilities?.viewWorkflowArtifacts
+  )
+    return null;
+  const rows = questions || (await wdb.listBdcqQuestions(projectId));
   const keyUsers = await wdb.listProjectKeyUsers(projectId);
-  const ownKeyUserIds = new Set(keyUsers.filter((item: any) => item.active && item.email?.toLowerCase() === appUser.email.toLowerCase()).map((item: any) => item.id));
-  return new Set(rows.filter((item: any) => ownKeyUserIds.has(item.keyUserId)).map((item: any) => item.id));
+  const ownKeyUserIds = new Set(
+    keyUsers
+      .filter(
+        (item: any) =>
+          item.active &&
+          item.email?.toLowerCase() === appUser.email.toLowerCase()
+      )
+      .map((item: any) => item.id)
+  );
+  return new Set(
+    rows
+      .filter((item: any) => ownKeyUserIds.has(item.keyUserId))
+      .map((item: any) => item.id)
+  );
 }
 
-async function assertCanViewBdcqQuestion(appUser: any, projectId: string, questionId: string) {
+async function assertCanViewBdcqQuestion(
+  appUser: any,
+  projectId: string,
+  questionId: string
+) {
   const visible = await visibleBdcqQuestionIds(appUser, projectId);
-  if (visible && !visible.has(questionId)) throw new TRPCError({ code: "FORBIDDEN", message: "Esta pergunta está atribuída a outro key user" });
+  if (visible && !visible.has(questionId))
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Esta pergunta está atribuída a outro key user",
+    });
 }
 
 function responsibleMatches(appUser: any, value: string | null | undefined) {
-  const normalized = String(value || "").trim().toLocaleLowerCase("pt-BR");
-  return Boolean(normalized && [appUser.id, appUser.name, appUser.email].some(candidate => String(candidate || "").trim().toLocaleLowerCase("pt-BR") === normalized));
+  const normalized = String(value || "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+  return Boolean(
+    normalized &&
+      [appUser.id, appUser.name, appUser.email].some(
+        candidate =>
+          String(candidate || "")
+            .trim()
+            .toLocaleLowerCase("pt-BR") === normalized
+      )
+  );
 }
 
 async function canViewAllWorkflowTests(appUser: any, projectId: string) {
   if (appUser.role === "admin") return true;
-  const membership = await projectAccess.getProjectMembership(projectId, appUser.id);
-  return !membership || Boolean(membership.capabilities?.viewWorkflowArtifacts || membership.profile === "gp_internal" || membership.profile === "internal_team");
+  const membership = await projectAccess.getProjectMembership(
+    projectId,
+    appUser.id
+  );
+  return (
+    !membership ||
+    Boolean(
+      membership.capabilities?.viewWorkflowArtifacts ||
+        membership.profile === "gp_internal" ||
+        membership.profile === "internal_team"
+    )
+  );
 }
 
 async function assertCanExecuteTestCase(appUser: any, testCase: any) {
   if (await canViewAllWorkflowTests(appUser, testCase.projectId)) return;
   const steps = await wdb.listWorkflowTestSteps(testCase.id);
-  if (!responsibleMatches(appUser, testCase.responsible) && !steps.some((step: any) => responsibleMatches(appUser, step.responsible)))
-    throw new TRPCError({ code: "FORBIDDEN", message: "Este teste está atribuído a outro usuário" });
+  if (
+    !responsibleMatches(appUser, testCase.responsible) &&
+    !steps.some((step: any) => responsibleMatches(appUser, step.responsible))
+  )
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Este teste está atribuído a outro usuário",
+    });
 }
 
 const gapStatusSchema = z.enum(["Aberto", "Em Análise", "Resolvido", "Aceito"]);
@@ -797,42 +971,85 @@ export async function applyConfigurationTemplates(projectId: string) {
     wdb.listConfigurationTemplates(),
     wdb.listConfigurations(projectId),
   ]);
-  if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
+  if (!project)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Projeto não encontrado",
+    });
   const normalize = (value: string) => value.trim().toLocaleLowerCase("pt-BR");
   const projectModules = new Set([
     ...(project.fronts || []).map(value => value.toUpperCase()),
     ...scopeItems.map((item: any) => String(item.module || "").toUpperCase()),
   ]);
-  const known = new Set(existing.map((item: any) =>
-    `${item.templateId || ""}|${String(item.module || "").toUpperCase()}|${[...(item.scopeItemIds || [])].sort().join(",")}`
-  ));
+  const known = new Set(
+    existing.map(
+      (item: any) =>
+        `${item.templateId || ""}|${String(item.module || "").toUpperCase()}|${[...(item.scopeItemIds || [])].sort().join(",")}`
+    )
+  );
   let added = 0;
   let ignored = 0;
-  for (const template of templates.filter((item: any) => item.active !== false && item.active !== 0)) {
-    const modules = (template.modules || []).map((value: string) => value.toUpperCase());
-    const keys = new Set((template.scopeItemKeys || []).map((value: string) => normalize(value)));
-    const matchedScope = scopeItems.filter((item: any) =>
-      item.active !== 0 && keys.has(normalize(item.code || item.name || "")) && (!modules.length || modules.includes(String(item.module || "").toUpperCase()))
+  for (const template of templates.filter(
+    (item: any) => item.active !== false && item.active !== 0
+  )) {
+    const modules = (template.modules || []).map((value: string) =>
+      value.toUpperCase()
     );
-    if (keys.size && !matchedScope.length) { ignored++; continue; }
+    const keys = new Set(
+      (template.scopeItemKeys || []).map((value: string) => normalize(value))
+    );
+    const matchedScope = scopeItems.filter(
+      (item: any) =>
+        item.active !== 0 &&
+        keys.has(normalize(item.code || item.name || "")) &&
+        (!modules.length ||
+          modules.includes(String(item.module || "").toUpperCase()))
+    );
+    if (keys.size && !matchedScope.length) {
+      ignored++;
+      continue;
+    }
     const targetModules = keys.size
-      ? [...new Set(matchedScope.map((item: any) => String(item.module || "").toUpperCase()))]
+      ? [
+          ...new Set(
+            matchedScope.map((item: any) =>
+              String(item.module || "").toUpperCase()
+            )
+          ),
+        ]
       : modules.length
         ? modules.filter((module: string) => projectModules.has(module))
         : [""];
-    if (!targetModules.length) { ignored++; continue; }
+    if (!targetModules.length) {
+      ignored++;
+      continue;
+    }
     for (const module of targetModules) {
       const scopeItemIds = matchedScope
-        .filter((item: any) => !module || String(item.module || "").toUpperCase() === module)
+        .filter(
+          (item: any) =>
+            !module || String(item.module || "").toUpperCase() === module
+        )
         .map((item: any) => item.id)
         .sort();
       const key = `${template.id}|${module}|${scopeItemIds.join(",")}`;
-      if (known.has(key)) { ignored++; continue; }
+      if (known.has(key)) {
+        ignored++;
+        continue;
+      }
       await wdb.createConfiguration({
-        id: nanoid(), projectId, module, category: template.category || "Configuração",
-        description: template.description, responsible: "", status: "Pendente",
-        notes: "Aplicada a partir do modelo administrativo", templateId: template.id,
-        bdcqQuestionId: "", scopeItemIds, source: "template",
+        id: nanoid(),
+        projectId,
+        module,
+        category: template.category || "Configuração",
+        description: template.description,
+        responsible: "",
+        status: "Pendente",
+        notes: "Aplicada a partir do modelo administrativo",
+        templateId: template.id,
+        bdcqQuestionId: "",
+        scopeItemIds,
+        source: "template",
       });
       known.add(key);
       added++;
@@ -1795,22 +2012,29 @@ export const workflowRouter = router({
         const scopeByProject = await Promise.all(
           projects.map(project => wdb.listScopeItems(project.id))
         );
-        const unique = new Map<string, { key: string; code: string; name: string; module: string }>();
+        const unique = new Map<
+          string,
+          { key: string; code: string; name: string; module: string }
+        >();
         for (const item of scopeByProject.flat()) {
           if (item.active === 0) continue;
           const key = String(item.code || item.name || "").trim();
           if (!key) continue;
           const module = String(item.module || "Geral").trim() || "Geral";
           const identity = `${module.toLocaleLowerCase("pt-BR")}:${key.toLocaleLowerCase("pt-BR")}`;
-          if (!unique.has(identity)) unique.set(identity, {
-            key,
-            code: String(item.code || ""),
-            name: String(item.name || key),
-            module,
-          });
+          if (!unique.has(identity))
+            unique.set(identity, {
+              key,
+              code: String(item.code || ""),
+              name: String(item.name || key),
+              module,
+            });
         }
         return [...unique.values()].sort((a, b) =>
-          `${a.module} ${a.code} ${a.name}`.localeCompare(`${b.module} ${b.code} ${b.name}`, "pt-BR")
+          `${a.module} ${a.code} ${a.name}`.localeCompare(
+            `${b.module} ${b.code} ${b.name}`,
+            "pt-BR"
+          )
         );
       }),
       create: adminProcedure
@@ -1878,23 +2102,67 @@ export const workflowRouter = router({
       list: workflowProjectProcedure(false, "viewProject")
         .input(z.object({ projectId: z.string() }))
         .query(async ({ input }) => {
-          const memberships = await projectAccess.listProjectMemberships(input.projectId);
+          const memberships = await projectAccess.listProjectMemberships(
+            input.projectId
+          );
           await wdb.syncProjectKeyUsersFromAccess(input.projectId, memberships);
           return wdb.listProjectKeyUsers(input.projectId);
         }),
       create: workflowProjectProcedure(true)
-        .input(z.object({ projectId: z.string(), name: z.string().trim().min(1).max(255), email: z.string().trim().email().max(320), role: z.string().trim().max(255).optional() }))
+        .input(
+          z.object({
+            projectId: z.string(),
+            name: z.string().trim().min(1).max(255),
+            email: z.string().trim().email().max(320),
+            role: z.string().trim().max(255).optional(),
+          })
+        )
         .mutation(async ({ input }) => {
-          const appUser = await plannerStore.getAppUserByEmail(input.email.toLowerCase());
-          if (!appUser) throw new TRPCError({ code: "BAD_REQUEST", message: "Cadastre primeiro este e-mail em Gestão de Acesso" });
-          const membership = await projectAccess.getProjectMembership(input.projectId, appUser.id);
+          const appUser = await plannerStore.getAppUserByEmail(
+            input.email.toLowerCase()
+          );
+          if (!appUser)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Cadastre primeiro este e-mail em Gestão de Acesso",
+            });
+          const membership = await projectAccess.getProjectMembership(
+            input.projectId,
+            appUser.id
+          );
           if (!membership?.active || !membership.capabilities?.fillAssignedBdcq)
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Associe o usuário ao projeto com permissão para preencher BDCQ" });
-          return wdb.createProjectKeyUser({ id: nanoid(), projectId: input.projectId, name: input.name, email: input.email.toLowerCase(), role: input.role || membership.jobTitle || "", active: 1 });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Associe o usuário ao projeto com permissão para preencher BDCQ",
+            });
+          return wdb.createProjectKeyUser({
+            id: nanoid(),
+            projectId: input.projectId,
+            name: input.name,
+            email: input.email.toLowerCase(),
+            role: input.role || membership.jobTitle || "",
+            active: 1,
+          });
         }),
       update: workflowEntityProcedure("workflow_project_key_users", true)
-        .input(z.object({ id: z.string(), data: z.object({ name: z.string().trim().min(1).max(255).optional(), email: z.string().trim().email().max(320).optional(), role: z.string().trim().max(255).optional(), active: z.number().int().min(0).max(1).optional() }) }))
-        .mutation(({ input }) => wdb.updateProjectKeyUser(input.id, { ...input.data, email: input.data.email?.toLowerCase() })),
+        .input(
+          z.object({
+            id: z.string(),
+            data: z.object({
+              name: z.string().trim().min(1).max(255).optional(),
+              email: z.string().trim().email().max(320).optional(),
+              role: z.string().trim().max(255).optional(),
+              active: z.number().int().min(0).max(1).optional(),
+            }),
+          })
+        )
+        .mutation(({ input }) =>
+          wdb.updateProjectKeyUser(input.id, {
+            ...input.data,
+            email: input.data.email?.toLowerCase(),
+          })
+        ),
       delete: workflowEntityProcedure("workflow_project_key_users", true)
         .input(z.object({ id: z.string() }))
         .mutation(({ input }) => wdb.deleteProjectKeyUser(input.id)),
@@ -1904,8 +2172,14 @@ export const workflowRouter = router({
         .input(z.object({ projectId: z.string(), ...paginationInput }))
         .query(async ({ ctx, input }) => {
           const rows = await wdb.listBdcqQuestions(input.projectId, input);
-          const visible = await visibleBdcqQuestionIds(ctx.appUser, input.projectId, rows);
-          return visible ? rows.filter((item: any) => visible.has(item.id)) : rows;
+          const visible = await visibleBdcqQuestionIds(
+            ctx.appUser,
+            input.projectId,
+            rows
+          );
+          return visible
+            ? rows.filter((item: any) => visible.has(item.id))
+            : rows;
         }),
       create: workflowProjectProcedure(true)
         .input(
@@ -1923,13 +2197,39 @@ export const workflowRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
           if (input.consultantResourceId) {
-            const [resource, allocations] = await Promise.all([plannerStore.getResourceById(input.consultantResourceId), plannerStore.listAllocations()]);
-            if (!resource) throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
-            if (!allocations.some(item => item.projectId === input.projectId && item.resourceId === input.consultantResourceId))
-              throw new TRPCError({ code: "BAD_REQUEST", message: "O consultor responsável precisa estar alocado no projeto pelo Planner" });
+            const [resource, allocations] = await Promise.all([
+              plannerStore.getResourceById(input.consultantResourceId),
+              plannerStore.listAllocations(),
+            ]);
+            if (!resource)
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: "Consultor responsável não encontrado",
+              });
+            if (
+              !allocations.some(
+                item =>
+                  item.projectId === input.projectId &&
+                  item.resourceId === input.consultantResourceId
+              )
+            )
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "O consultor responsável precisa estar alocado no projeto pelo Planner",
+              });
           }
-          if (input.keyUserId && await wdb.getWorkflowEntityProjectId("workflow_project_key_users", input.keyUserId) !== input.projectId)
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Key user não pertence ao projeto" });
+          if (
+            input.keyUserId &&
+            (await wdb.getWorkflowEntityProjectId(
+              "workflow_project_key_users",
+              input.keyUserId
+            )) !== input.projectId
+          )
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Key user não pertence ao projeto",
+            });
           if (input.scopeItemIds?.length)
             await assertEntitiesBelongToProject(
               "scope_items",
@@ -1955,27 +2255,58 @@ export const workflowRouter = router({
           z.object({
             id: z.string(),
             data: z.object({
-              module: z.string().optional(), category: z.string().optional(), question: z.string().optional(),
-              scopeItemIds: z.array(z.string()).max(200).optional(), consultantResourceId: z.string().max(64).optional(),
-              keyUserId: z.string().max(64).optional(), sortOrder: z.number().optional(),
+              module: z.string().optional(),
+              category: z.string().optional(),
+              question: z.string().optional(),
+              scopeItemIds: z.array(z.string()).max(200).optional(),
+              consultantResourceId: z.string().max(64).optional(),
+              keyUserId: z.string().max(64).optional(),
+              sortOrder: z.number().optional(),
             }),
           })
         )
         .mutation(async ({ ctx, input }) => {
           if (input.data.consultantResourceId) {
-            const questionProjectId = await wdb.getWorkflowEntityProjectId("bdcq_questions", input.id);
-            const [resource, allocations] = await Promise.all([plannerStore.getResourceById(input.data.consultantResourceId), plannerStore.listAllocations()]);
-            if (!resource) throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
-            if (!questionProjectId || !allocations.some(item => item.projectId === questionProjectId && item.resourceId === input.data.consultantResourceId))
-              throw new TRPCError({ code: "BAD_REQUEST", message: "O consultor responsável precisa estar alocado no projeto pelo Planner" });
+            const questionProjectId = await wdb.getWorkflowEntityProjectId(
+              "bdcq_questions",
+              input.id
+            );
+            const [resource, allocations] = await Promise.all([
+              plannerStore.getResourceById(input.data.consultantResourceId),
+              plannerStore.listAllocations(),
+            ]);
+            if (!resource)
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: "Consultor responsável não encontrado",
+              });
+            if (
+              !questionProjectId ||
+              !allocations.some(
+                item =>
+                  item.projectId === questionProjectId &&
+                  item.resourceId === input.data.consultantResourceId
+              )
+            )
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "O consultor responsável precisa estar alocado no projeto pelo Planner",
+              });
           }
           if (input.data.keyUserId) {
             const [questionProjectId, keyUserProjectId] = await Promise.all([
               wdb.getWorkflowEntityProjectId("bdcq_questions", input.id),
-              wdb.getWorkflowEntityProjectId("workflow_project_key_users", input.data.keyUserId),
+              wdb.getWorkflowEntityProjectId(
+                "workflow_project_key_users",
+                input.data.keyUserId
+              ),
             ]);
             if (!questionProjectId || keyUserProjectId !== questionProjectId)
-              throw new TRPCError({ code: "BAD_REQUEST", message: "Key user não pertence ao projeto" });
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: "Key user não pertence ao projeto",
+              });
           }
           return wdb.updateBdcqQuestion(input.id, input.data);
         }),
@@ -2003,30 +2334,55 @@ export const workflowRouter = router({
           })
         )
         .mutation(async ({ input }) => {
-          const [existing, allocations, keyUsers, scopeItems] = await Promise.all([
-            wdb.listBdcqQuestions(input.projectId),
-            plannerStore.listAllocations(),
-            wdb.listProjectKeyUsers(input.projectId),
-            wdb.listScopeItems(input.projectId),
-          ]);
+          const [existing, allocations, keyUsers, scopeItems] =
+            await Promise.all([
+              wdb.listBdcqQuestions(input.projectId),
+              plannerStore.listAllocations(),
+              wdb.listProjectKeyUsers(input.projectId),
+              wdb.listScopeItems(input.projectId),
+            ]);
           const keyUserIds = new Set(keyUsers.map((item: any) => item.id));
           const scopeItemIds = new Set(scopeItems.map((item: any) => item.id));
           const normalize = (value: string) =>
             value.trim().toLocaleLowerCase("pt-BR");
-          const byId = new Map(existing.map((question: any) => [question.id, question]));
-          const byQuestion = new Map(existing.map((question: any) => [normalize(question.question), question]));
+          const byId = new Map(
+            existing.map((question: any) => [question.id, question])
+          );
+          const byQuestion = new Map(
+            existing.map((question: any) => [
+              normalize(question.question),
+              question,
+            ])
+          );
           let added = 0;
           let updated = 0;
           for (const question of input.questions) {
-            const current: any = (question.id && byId.get(question.id)) || byQuestion.get(normalize(question.question));
+            const current: any =
+              (question.id && byId.get(question.id)) ||
+              byQuestion.get(normalize(question.question));
             if (question.consultantResourceId) {
-              if (!allocations.some(item => item.projectId === input.projectId && item.resourceId === question.consultantResourceId))
-                throw new TRPCError({ code: "BAD_REQUEST", message: `O consultor da pergunta “${question.question}” não está alocado no projeto` });
+              if (
+                !allocations.some(
+                  item =>
+                    item.projectId === input.projectId &&
+                    item.resourceId === question.consultantResourceId
+                )
+              )
+                throw new TRPCError({
+                  code: "BAD_REQUEST",
+                  message: `O consultor da pergunta “${question.question}” não está alocado no projeto`,
+                });
             }
             if (question.keyUserId && !keyUserIds.has(question.keyUserId))
-              throw new TRPCError({ code: "BAD_REQUEST", message: `O Key User da pergunta “${question.question}” não pertence ao projeto` });
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `O Key User da pergunta “${question.question}” não pertence ao projeto`,
+              });
             if (question.scopeItemIds?.some(id => !scopeItemIds.has(id)))
-              throw new TRPCError({ code: "BAD_REQUEST", message: `Um scope item da pergunta “${question.question}” não pertence ao projeto` });
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `Um scope item da pergunta “${question.question}” não pertence ao projeto`,
+              });
             if (current) {
               await wdb.updateBdcqQuestion(current.id, {
                 module: question.module,
@@ -2071,10 +2427,22 @@ export const workflowRouter = router({
           })
         )
         .query(async ({ ctx, input }) => {
-          const visible = await visibleBdcqQuestionIds(ctx.appUser, input.projectId);
-          const requestedIds = input.questionIds ? input.questionIds.filter(id => !visible || visible.has(id)) : undefined;
-          const rows = requestedIds ? await wdb.listBdcqAnswersForQuestions(input.projectId, requestedIds) : await wdb.listBdcqAnswers(input.projectId, input);
-          return visible ? rows.filter((item: any) => visible.has(item.questionId)) : rows;
+          const visible = await visibleBdcqQuestionIds(
+            ctx.appUser,
+            input.projectId
+          );
+          const requestedIds = input.questionIds
+            ? input.questionIds.filter(id => !visible || visible.has(id))
+            : undefined;
+          const rows = requestedIds
+            ? await wdb.listBdcqAnswersForQuestions(
+                input.projectId,
+                requestedIds
+              )
+            : await wdb.listBdcqAnswers(input.projectId, input);
+          return visible
+            ? rows.filter((item: any) => visible.has(item.questionId))
+            : rows;
         }),
       create: workflowProjectProcedure(true, "fillAssignedBdcq")
         .input(
@@ -2096,13 +2464,20 @@ export const workflowRouter = router({
               code: "BAD_REQUEST",
               message: "A pergunta não pertence ao projeto selecionado",
             });
-          await assertCanAnswerBdcq(ctx.appUser, input.projectId, input.questionId);
+          await assertCanAnswerBdcq(
+            ctx.appUser,
+            input.projectId,
+            input.questionId
+          );
           const existing = await wdb.getBdcqAnswerByQuestion(
             input.projectId,
             input.questionId
           );
           if (existing) {
-            await approvalStore.assertEntityEditable("bdcq_answer", existing.id);
+            await approvalStore.assertEntityEditable(
+              "bdcq_answer",
+              existing.id
+            );
             return wdb.updateBdcqAnswerWithHistory(
               existing.id,
               {
@@ -2126,7 +2501,12 @@ export const workflowRouter = router({
           await notifyIfBdcqModuleCompleted(input.projectId, input.questionId);
           return created;
         }),
-      update: workflowEntityProcedure("bdcq_answers", true, "id", "fillAssignedBdcq")
+      update: workflowEntityProcedure(
+        "bdcq_answers",
+        true,
+        "id",
+        "fillAssignedBdcq"
+      )
         .input(
           z.object({
             id: z.string(),
@@ -2139,8 +2519,16 @@ export const workflowRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
           const existing = await wdb.getBdcqAnswerById(input.id);
-          if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Resposta não encontrada" });
-          await assertCanAnswerBdcq(ctx.appUser, existing.projectId, existing.questionId);
+          if (!existing)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Resposta não encontrada",
+            });
+          await assertCanAnswerBdcq(
+            ctx.appUser,
+            existing.projectId,
+            existing.questionId
+          );
           await approvalStore.assertEntityEditable("bdcq_answer", input.id);
           return wdb.updateBdcqAnswerWithHistory(
             input.id,
@@ -2149,12 +2537,25 @@ export const workflowRouter = router({
             ctx.user.name || ctx.user.email || "Usuário"
           );
         }),
-      history: workflowEntityProcedure("bdcq_answers", false, "answerId", "viewProject")
+      history: workflowEntityProcedure(
+        "bdcq_answers",
+        false,
+        "answerId",
+        "viewProject"
+      )
         .input(z.object({ answerId: z.string() }))
         .query(async ({ ctx, input }) => {
           const answer = await wdb.getBdcqAnswerById(input.answerId);
-          if (!answer) throw new TRPCError({ code: "NOT_FOUND", message: "Resposta não encontrada" });
-          await assertCanViewBdcqQuestion(ctx.appUser, answer.projectId, answer.questionId);
+          if (!answer)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Resposta não encontrada",
+            });
+          await assertCanViewBdcqQuestion(
+            ctx.appUser,
+            answer.projectId,
+            answer.questionId
+          );
           return wdb.listBdcqAnswerHistory(input.answerId);
         }),
       delete: workflowEntityProcedure("bdcq_answers", true)
@@ -2169,25 +2570,51 @@ export const workflowRouter = router({
   // ===== Workshops =====
   workshops: router({
     templates: router({
+      listAll: adminProcedure.query(() => wdb.listWorkshopTemplates()),
       list: workflowProjectProcedure()
         .input(z.object({ projectId: z.string().min(1) }))
         .query(async ({ ctx, input }) => {
           const templates = await wdb.listWorkshopTemplates();
           if (ctx.appUser.role === "admin") return templates;
-          return templates.filter((template: any) =>
-            template.active && (!template.projectIds?.length || template.projectIds.includes(input.projectId))
+          return templates.filter(
+            (template: any) =>
+              template.active &&
+              (!template.projectIds?.length ||
+                template.projectIds.includes(input.projectId))
           );
         }),
-      create: adminProcedure.input(workshopTemplateDataSchema).mutation(({ ctx, input }) =>
-        wdb.createWorkshopTemplate({ id: nanoid(), ...input, createdBy: ctx.appUser.name || ctx.appUser.email })
-      ),
-      update: adminProcedure.input(z.object({ id: z.string().min(1), data: workshopTemplateDataSchema.partial() }))
-        .mutation(({ input }) => wdb.updateWorkshopTemplate(input.id, input.data)),
-      delete: adminProcedure.input(z.object({ id: z.string().min(1) }))
+      create: adminProcedure
+        .input(workshopTemplateDataSchema)
+        .mutation(({ ctx, input }) =>
+          wdb.createWorkshopTemplate({
+            id: nanoid(),
+            ...input,
+            createdBy: ctx.appUser.name || ctx.appUser.email,
+          })
+        ),
+      update: adminProcedure
+        .input(
+          z.object({
+            id: z.string().min(1),
+            data: workshopTemplateDataSchema.partial(),
+          })
+        )
+        .mutation(({ input }) =>
+          wdb.updateWorkshopTemplate(input.id, input.data)
+        ),
+      delete: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteWorkshopTemplate(input.id)),
       applyToProject: workflowProjectProcedure(true)
-        .input(z.object({ projectId: z.string().min(1), templateIds: z.array(z.string().min(1)).max(200).optional() }))
-        .mutation(({ input }) => applyWorkshopTemplates(input.projectId, input.templateIds)),
+        .input(
+          z.object({
+            projectId: z.string().min(1),
+            templateIds: z.array(z.string().min(1)).max(200).optional(),
+          })
+        )
+        .mutation(({ input }) =>
+          applyWorkshopTemplates(input.projectId, input.templateIds)
+        ),
     }),
     list: workflowProjectProcedure()
       .input(z.object({ projectId: z.string(), ...paginationInput }))
@@ -2216,7 +2643,11 @@ export const workflowRouter = router({
       )
       .mutation(async ({ input }) => {
         if (input.scopeItemIds?.length)
-          await assertEntitiesBelongToProject("scope_items", input.scopeItemIds, input.projectId);
+          await assertEntitiesBelongToProject(
+            "scope_items",
+            input.scopeItemIds,
+            input.projectId
+          );
         const id = nanoid();
         return wdb.createWorkshop({
           id,
@@ -2267,9 +2698,20 @@ export const workflowRouter = router({
       )
       .mutation(async ({ input }) => {
         if (input.data.scopeItemIds?.length) {
-          const projectId = await wdb.getWorkflowEntityProjectId("workshops", input.id);
-          if (!projectId) throw new TRPCError({ code: "NOT_FOUND", message: "Workshop não encontrado" });
-          await assertEntitiesBelongToProject("scope_items", input.data.scopeItemIds, projectId);
+          const projectId = await wdb.getWorkflowEntityProjectId(
+            "workshops",
+            input.id
+          );
+          if (!projectId)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Workshop não encontrado",
+            });
+          await assertEntitiesBelongToProject(
+            "scope_items",
+            input.data.scopeItemIds,
+            projectId
+          );
         }
         return wdb.updateWorkshop(input.id, input.data);
       }),
@@ -2277,19 +2719,40 @@ export const workflowRouter = router({
       .input(z.object({ id: z.string() }))
       .mutation(({ input }) => wdb.deleteWorkshop(input.id)),
     uploadPresentation: workflowProjectProcedure(true)
-      .input(z.object({
-        projectId: z.string().min(1), fileName: z.string().trim().min(1).max(255),
-        contentType: z.string().trim().max(255), fileData: z.string().max(20_000_000),
-      }))
+      .input(
+        z.object({
+          projectId: z.string().min(1),
+          fileName: z.string().trim().min(1).max(255),
+          contentType: z.string().trim().max(255),
+          fileData: z.string().max(20_000_000),
+        })
+      )
       .mutation(async ({ input }) => {
         if (!/\.(ppt|pptx|pdf)$/i.test(input.fileName))
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Envie um arquivo PPT, PPTX ou PDF" });
-        const buffer = Buffer.from(input.fileData.replace(/^data:[^;]+;base64,/, ""), "base64");
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Envie um arquivo PPT, PPTX ou PDF",
+          });
+        const buffer = Buffer.from(
+          input.fileData.replace(/^data:[^;]+;base64,/, ""),
+          "base64"
+        );
         if (buffer.length > 15 * 1024 * 1024)
-          throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo deve ter no máximo 15 MB" });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "O arquivo deve ter no máximo 15 MB",
+          });
         const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const stored = await storagePut(`workflow/${input.projectId}/workshop-presentations/${nanoid()}-${safeName}`, buffer, input.contentType);
-        return { name: input.fileName, url: stored.url, contentType: input.contentType };
+        const stored = await storagePut(
+          `workflow/${input.projectId}/workshop-presentations/${nanoid()}-${safeName}`,
+          buffer,
+          input.contentType
+        );
+        return {
+          name: input.fileName,
+          url: stored.url,
+          contentType: input.contentType,
+        };
       }),
     suggestAgenda: workflowProjectProcedure(true)
       .input(z.object({ projectId: z.string() }))
@@ -2319,10 +2782,22 @@ ${pendingQuestions
   .join("\n")}
 
 Requisitos identificados (${requirements.length} total):
-${requirements.slice(0, 20).map((item: any) => `- [${item.module || "Geral"}] ${item.title}: ${item.description}`).join("\n")}
+${requirements
+  .slice(0, 20)
+  .map(
+    (item: any) =>
+      `- [${item.module || "Geral"}] ${item.title}: ${item.description}`
+  )
+  .join("\n")}
 
 Workshops já cadastrados (${currentWorkshops.length} total — não repetir):
-${currentWorkshops.slice(0, 30).map((item: any) => `- ${item.title} (${(item.modules || [item.module]).filter(Boolean).join(", ") || "Geral"})`).join("\n")}
+${currentWorkshops
+  .slice(0, 30)
+  .map(
+    (item: any) =>
+      `- ${item.title} (${(item.modules || [item.module]).filter(Boolean).join(", ") || "Geral"})`
+  )
+  .join("\n")}
 
 Retorne a sugestão em formato markdown com workshops sugeridos, scope items cobertos, duração estimada, temas a apresentar, resultados esperados e funções de usuários que devem participar.`;
         const ai = await getWorkflowAiConfig("agenda_suggestion");
@@ -2635,7 +3110,9 @@ Retorne em formato markdown.`;
         })
       )
       .mutation(async ({ ctx, input }) => {
-        await Promise.all(input.ids.map(id => approvalStore.assertEntityEditable("dcd", id)));
+        await Promise.all(
+          input.ids.map(id => approvalStore.assertEntityEditable("dcd", id))
+        );
         await assertEntitiesBelongToProject(
           "dcd_documents",
           input.ids,
@@ -2662,7 +3139,10 @@ Retorne em formato markdown.`;
       }),
     delete: workflowEntityProcedure("dcd_documents", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => { await approvalStore.assertEntityEditable("dcd", input.id); return wdb.deleteDcdDocument(input.id); }),
+      .mutation(async ({ input }) => {
+        await approvalStore.assertEntityEditable("dcd", input.id);
+        return wdb.deleteDcdDocument(input.id);
+      }),
     generationStatus: workflowProjectProcedure()
       .input(
         z.object({
@@ -2907,9 +3387,13 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
           projectId: z.string(),
           dcdId: z.string().optional(),
           module: z.string().optional(),
+          modules: z.array(z.string()).max(30).optional(),
           description: z.string(),
           impact: gapImpactSchema.optional(),
           responsible: z.string().optional(),
+          abapHours: z.number().int().min(0).max(100000).optional(),
+          technicalHours: z.number().int().min(0).max(100000).optional(),
+          attachments: z.array(z.string()).max(50).optional(),
           resolution: z.string().optional(),
           status: gapStatusSchema.optional(),
         })
@@ -2921,9 +3405,13 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
           projectId: input.projectId,
           description: input.description,
           dcdId: input.dcdId || "",
-          module: input.module || "",
+          module: input.modules?.[0] || input.module || "",
+          modules: input.modules || (input.module ? [input.module] : []),
           impact: input.impact || "Médio",
           responsible: input.responsible || "",
+          abapHours: input.abapHours || 0,
+          technicalHours: input.technicalHours || 0,
+          attachments: input.attachments || [],
           resolution: input.resolution,
           status: input.status || "Aberto",
         });
@@ -2944,9 +3432,13 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
           data: z.object({
             dcdId: z.string().optional(),
             module: z.string().optional(),
+            modules: z.array(z.string()).max(30).optional(),
             description: z.string().min(1).optional(),
             impact: gapImpactSchema.optional(),
             responsible: z.string().optional(),
+            abapHours: z.number().int().min(0).max(100000).optional(),
+            technicalHours: z.number().int().min(0).max(100000).optional(),
+            attachments: z.array(z.string()).max(50).optional(),
             resolution: z.string().optional(),
             status: gapStatusSchema.optional(),
           }),
@@ -2982,7 +3474,9 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
         })
       )
       .mutation(async ({ ctx, input }) => {
-        await Promise.all(input.ids.map(id => approvalStore.assertEntityEditable("gap", id)));
+        await Promise.all(
+          input.ids.map(id => approvalStore.assertEntityEditable("gap", id))
+        );
         await assertEntitiesBelongToProject("gaps", input.ids, input.projectId);
         const updated = await wdb.bulkUpdateGaps(input.ids, input.data);
         await recordWorkflowAudit(
@@ -2995,9 +3489,36 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
         );
         return { updated };
       }),
+    uploadAttachment: workflowProjectProcedure(true)
+      .input(
+        z.object({
+          projectId: z.string().min(1),
+          fileName: z.string().min(1).max(255),
+          fileData: z.string().max(14_000_000),
+          contentType: z.string().max(255),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.fileData, "base64");
+        if (buffer.byteLength > 10 * 1024 * 1024)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "O anexo deve ter no máximo 10 MB",
+          });
+        const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const stored = await storagePut(
+          `workflow/${input.projectId}/gaps/${nanoid()}-${safeName}`,
+          buffer,
+          input.contentType
+        );
+        return { url: stored.url, key: stored.key };
+      }),
     delete: workflowEntityProcedure("gaps", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => { await approvalStore.assertEntityEditable("gap", input.id); return wdb.deleteGap(input.id); }),
+      .mutation(async ({ input }) => {
+        await approvalStore.assertEntityEditable("gap", input.id);
+        return wdb.deleteGap(input.id);
+      }),
     extractFromDcd: workflowProjectProcedure(true)
       .input(
         z.object({
@@ -3100,28 +3621,50 @@ Retorne APENAS um JSON array com objetos no formato:
     templates: router({
       list: protectedProcedure.query(() => wdb.listConfigurationTemplates()),
       create: adminProcedure
-        .input(z.object({
-          description: z.string().trim().min(1).max(5000),
-          category: z.string().trim().max(256).default("Configuração"),
-          modules: z.array(z.string().trim().min(1).max(128)).max(30).default([]),
-          scopeItemKeys: z.array(z.string().trim().min(1).max(512)).max(200).default([]),
-          active: z.boolean().default(true),
-        }))
-        .mutation(({ ctx, input }) => wdb.createConfigurationTemplate({
-          id: nanoid(), ...input, createdBy: ctx.appUser.name || ctx.appUser.email,
-        })),
+        .input(
+          z.object({
+            description: z.string().trim().min(1).max(5000),
+            category: z.string().trim().max(256).default("Configuração"),
+            modules: z
+              .array(z.string().trim().min(1).max(128))
+              .max(30)
+              .default([]),
+            scopeItemKeys: z
+              .array(z.string().trim().min(1).max(512))
+              .max(200)
+              .default([]),
+            active: z.boolean().default(true),
+          })
+        )
+        .mutation(({ ctx, input }) =>
+          wdb.createConfigurationTemplate({
+            id: nanoid(),
+            ...input,
+            createdBy: ctx.appUser.name || ctx.appUser.email,
+          })
+        ),
       update: adminProcedure
-        .input(z.object({
-          id: z.string().min(1),
-          data: z.object({
-            description: z.string().trim().min(1).max(5000).optional(),
-            category: z.string().trim().max(256).optional(),
-            modules: z.array(z.string().trim().min(1).max(128)).max(30).optional(),
-            scopeItemKeys: z.array(z.string().trim().min(1).max(512)).max(200).optional(),
-            active: z.boolean().optional(),
-          }),
-        }))
-        .mutation(({ input }) => wdb.updateConfigurationTemplate(input.id, input.data)),
+        .input(
+          z.object({
+            id: z.string().min(1),
+            data: z.object({
+              description: z.string().trim().min(1).max(5000).optional(),
+              category: z.string().trim().max(256).optional(),
+              modules: z
+                .array(z.string().trim().min(1).max(128))
+                .max(30)
+                .optional(),
+              scopeItemKeys: z
+                .array(z.string().trim().min(1).max(512))
+                .max(200)
+                .optional(),
+              active: z.boolean().optional(),
+            }),
+          })
+        )
+        .mutation(({ input }) =>
+          wdb.updateConfigurationTemplate(input.id, input.data)
+        ),
       delete: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteConfigurationTemplate(input.id)),
@@ -3306,27 +3849,46 @@ Retorne APENAS um JSON array com objetos no formato:
           wdb.listConfigurations(input.projectId),
         ]);
         const answersByQuestion = new Map(
-          answers.filter((item: any) => String(item.answer || "").trim()).map((item: any) => [item.questionId, item])
+          answers
+            .filter((item: any) => String(item.answer || "").trim())
+            .map((item: any) => [item.questionId, item])
         );
-        const known = new Set(existing.map((item: any) => item.bdcqQuestionId).filter(Boolean));
+        const known = new Set(
+          existing.map((item: any) => item.bdcqQuestionId).filter(Boolean)
+        );
         let added = 0;
         let ignored = 0;
         for (const question of questions as any[]) {
           const answer = answersByQuestion.get(question.id) as any;
-          if (!answer || known.has(question.id)) { if (answer) ignored++; continue; }
+          if (!answer || known.has(question.id)) {
+            if (answer) ignored++;
+            continue;
+          }
           await wdb.createConfiguration({
-            id: nanoid(), projectId: input.projectId, module: question.module || "",
+            id: nanoid(),
+            projectId: input.projectId,
+            module: question.module || "",
             category: question.category || "Configuração",
             description: `Configurar conforme BDCQ: ${question.question}`,
-            responsible: "", status: "Pendente",
+            responsible: "",
+            status: "Pendente",
             notes: `Resposta BDCQ: ${answer.answer}`,
-            templateId: "", bdcqQuestionId: question.id,
-            scopeItemIds: question.scopeItemIds || [], source: "bdcq",
+            templateId: "",
+            bdcqQuestionId: question.id,
+            scopeItemIds: question.scopeItemIds || [],
+            source: "bdcq",
           });
           known.add(question.id);
           added++;
         }
-        await recordWorkflowAudit(ctx, input.projectId, "CONFIGURATIONS_FROM_BDCQ", "configuration", input.projectId, { added, ignored });
+        await recordWorkflowAudit(
+          ctx,
+          input.projectId,
+          "CONFIGURATIONS_FROM_BDCQ",
+          "configuration",
+          input.projectId,
+          { added, ignored }
+        );
         return { added, ignored };
       }),
     delete: workflowEntityProcedure("configurations", true)
@@ -3343,7 +3905,9 @@ Retorne APENAS um JSON array com objetos no formato:
           wdb.listWorkflowTestStepsByProject(input.projectId),
         ]);
         return {
-          scenarios: scenarios.filter(item => ["Ciclo 1", "Ciclo 2", "Integrado"].includes(item.type)),
+          scenarios: scenarios.filter(item =>
+            ["Ciclo 1", "Ciclo 2", "Integrado"].includes(item.type)
+          ),
           steps,
         };
       }),
@@ -3379,13 +3943,22 @@ Retorne APENAS um JSON array com objetos no formato:
         const existing = await wdb.listWorkflowTestCases(input.projectId);
         const byCode = new Map<string, any>(
           existing
-            .filter(item => ["Ciclo 1", "Ciclo 2", "Integrado"].includes(item.type) && item.code)
-            .map(item => [`${item.type}|${item.code.trim().toLocaleLowerCase("pt-BR")}`, item])
+            .filter(
+              item =>
+                ["Ciclo 1", "Ciclo 2", "Integrado"].includes(item.type) &&
+                item.code
+            )
+            .map(item => [
+              `${item.type}|${item.code.trim().toLocaleLowerCase("pt-BR")}`,
+              item,
+            ])
         );
         let scenariosCreated = 0;
         let stepsCreated = 0;
         for (const row of input.rows) {
-          const key = `${row.scenarioType}|${(row.scenarioCode || row.scenarioTitle)
+          const key = `${row.scenarioType}|${(
+            row.scenarioCode || row.scenarioTitle
+          )
             .trim()
             .toLocaleLowerCase("pt-BR")}`;
           let scenario = byCode.get(key);
@@ -3393,7 +3966,8 @@ Retorne APENAS um JSON array com objetos no formato:
             scenario = await wdb.createWorkflowTestCase({
               id: nanoid(),
               projectId: input.projectId,
-              type: row.scenarioType === "Integrado" ? "Ciclo 1" : row.scenarioType,
+              type:
+                row.scenarioType === "Integrado" ? "Ciclo 1" : row.scenarioType,
               code: row.scenarioCode,
               title: row.scenarioTitle,
               description: row.scenarioDescription,
@@ -3442,10 +4016,21 @@ Retorne APENAS um JSON array com objetos no formato:
         const typed = input.type
           ? rows.filter((item: any) => item.type === input.type)
           : rows;
-        if (await canViewAllWorkflowTests(ctx.appUser, input.projectId)) return typed;
+        if (await canViewAllWorkflowTests(ctx.appUser, input.projectId))
+          return typed;
         const steps = await wdb.listWorkflowTestStepsByProject(input.projectId);
-        const ownCaseIds = new Set(steps.filter((step: any) => responsibleMatches(ctx.appUser, step.responsible)).map((step: any) => step.testCaseId));
-        return typed.filter((item: any) => responsibleMatches(ctx.appUser, item.responsible) || ownCaseIds.has(item.id));
+        const ownCaseIds = new Set(
+          steps
+            .filter((step: any) =>
+              responsibleMatches(ctx.appUser, step.responsible)
+            )
+            .map((step: any) => step.testCaseId)
+        );
+        return typed.filter(
+          (item: any) =>
+            responsibleMatches(ctx.appUser, item.responsible) ||
+            ownCaseIds.has(item.id)
+        );
       }),
     create: workflowProjectProcedure(true)
       .input(
@@ -3511,7 +4096,12 @@ Retorne APENAS um JSON array com objetos no formato:
         );
         return created;
       }),
-    update: workflowEntityProcedure("workflow_test_cases", true, "id", "executeAssignedTests")
+    update: workflowEntityProcedure(
+      "workflow_test_cases",
+      true,
+      "id",
+      "executeAssignedTests"
+    )
       .input(
         z.object({
           id: z.string(),
@@ -3535,7 +4125,11 @@ Retorne APENAS um JSON array com objetos no formato:
       .mutation(async ({ ctx, input }) => {
         await approvalStore.assertEntityEditable("test_case", input.id);
         const testCase = await wdb.getWorkflowTestCaseById(input.id);
-        if (!testCase) throw new TRPCError({ code: "NOT_FOUND", message: "Teste não encontrado" });
+        if (!testCase)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Teste não encontrado",
+          });
         await assertCanExecuteTestCase(ctx.appUser, testCase);
         const projectId = await wdb.getWorkflowEntityProjectId(
           "workflow_test_cases",
@@ -3565,7 +4159,11 @@ Retorne APENAS um JSON array com objetos no formato:
         })
       )
       .mutation(async ({ ctx, input }) => {
-        await Promise.all(input.ids.map(id => approvalStore.assertEntityEditable("test_case", id)));
+        await Promise.all(
+          input.ids.map(id =>
+            approvalStore.assertEntityEditable("test_case", id)
+          )
+        );
         await assertEntitiesBelongToProject(
           "workflow_test_cases",
           input.ids,
@@ -3587,16 +4185,31 @@ Retorne APENAS um JSON array com objetos no formato:
       }),
     delete: workflowEntityProcedure("workflow_test_cases", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => { await approvalStore.assertEntityEditable("test_case", input.id); return wdb.deleteWorkflowTestCase(input.id); }),
+      .mutation(async ({ input }) => {
+        await approvalStore.assertEntityEditable("test_case", input.id);
+        return wdb.deleteWorkflowTestCase(input.id);
+      }),
     steps: router({
-      list: workflowEntityProcedure("workflow_test_cases", false, "testCaseId", "executeAssignedTests")
+      list: workflowEntityProcedure(
+        "workflow_test_cases",
+        false,
+        "testCaseId",
+        "executeAssignedTests"
+      )
         .input(z.object({ testCaseId: z.string() }))
         .query(async ({ ctx, input }) => {
           const testCase = await wdb.getWorkflowTestCaseById(input.testCaseId);
-          if (!testCase) throw new TRPCError({ code: "NOT_FOUND", message: "Teste não encontrado" });
+          if (!testCase)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Teste não encontrado",
+            });
           const rows = await wdb.listWorkflowTestSteps(input.testCaseId);
-          if (await canViewAllWorkflowTests(ctx.appUser, testCase.projectId)) return rows;
-          return rows.filter((step: any) => responsibleMatches(ctx.appUser, step.responsible));
+          if (await canViewAllWorkflowTests(ctx.appUser, testCase.projectId))
+            return rows;
+          return rows.filter((step: any) =>
+            responsibleMatches(ctx.appUser, step.responsible)
+          );
         }),
       create: workflowEntityProcedure("workflow_test_cases", true, "testCaseId")
         .input(
@@ -3635,7 +4248,12 @@ Retorne APENAS um JSON array com objetos no formato:
             );
           return created;
         }),
-      update: workflowEntityProcedure("workflow_test_steps", true, "id", "executeAssignedTests")
+      update: workflowEntityProcedure(
+        "workflow_test_steps",
+        true,
+        "id",
+        "executeAssignedTests"
+      )
         .input(
           z.object({
             id: z.string(),
@@ -3660,13 +4278,27 @@ Retorne APENAS um JSON array com objetos no formato:
             }),
           })
         )
-      .mutation(async ({ ctx, input }) => {
-        const step = await wdb.getWorkflowTestStepById(input.id);
-        if (!step) throw new TRPCError({ code: "NOT_FOUND", message: "Etapa não encontrada" });
-        const testCase = await wdb.getWorkflowTestCaseById(step.testCaseId);
-        if (!testCase) throw new TRPCError({ code: "NOT_FOUND", message: "Teste não encontrado" });
-        if (!(await canViewAllWorkflowTests(ctx.appUser, testCase.projectId)) && !responsibleMatches(ctx.appUser, step.responsible))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Esta etapa está atribuída a outro usuário" });
+        .mutation(async ({ ctx, input }) => {
+          const step = await wdb.getWorkflowTestStepById(input.id);
+          if (!step)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Etapa não encontrada",
+            });
+          const testCase = await wdb.getWorkflowTestCaseById(step.testCaseId);
+          if (!testCase)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Teste não encontrado",
+            });
+          if (
+            !(await canViewAllWorkflowTests(ctx.appUser, testCase.projectId)) &&
+            !responsibleMatches(ctx.appUser, step.responsible)
+          )
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Esta etapa está atribuída a outro usuário",
+            });
           const projectId = await wdb.getWorkflowEntityProjectId(
             "workflow_test_steps",
             input.id

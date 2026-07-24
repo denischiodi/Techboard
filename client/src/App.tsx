@@ -33,6 +33,7 @@ import StandardConfigurations from "./pages/StandardConfigurations";
 import GovernancePage from "./pages/workflow/GovernancePage";
 import RaidPage from "./pages/workflow/RaidPage";
 import TrailStagePage from "./pages/workflow/TrailStagePage";
+import TechMoveDashboard from "./pages/TechMoveDashboard";
 
 function AppRoutes() {
   return (
@@ -60,7 +61,8 @@ function AppRoutes() {
               <Route path={"/techlead/indicators"}>
                 {() => <TechLeadTeams indicators />}
               </Route>
-              <Route path={"/techmove"} component={ProjectWorkflow} />
+              <Route path={"/techmove"} component={TechMoveDashboard} />
+              <Route path={"/techmove/projects"} component={ProjectWorkflow} />
               <Route
                 path={"/techmove/scope-items"}
                 component={ScopeItemsPage}

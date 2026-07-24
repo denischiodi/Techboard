@@ -14,6 +14,7 @@ import { registerTechEduca } from "../techeduca";
 import { registerWorkflowStream } from "../workflowStream";
 import { syncActivitiesFromSources } from "../activitySync";
 import { flushActivityEmailOutbox } from "../activityMailer";
+import { startDashboardSnapshotScheduler } from "../dashboardSnapshots";
 
 function isAllowedOrigin(req: express.Request) {
   const origin = req.headers.origin;
@@ -36,6 +37,7 @@ function isAllowedOrigin(req: express.Request) {
 async function startServer() {
   validateRuntimeEnv();
   await ensureDatabaseSchema();
+  startDashboardSnapshotScheduler();
 
   const app = express();
   app.set("trust proxy", 1);
@@ -85,17 +87,25 @@ async function startServer() {
   }
 
   const port = parseInt(process.env.PORT || "3000", 10);
-  const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+  const host =
+    process.env.HOST ||
+    (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 
   server.listen(port, host, () => {
     console.log(`Server running on http://${host}:${port}/`);
   });
 
-  const runActivityScheduler = () => syncActivitiesFromSources()
-    .then(() => flushActivityEmailOutbox())
-    .catch(error => console.warn("Falha na sincronização programada de atividades", error));
+  const runActivityScheduler = () =>
+    syncActivitiesFromSources()
+      .then(() => flushActivityEmailOutbox())
+      .catch(error =>
+        console.warn("Falha na sincronização programada de atividades", error)
+      );
   void runActivityScheduler();
-  const activityTimer = setInterval(() => void runActivityScheduler(), 60 * 60 * 1000);
+  const activityTimer = setInterval(
+    () => void runActivityScheduler(),
+    60 * 60 * 1000
+  );
   activityTimer.unref();
 }
 

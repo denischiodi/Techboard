@@ -40,7 +40,15 @@ async function listRows(
   const pool = getPgPool();
   if (!pool) return [];
   const hasLimit = typeof pagination?.limit === "number";
-  const supportsArchive = new Set(["bdcq_questions", "bdcq_answers", "workshops", "dcd_documents", "gaps", "configurations", "workflow_test_cases"]).has(table);
+  const supportsArchive = new Set([
+    "bdcq_questions",
+    "bdcq_answers",
+    "workshops",
+    "dcd_documents",
+    "gaps",
+    "configurations",
+    "workflow_test_cases",
+  ]).has(table);
   const result = await pool.query(
     `SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(column)} = $1${supportsArchive ? ' AND "archivedAt" IS NULL' : ""} ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`,
     hasLimit ? [value, pagination!.limit, pagination?.offset || 0] : [value]
@@ -297,25 +305,59 @@ export async function updateBdcqQuestion(
 }
 
 export async function listProjectKeyUsers(projectId: string) {
-  return listRows("workflow_project_key_users", "projectId", projectId) as Promise<Array<typeof workflowProjectKeyUsers.$inferSelect>>;
+  return listRows(
+    "workflow_project_key_users",
+    "projectId",
+    projectId
+  ) as Promise<Array<typeof workflowProjectKeyUsers.$inferSelect>>;
 }
-export async function syncProjectKeyUsersFromAccess(projectId: string, memberships: Array<{ profile: string; active: boolean; jobTitle?: string; user?: { name: string; email: string; active: boolean } }>) {
+export async function syncProjectKeyUsersFromAccess(
+  projectId: string,
+  memberships: Array<{
+    profile: string;
+    active: boolean;
+    jobTitle?: string;
+    user?: { name: string; email: string; active: boolean };
+  }>
+) {
   const pool = getPgPool();
   if (!pool) return;
-  for (const membership of memberships.filter(item => item.profile === "key_user" && item.active && item.user?.active && item.user.email)) {
+  for (const membership of memberships.filter(
+    item =>
+      item.profile === "key_user" &&
+      item.active &&
+      item.user?.active &&
+      item.user.email
+  )) {
     await pool.query(
       `INSERT INTO "workflow_project_key_users" ("id","projectId","name","email","role","active")
        VALUES ($1,$2,$3,$4,$5,1)
        ON CONFLICT ("projectId","email") DO UPDATE SET "name"=EXCLUDED."name","role"=EXCLUDED."role","active"=1,"updatedAt"=now()`,
-      [`pku_${Buffer.from(`${projectId}:${membership.user!.email.toLowerCase()}`).toString("hex").slice(0, 20)}`, projectId, membership.user!.name, membership.user!.email.toLowerCase(), membership.jobTitle || ""]
+      [
+        `pku_${Buffer.from(`${projectId}:${membership.user!.email.toLowerCase()}`).toString("hex").slice(0, 20)}`,
+        projectId,
+        membership.user!.name,
+        membership.user!.email.toLowerCase(),
+        membership.jobTitle || "",
+      ]
     );
   }
 }
-export async function createProjectKeyUser(data: typeof workflowProjectKeyUsers.$inferInsert) {
+export async function createProjectKeyUser(
+  data: typeof workflowProjectKeyUsers.$inferInsert
+) {
   return insertRow("workflow_project_key_users", data);
 }
-export async function updateProjectKeyUser(id: string, data: Partial<typeof workflowProjectKeyUsers.$inferInsert>) {
-  return updateRow("workflow_project_key_users", id, data, ["name", "email", "role", "active"]);
+export async function updateProjectKeyUser(
+  id: string,
+  data: Partial<typeof workflowProjectKeyUsers.$inferInsert>
+) {
+  return updateRow("workflow_project_key_users", id, data, [
+    "name",
+    "email",
+    "role",
+    "active",
+  ]);
 }
 export async function deleteProjectKeyUser(id: string) {
   const pool = getPgPool();
@@ -323,8 +365,14 @@ export async function deleteProjectKeyUser(id: string) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query('UPDATE "bdcq_questions" SET "keyUserId" = \'\', "updatedAt" = now() WHERE "keyUserId" = $1', [id]);
-    const result = await client.query('DELETE FROM "workflow_project_key_users" WHERE "id" = $1', [id]);
+    await client.query(
+      'UPDATE "bdcq_questions" SET "keyUserId" = \'\', "updatedAt" = now() WHERE "keyUserId" = $1',
+      [id]
+    );
+    const result = await client.query(
+      'DELETE FROM "workflow_project_key_users" WHERE "id" = $1',
+      [id]
+    );
     await client.query("COMMIT");
     return (result.rowCount || 0) > 0;
   } catch (error) {
@@ -415,8 +463,13 @@ export async function getBdcqAnswerByQuestion(
 export async function getBdcqAnswerById(id: string) {
   const pool = getPgPool();
   if (!pool) return null;
-  const result = await pool.query('SELECT * FROM "bdcq_answers" WHERE "id" = $1 LIMIT 1', [id]);
-  return (result.rows[0] as typeof bdcqAnswers.$inferSelect | undefined) || null;
+  const result = await pool.query(
+    'SELECT * FROM "bdcq_answers" WHERE "id" = $1 LIMIT 1',
+    [id]
+  );
+  return (
+    (result.rows[0] as typeof bdcqAnswers.$inferSelect | undefined) || null
+  );
 }
 export async function updateBdcqAnswer(
   id: string,
@@ -511,8 +564,14 @@ export async function listWorkshops(
 }
 export async function createWorkshop(data: typeof workshops.$inferInsert) {
   return insertRow("workshops", data, [
-    "modules", "scopeItemIds", "participants", "agenda", "expectedOutcomes",
-    "prerequisites", "requiredRoles", "presentationFiles",
+    "modules",
+    "scopeItemIds",
+    "participants",
+    "agenda",
+    "expectedOutcomes",
+    "prerequisites",
+    "requiredRoles",
+    "presentationFiles",
   ]);
 }
 export async function updateWorkshop(
@@ -543,7 +602,16 @@ export async function updateWorkshop(
       "status",
       "notes",
     ],
-    ["modules", "scopeItemIds", "participants", "agenda", "expectedOutcomes", "prerequisites", "requiredRoles", "presentationFiles"]
+    [
+      "modules",
+      "scopeItemIds",
+      "participants",
+      "agenda",
+      "expectedOutcomes",
+      "prerequisites",
+      "requiredRoles",
+      "presentationFiles",
+    ]
   );
 }
 export async function deleteWorkshop(id: string) {
@@ -559,18 +627,54 @@ export async function listWorkshopTemplates() {
   return result.rows as Array<typeof workshopTemplateLibrary.$inferSelect>;
 }
 
-export async function createWorkshopTemplate(data: typeof workshopTemplateLibrary.$inferInsert) {
+export async function createWorkshopTemplate(
+  data: typeof workshopTemplateLibrary.$inferInsert
+) {
   return insertRow("workflow_workshop_templates", data, [
-    "modules", "projectIds", "scopeItemKeys", "agenda", "expectedOutcomes",
-    "prerequisites", "requiredRoles", "presentationFiles",
+    "modules",
+    "projectIds",
+    "scopeItemKeys",
+    "agenda",
+    "expectedOutcomes",
+    "prerequisites",
+    "requiredRoles",
+    "presentationFiles",
   ]);
 }
 
-export async function updateWorkshopTemplate(id: string, data: Partial<typeof workshopTemplateLibrary.$inferInsert>) {
+export async function updateWorkshopTemplate(
+  id: string,
+  data: Partial<typeof workshopTemplateLibrary.$inferInsert>
+) {
   return updateRow(
-    "workflow_workshop_templates", id, data,
-    ["title", "objective", "content", "duration", "modules", "projectIds", "scopeItemKeys", "agenda", "expectedOutcomes", "prerequisites", "requiredRoles", "presentationFiles", "active"],
-    ["modules", "projectIds", "scopeItemKeys", "agenda", "expectedOutcomes", "prerequisites", "requiredRoles", "presentationFiles"]
+    "workflow_workshop_templates",
+    id,
+    data,
+    [
+      "title",
+      "objective",
+      "content",
+      "duration",
+      "modules",
+      "projectIds",
+      "scopeItemKeys",
+      "agenda",
+      "expectedOutcomes",
+      "prerequisites",
+      "requiredRoles",
+      "presentationFiles",
+      "active",
+    ],
+    [
+      "modules",
+      "projectIds",
+      "scopeItemKeys",
+      "agenda",
+      "expectedOutcomes",
+      "prerequisites",
+      "requiredRoles",
+      "presentationFiles",
+    ]
   );
 }
 
@@ -709,21 +813,31 @@ export async function listGaps(
   >;
 }
 export async function createGap(data: typeof gaps.$inferInsert) {
-  return insertRow("gaps", data);
+  return insertRow("gaps", data, ["modules", "attachments"]);
 }
 export async function updateGap(
   id: string,
   data: Partial<typeof gaps.$inferInsert>
 ) {
-  return updateRow("gaps", id, data, [
-    "dcdId",
-    "module",
-    "description",
-    "impact",
-    "responsible",
-    "resolution",
-    "status",
-  ]);
+  return updateRow(
+    "gaps",
+    id,
+    data,
+    [
+      "dcdId",
+      "module",
+      "modules",
+      "description",
+      "impact",
+      "responsible",
+      "abapHours",
+      "technicalHours",
+      "attachments",
+      "resolution",
+      "status",
+    ],
+    ["modules", "attachments"]
+  );
 }
 export async function deleteGap(id: string) {
   return deleteRow("gaps", id);
@@ -760,7 +874,15 @@ export async function updateConfiguration(
     "configurations",
     id,
     data,
-    ["module", "category", "description", "responsible", "status", "notes", "scopeItemIds"],
+    [
+      "module",
+      "category",
+      "description",
+      "responsible",
+      "status",
+      "notes",
+      "scopeItemIds",
+    ],
     ["scopeItemIds"]
   );
 }
@@ -776,7 +898,8 @@ export async function bulkUpdateConfigurations(
 
 export async function listConfigurationTemplates() {
   const pool = getPgPool();
-  if (!pool) return [] as Array<typeof configurationTemplateLibrary.$inferSelect>;
+  if (!pool)
+    return [] as Array<typeof configurationTemplateLibrary.$inferSelect>;
   const result = await pool.query(
     'SELECT * FROM "workflow_configuration_templates" WHERE "archivedAt" IS NULL ORDER BY "category", "description"'
   );
@@ -786,7 +909,10 @@ export async function listConfigurationTemplates() {
 export async function createConfigurationTemplate(
   data: typeof configurationTemplateLibrary.$inferInsert
 ) {
-  return insertRow("workflow_configuration_templates", data, ["modules", "scopeItemKeys"]);
+  return insertRow("workflow_configuration_templates", data, [
+    "modules",
+    "scopeItemKeys",
+  ]);
 }
 
 export async function updateConfigurationTemplate(
@@ -826,8 +952,14 @@ export async function createWorkflowTestCase(
 export async function getWorkflowTestCaseById(id: string) {
   const pool = getPgPool();
   if (!pool) return null;
-  const result = await pool.query('SELECT * FROM "workflow_test_cases" WHERE "id"=$1 LIMIT 1', [id]);
-  return (result.rows[0] as typeof workflowTestCases.$inferSelect | undefined) || null;
+  const result = await pool.query(
+    'SELECT * FROM "workflow_test_cases" WHERE "id"=$1 LIMIT 1',
+    [id]
+  );
+  return (
+    (result.rows[0] as typeof workflowTestCases.$inferSelect | undefined) ||
+    null
+  );
 }
 export async function updateWorkflowTestCase(
   id: string,
@@ -876,8 +1008,14 @@ export async function listWorkflowTestSteps(testCaseId: string) {
 export async function getWorkflowTestStepById(id: string) {
   const pool = getPgPool();
   if (!pool) return null;
-  const result = await pool.query('SELECT * FROM "workflow_test_steps" WHERE "id"=$1 LIMIT 1', [id]);
-  return (result.rows[0] as typeof workflowTestSteps.$inferSelect | undefined) || null;
+  const result = await pool.query(
+    'SELECT * FROM "workflow_test_steps" WHERE "id"=$1 LIMIT 1',
+    [id]
+  );
+  return (
+    (result.rows[0] as typeof workflowTestSteps.$inferSelect | undefined) ||
+    null
+  );
 }
 export async function listWorkflowTestStepsByProject(projectId: string) {
   const pool = getPgPool();

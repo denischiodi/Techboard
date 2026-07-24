@@ -13,15 +13,15 @@ export type AllocationStatus = string;
 // ===== Unified work and process contracts =====
 
 export type UnifiedWorkStatus =
-  | 'not_started'
-  | 'ready'
-  | 'in_progress'
-  | 'waiting_validation'
-  | 'approved'
-  | 'blocked'
-  | 'completed';
+  | "not_started"
+  | "ready"
+  | "in_progress"
+  | "waiting_validation"
+  | "approved"
+  | "blocked"
+  | "completed";
 
-export type UnifiedWorkPriority = 'low' | 'medium' | 'high' | 'critical';
+export type UnifiedWorkPriority = "low" | "medium" | "high" | "critical";
 
 export interface UnifiedWorkEvidence {
   id: string;
@@ -61,13 +61,67 @@ export interface ProcessTransition {
 export interface ProjectHealthSummary {
   projectId: string;
   projectName: string;
-  health: 'healthy' | 'attention' | 'critical';
+  health: "healthy" | "attention" | "critical";
   nextAction: string;
   nextActionUrl: string;
   riskCount: number;
   blockerCount: number;
   pendingApprovalCount: number;
   updatedAt: string;
+}
+
+// ===== Shared analytics dashboard contracts =====
+
+export type DashboardCriticality = "healthy" | "attention" | "critical";
+
+export interface DashboardFilters {
+  startDate: string;
+  endDate: string;
+  projectIds: string[];
+  resourceIds: string[];
+  fronts: string[];
+  responsibleIds: string[];
+  statuses: string[];
+  criticalities: DashboardCriticality[];
+}
+
+export interface DashboardMetric {
+  id: string;
+  label: string;
+  value: number;
+  unit?: string;
+  previousValue?: number;
+  trendPercent?: number;
+  tone?: "neutral" | "positive" | "warning" | "critical";
+  formula: string;
+}
+
+export interface DashboardSeriesPoint {
+  key: string;
+  label: string;
+  value: number;
+  secondaryValue?: number;
+}
+
+export interface DashboardDetailRow {
+  id: string;
+  title: string;
+  subtitle?: string;
+  status?: string;
+  projectId?: string;
+  resourceId?: string;
+  dueDate?: string;
+  sourceUrl?: string;
+  values?: Record<string, string | number | boolean | null>;
+}
+
+export interface DashboardDetailPage {
+  metricId: string;
+  formula: string;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: DashboardDetailRow[];
 }
 
 // Lookup item for configurable lists
@@ -123,8 +177,14 @@ export interface Project {
   notes: string;
 }
 
-export type GpChecklistStatus = 'Pendente' | 'Em andamento' | 'Em validação' | 'Concluído' | 'Bloqueado' | 'Não aplicável';
-export type GpChecklistItemType = 'Atividade' | 'Quality Gate';
+export type GpChecklistStatus =
+  | "Pendente"
+  | "Em andamento"
+  | "Em validação"
+  | "Concluído"
+  | "Bloqueado"
+  | "Não aplicável";
+export type GpChecklistItemType = "Atividade" | "Quality Gate";
 
 export interface GpDocumentTemplateFile {
   fileName: string;
@@ -221,20 +281,64 @@ export interface Allocation {
 
 // ===== Access Control Types =====
 
-export type AppTab = 'dashboard' | 'resources' | 'projects' | 'absences' | 'planner' | 'activities' | 'gpChecklist' | 'organogram' | 'techmove' | 'access' | 'settings';
+export type AppTab =
+  | "dashboard"
+  | "resources"
+  | "projects"
+  | "absences"
+  | "planner"
+  | "activities"
+  | "gpChecklist"
+  | "organogram"
+  | "techmove"
+  | "access"
+  | "settings";
 
 export type AppScreen =
-  | 'techboard.overview' | 'techboard.resources' | 'techboard.projects' | 'techboard.absences' | 'techboard.planner' | 'techboard.organogram'
-  | 'techlead.overview' | 'techlead.gpTrack' | 'techlead.teams' | 'techlead.indicators'
-  | 'techmove.projects' | 'techmove.scopeItems' | 'techmove.bdcq' | 'techmove.workshops' | 'techmove.dcd' | 'techmove.gaps' | 'techmove.configurations' | 'techmove.tests' | 'techmove.governance'
-  | 'techtask.overview' | 'techtask.board' | 'techtask.myWork'
-  | 'admin.overview' | 'admin.users' | 'admin.registrations' | 'admin.standards';
+  | "techboard.overview"
+  | "techboard.resources"
+  | "techboard.projects"
+  | "techboard.absences"
+  | "techboard.planner"
+  | "techboard.organogram"
+  | "techlead.overview"
+  | "techlead.gpTrack"
+  | "techlead.teams"
+  | "techlead.indicators"
+  | "techmove.projects"
+  | "techmove.scopeItems"
+  | "techmove.bdcq"
+  | "techmove.workshops"
+  | "techmove.dcd"
+  | "techmove.gaps"
+  | "techmove.configurations"
+  | "techmove.tests"
+  | "techmove.governance"
+  | "techtask.overview"
+  | "techtask.board"
+  | "techtask.myWork"
+  | "admin.overview"
+  | "admin.users"
+  | "admin.registrations"
+  | "admin.standards";
 
-export type AppProduct = 'techboard' | 'techlead' | 'techmove' | 'techtask' | 'admin';
-export type PermissionAction = 'view' | 'create' | 'modify';
-export type ModuleActionPermissions = Partial<Record<AppTab | AppScreen, Record<PermissionAction, boolean>>>;
+export type AppProduct =
+  | "techboard"
+  | "techlead"
+  | "techmove"
+  | "techtask"
+  | "admin";
+export type PermissionAction = "view" | "create" | "modify";
+export type ModuleActionPermissions = Partial<
+  Record<AppTab | AppScreen, Record<PermissionAction, boolean>>
+>;
 
-export type UserRole = 'admin' | 'manager' | 'technical_lead' | 'consultant' | 'viewer';
+export type UserRole =
+  | "admin"
+  | "manager"
+  | "technical_lead"
+  | "consultant"
+  | "viewer";
 
 export interface UserPermissions {
   dashboard: boolean;
@@ -265,7 +369,12 @@ export interface AppUser {
   teamFronts?: ResourceFront[];
 }
 
-export type ProjectMemberProfile = 'gp_internal' | 'internal_team' | 'key_user' | 'approver' | 'reader';
+export type ProjectMemberProfile =
+  | "gp_internal"
+  | "internal_team"
+  | "key_user"
+  | "approver"
+  | "reader";
 
 export interface ProjectCapabilities {
   viewProject: boolean;
@@ -292,15 +401,34 @@ export interface ProjectMembership {
   active: boolean;
   createdAt: string;
   updatedAt: string;
-  user?: Pick<AppUser, 'id' | 'name' | 'email' | 'active'>;
-  project?: Pick<Project, 'id' | 'name' | 'client' | 'status'>;
+  user?: Pick<AppUser, "id" | "name" | "email" | "active">;
+  project?: Pick<Project, "id" | "name" | "client" | "status">;
   capabilities?: ProjectCapabilities;
 }
 
-export type ApprovalEntityType = 'bdcq_answer' | 'dcd' | 'gap' | 'test_case' | 'activity' | 'workshop' | 'configuration' | 'risk' | 'issue' | 'cutover' | 'closure';
-export type ApprovalQuorum = 'any' | 'all' | 'minimum';
-export type ApprovalRoundStatus = 'pending' | 'approved' | 'rejected' | 'superseded';
-export type ApprovalDecisionValue = 'pending' | 'approved' | 'rejected' | 'waived';
+export type ApprovalEntityType =
+  | "bdcq_answer"
+  | "dcd"
+  | "gap"
+  | "test_case"
+  | "activity"
+  | "workshop"
+  | "configuration"
+  | "risk"
+  | "issue"
+  | "cutover"
+  | "closure";
+export type ApprovalQuorum = "any" | "all" | "minimum";
+export type ApprovalRoundStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "superseded";
+export type ApprovalDecisionValue =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "waived";
 
 export interface ProjectApprovalPolicy {
   id: string;
@@ -376,23 +504,107 @@ export interface ResourceEndDateAlert {
 }
 
 export const DEFAULT_PERMISSIONS: Record<UserRole, UserPermissions> = {
-  admin: { dashboard: true, resources: true, projects: true, absences: true, planner: true, activities: true, gpChecklist: true, organogram: true, techmove: true, access: true, settings: true },
-  manager: { dashboard: true, resources: true, projects: true, absences: true, planner: true, activities: true, gpChecklist: true, organogram: true, techmove: true, access: false, settings: true },
-  technical_lead: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: true, techmove: true, access: false, settings: false },
-  consultant: { dashboard: false, resources: true, projects: false, absences: true, planner: true, activities: true, gpChecklist: false, organogram: false, techmove: true, access: false, settings: false },
-  viewer: { dashboard: true, resources: false, projects: false, absences: false, planner: true, activities: false, gpChecklist: false, organogram: true, techmove: false, access: false, settings: false },
+  admin: {
+    dashboard: true,
+    resources: true,
+    projects: true,
+    absences: true,
+    planner: true,
+    activities: true,
+    gpChecklist: true,
+    organogram: true,
+    techmove: true,
+    access: true,
+    settings: true,
+  },
+  manager: {
+    dashboard: true,
+    resources: true,
+    projects: true,
+    absences: true,
+    planner: true,
+    activities: true,
+    gpChecklist: true,
+    organogram: true,
+    techmove: true,
+    access: false,
+    settings: true,
+  },
+  technical_lead: {
+    dashboard: false,
+    resources: true,
+    projects: false,
+    absences: true,
+    planner: true,
+    activities: true,
+    gpChecklist: false,
+    organogram: true,
+    techmove: true,
+    access: false,
+    settings: false,
+  },
+  consultant: {
+    dashboard: false,
+    resources: true,
+    projects: false,
+    absences: true,
+    planner: true,
+    activities: true,
+    gpChecklist: false,
+    organogram: false,
+    techmove: true,
+    access: false,
+    settings: false,
+  },
+  viewer: {
+    dashboard: true,
+    resources: false,
+    projects: false,
+    absences: false,
+    planner: true,
+    activities: false,
+    gpChecklist: false,
+    organogram: true,
+    techmove: false,
+    access: false,
+    settings: false,
+  },
 };
 
 // ===== Activities / Kanban =====
 
-export type ActivityStatus = 'A fazer' | 'Em andamento' | 'Bloqueada' | 'Em validação' | 'Concluída';
-export type ActivityPriority = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
-export type ActivityScope = 'project' | 'internal';
-export type ActivityStage = 'DCD' | 'BDCQ' | 'TESTE' | 'GERAL';
-export type ActivitySourceType = 'manual' | 'activity_template' | 'gp_checklist' | 'gp_fit_step' | 'techmove_question' | 'bdcq_question' | 'workflow_test' | 'workflow_configuration' | 'approval' | 'techmove_gap' | 'techmove_configuration' | 'allocation_missing_front' | 'allocation_overallocated' | 'allocation_end_date' | 'allocation_unallocated' | 'techlead';
+export type ActivityStatus =
+  | "A fazer"
+  | "Em andamento"
+  | "Bloqueada"
+  | "Em validação"
+  | "Concluída";
+export type ActivityPriority = "Baixa" | "Média" | "Alta" | "Crítica";
+export type ActivityScope = "project" | "internal";
+export type ActivityStage = "DCD" | "BDCQ" | "TESTE" | "GERAL";
+export type ActivitySourceType =
+  | "manual"
+  | "activity_template"
+  | "gp_checklist"
+  | "gp_fit_step"
+  | "techmove_question"
+  | "bdcq_question"
+  | "workflow_test"
+  | "workflow_configuration"
+  | "approval"
+  | "techmove_gap"
+  | "techmove_configuration"
+  | "allocation_missing_front"
+  | "allocation_overallocated"
+  | "allocation_end_date"
+  | "allocation_unallocated"
+  | "techlead";
 
-export type ActivityTemplateRecurrence = 'none' | 'weekly' | 'monthly';
-export type ActivityTemplateOwnerRole = 'manager' | 'technical_lead' | 'consultant';
+export type ActivityTemplateRecurrence = "none" | "weekly" | "monthly";
+export type ActivityTemplateOwnerRole =
+  | "manager"
+  | "technical_lead"
+  | "consultant";
 
 export interface ActivityTemplateProject {
   projectId: string;
@@ -409,7 +621,7 @@ export interface ActivityTemplate {
   monthDay: number;
   dueOffsetDays: number;
   ownerRole: ActivityTemplateOwnerRole;
-  gpPhase: 'Discover' | 'Prepare' | 'Explore' | 'Realize' | 'Deploy' | 'Run';
+  gpPhase: "Discover" | "Prepare" | "Explore" | "Realize" | "Deploy" | "Run";
   required: boolean;
   appliesToAllProjects: boolean;
   active: boolean;
@@ -483,7 +695,7 @@ export interface Activity {
   creatorUserId: string;
   creatorName: string;
   participantUserIds: string[];
-  participants: Pick<AppUser, 'id' | 'name' | 'email'>[];
+  participants: Pick<AppUser, "id" | "name" | "email">[];
   dueDate: string;
   sourceType: ActivitySourceType;
   sourceKey: string;
@@ -510,9 +722,13 @@ export interface ActivityNotification {
   createdAt: string;
 }
 
-export type TechMovePhase = 'prepare' | 'explore';
-export type TechMoveQuestionLevel = 'L2 Cliente' | 'L3 Consultor';
-export type TechMoveQuestionStatus = 'Pendente' | 'Respondido' | 'Validado' | 'Gap';
+export type TechMovePhase = "prepare" | "explore";
+export type TechMoveQuestionLevel = "L2 Cliente" | "L3 Consultor";
+export type TechMoveQuestionStatus =
+  | "Pendente"
+  | "Respondido"
+  | "Validado"
+  | "Gap";
 
 export interface TechMoveScopeItem {
   id: string;
@@ -542,8 +758,8 @@ export interface TechMoveQuestion {
   category: string;
   text: string;
   objective?: string;
-  answerType?: 'Texto' | 'Sim/Nao' | 'Lista' | 'Data' | 'Numero' | 'Anexo';
-  ownerRole?: 'Cliente' | 'Consultor' | 'Arquiteto' | 'PM' | 'Diretor Delivery';
+  answerType?: "Texto" | "Sim/Nao" | "Lista" | "Data" | "Numero" | "Anexo";
+  ownerRole?: "Cliente" | "Consultor" | "Arquiteto" | "PM" | "Diretor Delivery";
   required?: boolean;
   gapTrigger?: string;
   answer: string;
@@ -578,8 +794,8 @@ export interface TechMoveGap {
   title: string;
   description: string;
   impact: string;
-  severity: 'Baixo' | 'Medio' | 'Alto' | 'Critico';
-  status: 'Aberto' | 'Em analise' | 'Aprovado' | 'Rejeitado' | 'Resolvido';
+  severity: "Baixo" | "Medio" | "Alto" | "Critico";
+  status: "Aberto" | "Em analise" | "Aprovado" | "Rejeitado" | "Resolvido";
   resolutionType?: string;
   resolution?: string;
   effort?: string;
@@ -595,8 +811,8 @@ export interface TechMoveConfiguration {
   description: string;
   path: string;
   owner: string;
-  priority: 'Baixa' | 'Normal' | 'Alta';
-  status: 'Pendente' | 'Em andamento' | 'Concluido' | 'Bloqueado';
+  priority: "Baixa" | "Normal" | "Alta";
+  status: "Pendente" | "Em andamento" | "Concluido" | "Bloqueado";
 }
 
 export interface TechMoveData {
@@ -625,5 +841,10 @@ export interface DashboardStats {
   unallocatedResources: Array<string | { id: string; name: string }>; // recursos sem alocação na semana
   projectsMissingFronts: ProjectMissingFrontsAlert[];
   resourceEndDateAlerts: ResourceEndDateAlert[];
-  upcomingBirthdays: { resourceId: string; resourceName: string; date: string; daysUntil: number }[];
+  upcomingBirthdays: {
+    resourceId: string;
+    resourceName: string;
+    date: string;
+    daysUntil: number;
+  }[];
 }
