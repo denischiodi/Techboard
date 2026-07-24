@@ -15,6 +15,7 @@ import { Plus, Trash2, Search, Settings2, BrainCircuit, RotateCcw, Pencil, Spark
 import { useAuth } from "@/_core/hooks/useAuth";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog";
 
 export default function ConfigurationsPage() {
   const { projectId: PROJECT_ID } = useWorkflowProject();
@@ -28,6 +29,7 @@ export default function ConfigurationsPage() {
   const [bulkResponsible, setBulkResponsible] = useState("");
   const [editingPrompt, setEditingPrompt] = useState<any>(null);
   const [sourceDcdId, setSourceDcdId] = useState("");
+  const [configurationToDelete, setConfigurationToDelete] = useState<any>(null);
 
   const { data: configs = [], refetch } = trpc.workflow.configurations.list.useQuery({ projectId: PROJECT_ID });
   const { data: resources = [] } = trpc.resources.list.useQuery();
@@ -38,7 +40,7 @@ export default function ConfigurationsPage() {
   const { data: prompts = [], refetch: refetchPrompts } = trpc.workflow.prompts.list.useQuery();
   const { data: llmModels = [] } = trpc.workflow.prompts.models.useQuery(undefined, { enabled: isAdmin });
   const createMut = trpc.workflow.configurations.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("Configuração criada"); } });
-  const deleteMut = trpc.workflow.configurations.delete.useMutation({ onSuccess: () => { refetch(); toast.success("Removida"); } });
+  const deleteMut = trpc.workflow.configurations.delete.useMutation({ onSuccess: () => { refetch(); setConfigurationToDelete(null); toast.success("Configuração removida"); }, onError: error => toast.error(error.message) });
   const updateMut = trpc.workflow.configurations.update.useMutation({ onSuccess: () => { refetch(); } });
   const bulkUpdate = trpc.workflow.configurations.bulkUpdate.useMutation({ onSuccess: data => { refetch(); setSelectedIds([]); toast.success(`${data.updated} configurações atualizadas`); }, onError: error => toast.error(error.message) });
   const updatePrompt = trpc.workflow.prompts.update.useMutation({ onSuccess: () => { refetchPrompts(); setEditingPrompt(null); toast.success("Prompt atualizado"); }, onError: error => toast.error(error.message) });
@@ -142,7 +144,7 @@ export default function ConfigurationsPage() {
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell><Button variant="ghost" size="icon" onClick={() => deleteMut.mutate({ id: c.id })}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                  <TableCell><Button variant="ghost" size="icon" onClick={() => setConfigurationToDelete(c)}><Trash2 className="h-4 w-4" /></Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -198,6 +200,7 @@ export default function ConfigurationsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DeleteConfirmationDialog open={Boolean(configurationToDelete)} onOpenChange={open => !open && setConfigurationToDelete(null)} title="Excluir esta configuração?" description={`A configuração “${configurationToDelete?.description || ""}” será removida do checklist e deixará de aparecer no trabalho relacionado. Esta ação não pode ser desfeita.`} pending={deleteMut.isPending} onConfirm={() => configurationToDelete && deleteMut.mutate({ id: configurationToDelete.id })} />
     </div>
   );
 }

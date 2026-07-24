@@ -26,6 +26,8 @@ function fromRow(row: any, projects: ActivityTemplateProject[]): ActivityTemplat
     monthDay: Number(row.monthDay ?? 1),
     dueOffsetDays: Number(row.dueOffsetDays ?? 0),
     ownerRole: row.ownerRole,
+    gpPhase: row.gpPhase || "Prepare",
+    required: row.required === undefined ? true : Boolean(row.required),
     appliesToAllProjects: Boolean(row.appliesToAllProjects),
     active: Boolean(row.active),
     projects,
@@ -39,7 +41,7 @@ export async function listActivityTemplates() {
   const db = getPgPool();
   if (!db) return [...memoryTemplates.values()].sort((a, b) => a.title.localeCompare(b.title, "pt-BR"));
   const [templates, projects] = await Promise.all([
-    db.query('SELECT * FROM "activity_templates" ORDER BY "title"'),
+    db.query('SELECT * FROM "activity_templates" WHERE "archivedAt" IS NULL ORDER BY "title"'),
     db.query('SELECT "templateId","projectId","assigneeUserId" FROM "activity_template_projects"'),
   ]);
   return templates.rows.map(row => fromRow(row, projects.rows.filter(item => item.templateId === row.id)));
@@ -75,8 +77,8 @@ export async function createActivityTemplate(input: ActivityTemplateInput, creat
   if (!db) memoryTemplates.set(created.id, created);
   else {
     await db.query(
-      'INSERT INTO "activity_templates" ("id","title","description","priority","recurrence","weekday","monthDay","dueOffsetDays","ownerRole","appliesToAllProjects","active","createdByUserId") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-      [created.id, created.title, created.description, created.priority, created.recurrence, created.weekday, created.monthDay, created.dueOffsetDays, created.ownerRole, created.appliesToAllProjects, created.active, created.createdByUserId],
+      'INSERT INTO "activity_templates" ("id","title","description","priority","recurrence","weekday","monthDay","dueOffsetDays","ownerRole","gpPhase","required","appliesToAllProjects","active","createdByUserId") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+      [created.id, created.title, created.description, created.priority, created.recurrence, created.weekday, created.monthDay, created.dueOffsetDays, created.ownerRole, created.gpPhase, created.required, created.appliesToAllProjects, created.active, created.createdByUserId],
     );
     await replaceProjects(created.id, created.projects);
   }
@@ -91,8 +93,8 @@ export async function updateActivityTemplate(id: string, input: ActivityTemplate
   if (!db) memoryTemplates.set(id, updated);
   else {
     await db.query(
-      'UPDATE "activity_templates" SET "title"=$2,"description"=$3,"priority"=$4,"recurrence"=$5,"weekday"=$6,"monthDay"=$7,"dueOffsetDays"=$8,"ownerRole"=$9,"appliesToAllProjects"=$10,"active"=$11,"updatedAt"=now() WHERE "id"=$1',
-      [id, updated.title, updated.description, updated.priority, updated.recurrence, updated.weekday, updated.monthDay, updated.dueOffsetDays, updated.ownerRole, updated.appliesToAllProjects, updated.active],
+      'UPDATE "activity_templates" SET "title"=$2,"description"=$3,"priority"=$4,"recurrence"=$5,"weekday"=$6,"monthDay"=$7,"dueOffsetDays"=$8,"ownerRole"=$9,"gpPhase"=$10,"required"=$11,"appliesToAllProjects"=$12,"active"=$13,"updatedAt"=now() WHERE "id"=$1',
+      [id, updated.title, updated.description, updated.priority, updated.recurrence, updated.weekday, updated.monthDay, updated.dueOffsetDays, updated.ownerRole, updated.gpPhase, updated.required, updated.appliesToAllProjects, updated.active],
     );
     await replaceProjects(id, updated.projects);
   }

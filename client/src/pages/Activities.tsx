@@ -1,5 +1,5 @@
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -15,14 +15,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
-  GripVertical, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users,
+  AlertTriangle, ArrowDown, ArrowUp, Bookmark, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
+  GripVertical, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users, X,
 } from "lucide-react";
 import type { Activity, ActivityPriority, ActivityScope, ActivityStage, ActivityStatus } from "../../../shared/types";
 
 const STATUSES: ActivityStatus[] = ["A fazer", "Em andamento", "Bloqueada", "Em validação", "Concluída"];
 const PRIORITIES: ActivityPriority[] = ["Baixa", "Média", "Alta", "Crítica"];
 const STAGES: ActivityStage[] = ["DCD", "BDCQ", "TESTE", "GERAL"];
+const SAVED_VIEWS_KEY = "techtask-saved-views";
+
+type SavedActivityView = {
+  id: string;
+  name: string;
+  view: "mine" | "projects" | "internal";
+  projectFilter: string;
+  priorityFilter: string;
+  assigneeFilter: string;
+  statusFilter: string;
+  dueFilter: "all" | "overdue" | "not_overdue" | "no_due";
+};
 
 const statusStyles: Record<ActivityStatus, string> = {
   "A fazer": "border-slate-300 bg-slate-50/60",
@@ -114,25 +126,96 @@ function dateForExcel(value: string) {
 
 export default function Activities() {
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: appUser } = trpc.access.getByEmail.useQuery({ email: user?.email || "" }, { enabled: Boolean(user?.email) });
   const activitiesQuery = trpc.activities.list.useQuery(undefined, { refetchOnWindowFocus: false });
   const { data: projects = [] } = trpc.projects.list.useQuery();
-  const [view, setView] = useState<"mine" | "projects" | "internal">("mine");
-  const [search, setSearch] = useState("");
-  const [projectFilter, setProjectFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [assigneeFilter, setAssigneeFilter] = useState("all");
-  const [dueFilter, setDueFilter] = useState<"all" | "overdue" | "not_overdue" | "no_due">("all");
+  const initialParams = useMemo(() => new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search), []);
+  const routeDefaultView = location.startsWith("/techtask/my-work") ? "mine" : "projects";
+  const [view, setView] = useState<"mine" | "projects" | "internal">(() => {
+    const value = initialParams.get("view");
+    return value === "mine" || value === "internal" || value === "projects" ? value : routeDefaultView;
+  });
+  const [search, setSearch] = useState(() => initialParams.get("q") || "");
+  const [projectFilter, setProjectFilter] = useState(() => initialParams.get("projectId") || "all");
+  const [priorityFilter, setPriorityFilter] = useState(() => initialParams.get("priority") || "all");
+  const [assigneeFilter, setAssigneeFilter] = useState(() => initialParams.get("assignee") || "all");
+  const [statusFilter, setStatusFilter] = useState(() => initialParams.get("status") || "all");
+  const [dueFilter, setDueFilter] = useState<"all" | "overdue" | "not_overdue" | "no_due">(() => {
+    const value = initialParams.get("due");
+    return value === "overdue" || value === "not_overdue" || value === "no_due" ? value : "all";
+  });
   const excelInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("activityId"));
   const [createOpen, setCreateOpen] = useState(false);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [savedViews, setSavedViews] = useState<SavedActivityView[]>(() => {
+    try { return JSON.parse(localStorage.getItem(SAVED_VIEWS_KEY) || "[]"); } catch { return []; }
+  });
   const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", stage: "GERAL" as ActivityStage, title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", dueDate: "" });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (view !== routeDefaultView) params.set("view", view);
+    if (search) params.set("q", search);
+    if (projectFilter !== "all") params.set("projectId", projectFilter);
+    if (priorityFilter !== "all") params.set("priority", priorityFilter);
+    if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (dueFilter !== "all") params.set("due", dueFilter);
+    if (selectedId) params.set("activityId", selectedId);
+    const path = location.split("?")[0];
+    const next = params.size ? `${path}?${params.toString()}` : path;
+    if (next !== location) window.history.replaceState(null, "", next);
+  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, selectedId, routeDefaultView, location]);
+
+  useEffect(() => {
+    localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
+  }, [savedViews]);
+
+  const saveCurrentView = () => {
+    const name = viewName.trim();
+    if (!name) return;
+    setSavedViews(current => [...current.filter(item => item.name.toLocaleLowerCase("pt-BR") !== name.toLocaleLowerCase("pt-BR")), {
+      id: crypto.randomUUID(), name, view, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter,
+    }]);
+    setViewName("");
+    setSaveViewOpen(false);
+    toast.success("Visão salva");
+  };
+
+  const applySavedView = (saved: SavedActivityView) => {
+    setView(saved.view);
+    setProjectFilter(saved.projectFilter);
+    setPriorityFilter(saved.priorityFilter);
+    setAssigneeFilter(saved.assigneeFilter);
+    setStatusFilter(saved.statusFilter);
+    setDueFilter(saved.dueFilter);
+  };
+
   const eligibleUsers = trpc.activities.eligibleUsers.useQuery({ scope: createForm.scope, projectId: createForm.projectId }, { enabled: createOpen && (createForm.scope === "internal" || Boolean(createForm.projectId)) });
-  const updateActivity = trpc.activities.update.useMutation({ onSuccess: async () => { await utils.activities.list.invalidate(); }, onError: error => toast.error(error.message) });
+  const undoActivityUpdate = trpc.activities.undoLastUpdate.useMutation({
+    onSuccess: async () => {
+      await utils.activities.list.invalidate();
+      toast.success("Alteração desfeita");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const updateActivity = trpc.activities.update.useMutation({
+    onSuccess: async (_data, variables) => {
+      await utils.activities.list.invalidate();
+      toast.success("Alteração salva", {
+        action: {
+          label: "Desfazer",
+          onClick: () => undoActivityUpdate.mutate({ id: variables.id }),
+        },
+      });
+    },
+    onError: error => toast.error(error.message),
+  });
   const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", stage: "GERAL", title: "", description: "", priority: "Média", assigneeUserId: "", dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
   const importExcel = trpc.activities.importExcel.useMutation({
     onSuccess: async result => {
@@ -152,6 +235,7 @@ export default function Activities() {
     if (view === "internal" && activity.scope !== "internal") return false;
     if (projectFilter !== "all" && activity.projectId !== projectFilter) return false;
     if (priorityFilter !== "all" && activity.priority !== priorityFilter) return false;
+    if (statusFilter !== "all" && activity.status !== statusFilter) return false;
     if (assigneeFilter === "none" && activity.assigneeUserId) return false;
     if (assigneeFilter !== "all" && assigneeFilter !== "none" && activity.assigneeUserId !== assigneeFilter) return false;
     const today = new Date().toISOString().slice(0, 10);
@@ -166,7 +250,7 @@ export default function Activities() {
       ...activity.participants.flatMap(participant => [participant.name, participant.email]),
     ];
     return !term || searchable.some(value => normalizeSearch(value || "").includes(term));
-  }), [activities, appUser, view, projectFilter, priorityFilter, assigneeFilter, dueFilter, search]);
+  }), [activities, appUser, view, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, search]);
 
   const assignees = useMemo(() => [...new Map(activities.filter(activity => activity.assigneeUserId).map(activity => [activity.assigneeUserId, activity.assigneeName || "Usuário sem nome"])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [activities]);
 
@@ -253,7 +337,7 @@ export default function Activities() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div><h1 className="text-2xl font-bold">Atividades</h1><p className="text-sm text-muted-foreground">Tarefas manuais e pendências integradas dos projetos.</p></div>
+        <div><h1 className="text-2xl font-bold">{view === "mine" ? "Meu trabalho" : "Atividades"}</h1><p className="text-sm text-muted-foreground">{view === "mine" ? "Suas prioridades, prazos e bloqueios em um único lugar." : "Tarefas manuais e pendências integradas dos projetos."}</p></div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => void handleExportExcel()}><Download className="mr-2 h-4 w-4" />Baixar Excel</Button>
           <Button variant="outline" disabled={importExcel.isPending} onClick={() => excelInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" />Importar Excel</Button>
@@ -267,7 +351,10 @@ export default function Activities() {
         <Select value={projectFilter} onValueChange={setProjectFilter}><SelectTrigger className="w-full lg:w-52"><SelectValue placeholder="Projeto" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os projetos</SelectItem>{[...new Map(activities.filter(item => item.projectId).map(item => [item.projectId, item.projectName])).entries()].map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select>
         <Select value={assigneeFilter} onValueChange={setAssigneeFilter}><SelectTrigger className="w-full lg:w-52"><SelectValue placeholder="Responsável" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os responsáveis</SelectItem><SelectItem value="none">Sem responsável</SelectItem>{assignees.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent></Select>
         <Select value={dueFilter} onValueChange={value => setDueFilter(value as typeof dueFilter)}><SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Prazo" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os prazos</SelectItem><SelectItem value="overdue">Atrasadas</SelectItem><SelectItem value="not_overdue">Não atrasadas</SelectItem><SelectItem value="no_due">Sem prazo</SelectItem></SelectContent></Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os status</SelectItem>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}><SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Prioridade" /></SelectTrigger><SelectContent><SelectItem value="all">Prioridades</SelectItem>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select>
+        <Button variant="outline" size="sm" onClick={() => setSaveViewOpen(true)}><Bookmark className="mr-2 h-4 w-4" />Salvar visão</Button>
+        {savedViews.length > 0 && <div className="flex w-full flex-wrap gap-2 border-t pt-3">{savedViews.map(saved => <div key={saved.id} className="flex items-center rounded-full border bg-background"><button className="px-3 py-1 text-xs font-medium hover:text-primary" onClick={() => applySavedView(saved)}>{saved.name}</button><button className="border-l px-2 py-1 text-muted-foreground hover:text-destructive" title="Remover visão" onClick={() => setSavedViews(current => current.filter(item => item.id !== saved.id))}><X className="h-3 w-3" /></button></div>)}</div>}
       </CardContent></Card>
       {activitiesQuery.isLoading ? <div className="p-12 text-center text-muted-foreground">Sincronizando atividades...</div> :
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}><div className="flex gap-3 overflow-x-auto pb-4">{STATUSES.map(status => <KanbanColumn key={status} status={status} activities={filtered.filter(activity => activity.status === status)} onOpen={activity => setSelectedId(activity.id)} />)}</div></DndContext>}
@@ -281,6 +368,8 @@ export default function Activities() {
         <div className="grid gap-3 sm:grid-cols-2"><div><Label>Responsável</Label><Select value={createForm.assigneeUserId || "none"} onValueChange={value => setCreateForm(form => ({ ...form, assigneeUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligibleUsers.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prioridade</Label><Select value={createForm.priority} onValueChange={(priority: ActivityPriority) => setCreateForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div></div>
         <div><Label>Prazo</Label><Input type="date" value={createForm.dueDate} onChange={event => setCreateForm(form => ({ ...form, dueDate: event.target.value }))} /></div>
       </div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button disabled={!createForm.title.trim() || (createForm.scope === "project" && !createForm.projectId) || createActivity.isPending} onClick={() => createActivity.mutate({ ...createForm, participantUserIds: [] })}>Criar</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Salvar visão</DialogTitle></DialogHeader><div><Label htmlFor="saved-view-name">Nome da visão</Label><Input id="saved-view-name" value={viewName} onChange={event => setViewName(event.target.value)} placeholder="Ex.: Críticas atrasadas" onKeyDown={event => { if (event.key === "Enter") saveCurrentView(); }} /></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)}>Cancelar</Button><Button disabled={!viewName.trim()} onClick={saveCurrentView}>Salvar</Button></DialogFooter></DialogContent></Dialog>
 
       {selected && <ActivityDetails key={`${selected.id}:${selected.updatedAt}`} activity={selected} appUserId={appUser?.id || ""} isAdmin={appUser?.role === "admin"} open={Boolean(selectedId)} onOpenChange={open => !open && setSelectedId(null)} onNavigate={setLocation} />}
     </div>
@@ -296,7 +385,14 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
   const eligible = trpc.activities.eligibleUsers.useQuery({ scope: activity.scope, projectId: activity.projectId });
   const invalidate = async () => { await utils.activities.list.invalidate(); };
   const mutationOptions = { onSuccess: invalidate, onError: (error: { message: string }) => toast.error(error.message) };
-  const update = trpc.activities.update.useMutation(mutationOptions);
+  const undoUpdate = trpc.activities.undoLastUpdate.useMutation({ onSuccess: async () => { await invalidate(); toast.success("Alteração desfeita"); }, onError: (error: { message: string }) => toast.error(error.message) });
+  const update = trpc.activities.update.useMutation({
+    onSuccess: async () => {
+      await invalidate();
+      toast.success("Alteração salva", { action: { label: "Desfazer", onClick: () => undoUpdate.mutate({ id: activity.id }) } });
+    },
+    onError: (error: { message: string }) => toast.error(error.message),
+  });
   const archive = trpc.activities.archive.useMutation({ onSuccess: async () => { await invalidate(); onOpenChange(false); toast.success("Card excluído"); }, onError: (error: { message: string }) => toast.error(error.message) });
   const join = trpc.activities.join.useMutation(mutationOptions);
   const checklistCreate = trpc.activities.checklistCreate.useMutation({ ...mutationOptions, onSuccess: async () => { setCheckForm({ description: "", assigneeUserId: "", dueDate: "", required: true }); await invalidate(); } });

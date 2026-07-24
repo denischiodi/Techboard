@@ -40,8 +40,9 @@ async function listRows(
   const pool = getPgPool();
   if (!pool) return [];
   const hasLimit = typeof pagination?.limit === "number";
+  const supportsArchive = new Set(["bdcq_questions", "bdcq_answers", "workshops", "dcd_documents", "gaps", "configurations", "workflow_test_cases"]).has(table);
   const result = await pool.query(
-    `SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(column)} = $1 ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`,
+    `SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(column)} = $1${supportsArchive ? ' AND "archivedAt" IS NULL' : ""} ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`,
     hasLimit ? [value, pagination!.limit, pagination?.offset || 0] : [value]
   );
   return result.rows;
@@ -298,6 +299,18 @@ export async function updateBdcqQuestion(
 export async function listProjectKeyUsers(projectId: string) {
   return listRows("workflow_project_key_users", "projectId", projectId) as Promise<Array<typeof workflowProjectKeyUsers.$inferSelect>>;
 }
+export async function syncProjectKeyUsersFromAccess(projectId: string, memberships: Array<{ profile: string; active: boolean; jobTitle?: string; user?: { name: string; email: string; active: boolean } }>) {
+  const pool = getPgPool();
+  if (!pool) return;
+  for (const membership of memberships.filter(item => item.profile === "key_user" && item.active && item.user?.active && item.user.email)) {
+    await pool.query(
+      `INSERT INTO "workflow_project_key_users" ("id","projectId","name","email","role","active")
+       VALUES ($1,$2,$3,$4,$5,1)
+       ON CONFLICT ("projectId","email") DO UPDATE SET "name"=EXCLUDED."name","role"=EXCLUDED."role","active"=1,"updatedAt"=now()`,
+      [`pku_${Buffer.from(`${projectId}:${membership.user!.email.toLowerCase()}`).toString("hex").slice(0, 20)}`, projectId, membership.user!.name, membership.user!.email.toLowerCase(), membership.jobTitle || ""]
+    );
+  }
+}
 export async function createProjectKeyUser(data: typeof workflowProjectKeyUsers.$inferInsert) {
   return insertRow("workflow_project_key_users", data);
 }
@@ -326,7 +339,7 @@ export async function listBdcqTemplateLibrary() {
   const pool = getPgPool();
   if (!pool) return [];
   const result = await pool.query(
-    `SELECT * FROM "workflow_bdcq_templates" ORDER BY "category" ASC, "question" ASC`
+    `SELECT * FROM "workflow_bdcq_templates" WHERE "archivedAt" IS NULL ORDER BY "category" ASC, "question" ASC`
   );
   return result.rows as Array<typeof bdcqTemplateLibrary.$inferSelect>;
 }
@@ -541,7 +554,7 @@ export async function listWorkshopTemplates() {
   const pool = getPgPool();
   if (!pool) return [];
   const result = await pool.query(
-    `SELECT * FROM "workflow_workshop_templates" ORDER BY "title" ASC`
+    `SELECT * FROM "workflow_workshop_templates" WHERE "archivedAt" IS NULL ORDER BY "title" ASC`
   );
   return result.rows as Array<typeof workshopTemplateLibrary.$inferSelect>;
 }
@@ -765,7 +778,7 @@ export async function listConfigurationTemplates() {
   const pool = getPgPool();
   if (!pool) return [] as Array<typeof configurationTemplateLibrary.$inferSelect>;
   const result = await pool.query(
-    'SELECT * FROM "workflow_configuration_templates" ORDER BY "category", "description"'
+    'SELECT * FROM "workflow_configuration_templates" WHERE "archivedAt" IS NULL ORDER BY "category", "description"'
   );
   return result.rows as Array<typeof configurationTemplateLibrary.$inferSelect>;
 }

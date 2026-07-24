@@ -14,6 +14,8 @@ const memoryRounds: ApprovalRound[] = [];
 
 const entityTables: Record<Exclude<ApprovalEntityType, "activity">, string> = {
   bdcq_answer: "bdcq_answers", dcd: "dcd_documents", gap: "gaps", test_case: "workflow_test_cases",
+  workshop: "delivery_items", configuration: "delivery_items", risk: "delivery_items",
+  issue: "delivery_items", cutover: "delivery_items", closure: "delivery_items",
 };
 
 function id(prefix: string) {
@@ -111,11 +113,15 @@ function sourceUrl(entityType: ApprovalEntityType, projectId: string, snapshot: 
   if (entityType === "dcd") return `/techmove/dcd?projectId=${encodeURIComponent(projectId)}`;
   if (entityType === "gap") return `/techmove/gaps?projectId=${encodeURIComponent(projectId)}`;
   if (entityType === "test_case") return `/techmove/tests?projectId=${encodeURIComponent(projectId)}`;
+  if (entityType === "risk" || entityType === "issue") return `/techmove/raid?projectId=${encodeURIComponent(projectId)}`;
+  if (["cutover", "closure"].includes(entityType)) return `/techmove/trail?projectId=${encodeURIComponent(projectId)}&stage=${entityType}`;
+  if (entityType === "configuration") return `/techmove/configurations?projectId=${encodeURIComponent(projectId)}`;
+  if (entityType === "workshop") return `/techmove/workshops?projectId=${encodeURIComponent(projectId)}`;
   return "/techtask/board";
 }
 
 function entityLabel(entityType: ApprovalEntityType) {
-  return ({ bdcq_answer: "resposta BDCQ", dcd: "DCD", gap: "gap", test_case: "teste", activity: "atividade" } as const)[entityType];
+  return ({ bdcq_answer: "resposta BDCQ", dcd: "DCD", gap: "gap", test_case: "teste", activity: "atividade", workshop: "workshop", configuration: "configuração", risk: "risco", issue: "issue", cutover: "cutover", closure: "encerramento" } as const)[entityType];
 }
 
 async function findExecutionActivity(entityType: ApprovalEntityType, entityId: string, snapshot: Record<string, unknown>) {

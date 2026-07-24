@@ -112,6 +112,24 @@ describe("kanban de atividades", () => {
     expect(completed.status).toBe("Concluída");
   });
 
+  it("desfaz a última alteração quando o item não sofreu mudança concorrente", async () => {
+    const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    const activity = await caller.activities.create({
+      scope: "project", projectId: "p1", title: "Revisar desenho", description: "", priority: "Média",
+      assigneeUserId: "u3", participantUserIds: [], dueDate: "",
+    });
+    const changed = await caller.activities.update({
+      id: activity.id,
+      expectedUpdatedAt: activity.updatedAt,
+      data: { status: "Em andamento", priority: "Alta" },
+    });
+    expect(changed).toMatchObject({ status: "Em andamento", priority: "Alta" });
+
+    const restored = await caller.activities.undoLastUpdate({ id: activity.id });
+    expect(restored).toMatchObject({ status: "A fazer", priority: "Média" });
+    expect(restored?.history[0]).toMatchObject({ action: "UPDATE_UNDONE" });
+  });
+
   it("dá ao líder técnico visão de tarefas de outros projetos sem edição automática", async () => {
     const admin = appRouter.createCaller(context("defechi@gmail.com"));
     const task = await admin.activities.create({

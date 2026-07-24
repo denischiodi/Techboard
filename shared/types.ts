@@ -10,6 +10,66 @@ export type AbsenceType = string;
 export type AllocationType = string;
 export type AllocationStatus = string;
 
+// ===== Unified work and process contracts =====
+
+export type UnifiedWorkStatus =
+  | 'not_started'
+  | 'ready'
+  | 'in_progress'
+  | 'waiting_validation'
+  | 'approved'
+  | 'blocked'
+  | 'completed';
+
+export type UnifiedWorkPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface UnifiedWorkEvidence {
+  id: string;
+  label: string;
+  url: string;
+  createdAt: string;
+}
+
+export interface UnifiedWorkItem {
+  id: string;
+  source: string;
+  sourceId: string;
+  projectId: string;
+  projectName: string;
+  stage: string;
+  title: string;
+  description: string;
+  status: UnifiedWorkStatus;
+  priority: UnifiedWorkPriority;
+  assigneeUserId: string;
+  participantUserIds: string[];
+  dueDate: string;
+  dependencyIds: string[];
+  evidence: UnifiedWorkEvidence[];
+  sourceUrl: string;
+  updatedAt: string;
+}
+
+export interface ProcessTransition {
+  from: UnifiedWorkStatus;
+  to: UnifiedWorkStatus;
+  allowed: boolean;
+  missingRequirements: string[];
+  blockingReason: string;
+}
+
+export interface ProjectHealthSummary {
+  projectId: string;
+  projectName: string;
+  health: 'healthy' | 'attention' | 'critical';
+  nextAction: string;
+  nextActionUrl: string;
+  riskCount: number;
+  blockerCount: number;
+  pendingApprovalCount: number;
+  updatedAt: string;
+}
+
 // Lookup item for configurable lists
 export interface LookupItem {
   id: string;
@@ -237,7 +297,7 @@ export interface ProjectMembership {
   capabilities?: ProjectCapabilities;
 }
 
-export type ApprovalEntityType = 'bdcq_answer' | 'dcd' | 'gap' | 'test_case' | 'activity';
+export type ApprovalEntityType = 'bdcq_answer' | 'dcd' | 'gap' | 'test_case' | 'activity' | 'workshop' | 'configuration' | 'risk' | 'issue' | 'cutover' | 'closure';
 export type ApprovalQuorum = 'any' | 'all' | 'minimum';
 export type ApprovalRoundStatus = 'pending' | 'approved' | 'rejected' | 'superseded';
 export type ApprovalDecisionValue = 'pending' | 'approved' | 'rejected' | 'waived';
@@ -349,6 +409,8 @@ export interface ActivityTemplate {
   monthDay: number;
   dueOffsetDays: number;
   ownerRole: ActivityTemplateOwnerRole;
+  gpPhase: 'Discover' | 'Prepare' | 'Explore' | 'Realize' | 'Deploy' | 'Run';
+  required: boolean;
   appliesToAllProjects: boolean;
   active: boolean;
   projects: ActivityTemplateProject[];

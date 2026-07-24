@@ -16,6 +16,7 @@ import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSe
 import { CSS } from "@dnd-kit/utilities";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog";
 
 const GAP_COLUMNS = [
   { status: "Aberto", label: "Identificado", color: "border-slate-300" },
@@ -60,6 +61,7 @@ export default function GapsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkResponsible, setBulkResponsible] = useState("");
+  const [gapToDelete, setGapToDelete] = useState<any>(null);
   const [form, setForm] = useState<{
     description: string;
     module: string;
@@ -71,7 +73,7 @@ export default function GapsPage() {
   const { data: dcds = [] } = trpc.workflow.dcd.list.useQuery({ projectId: PROJECT_ID });
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const createMut = trpc.workflow.gaps.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("Gap criado"); } });
-  const deleteMut = trpc.workflow.gaps.delete.useMutation({ onSuccess: () => { refetch(); toast.success("Removido"); } });
+  const deleteMut = trpc.workflow.gaps.delete.useMutation({ onSuccess: () => { refetch(); setGapToDelete(null); toast.success("Gap removido"); }, onError: error => toast.error(error.message) });
   const updateMut = trpc.workflow.gaps.update.useMutation({ onSuccess: () => { refetch(); toast.success("Gap atualizado"); }, onError: error => toast.error(error.message || "Erro ao atualizar gap") });
   const bulkUpdate = trpc.workflow.gaps.bulkUpdate.useMutation({ onSuccess: data => { refetch(); setSelectedIds([]); toast.success(`${data.updated} gaps atualizados`); }, onError: error => toast.error(error.message) });
   const extractMut = trpc.workflow.gaps.extractFromDcd.useMutation({
@@ -134,7 +136,7 @@ export default function GapsPage() {
       {view === "kanban" ? (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <div className="grid gap-4 overflow-x-auto md:grid-cols-2 xl:grid-cols-4">
-            {GAP_COLUMNS.map(column => <GapKanbanColumn key={column.status} column={column} gaps={filtered.filter((gap: any) => (gap.status || "Aberto") === column.status)} onDelete={id => deleteMut.mutate({ id })} />)}
+            {GAP_COLUMNS.map(column => <GapKanbanColumn key={column.status} column={column} gaps={filtered.filter((gap: any) => (gap.status || "Aberto") === column.status)} onDelete={id => setGapToDelete(gaps.find((gap: any) => gap.id === id))} />)}
           </div>
         </DndContext>
       ) : <div className="space-y-3">{selectedIds.length > 0 && <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/30 p-3"><Badge>{selectedIds.length} selecionados</Badge><div><Label className="text-xs">Novo status</Label><Select value={bulkStatus || "keep"} onValueChange={value => setBulkStatus(value === "keep" ? "" : value)}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="keep">Manter status</SelectItem>{GAP_COLUMNS.map(column => <SelectItem key={column.status} value={column.status}>{column.label}</SelectItem>)}</SelectContent></Select></div><div><Label className="text-xs">Responsável</Label><Select value={bulkResponsible || "keep"} onValueChange={value => setBulkResponsible(value === "keep" ? "" : value)}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="keep">Manter responsável</SelectItem><SelectItem value="unassigned">Sem responsável</SelectItem>{resources.map((resource: any) => <SelectItem key={resource.id} value={resource.name}>{resource.name}</SelectItem>)}</SelectContent></Select></div><Button onClick={applyBulk} disabled={bulkUpdate.isPending}>Aplicar em lote</Button></div>}
@@ -175,7 +177,7 @@ export default function GapsPage() {
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell><Button variant="ghost" size="icon" onClick={() => deleteMut.mutate({ id: g.id })}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                  <TableCell><Button variant="ghost" size="icon" onClick={() => setGapToDelete(g)}><Trash2 className="h-4 w-4" /></Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -212,6 +214,7 @@ export default function GapsPage() {
           {extractMut.isPending && <p className="text-sm text-muted-foreground">Analisando documento...</p>}
         </DialogContent>
       </Dialog>
+      <DeleteConfirmationDialog open={Boolean(gapToDelete)} onOpenChange={open => !open && setGapToDelete(null)} title="Excluir este gap?" description={`O gap “${gapToDelete?.description || ""}” e sua rastreabilidade operacional serão removidos. Esta ação não pode ser desfeita.`} pending={deleteMut.isPending} onConfirm={() => gapToDelete && deleteMut.mutate({ id: gapToDelete.id })} />
     </div>
   );
 }

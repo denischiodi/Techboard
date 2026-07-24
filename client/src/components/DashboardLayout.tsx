@@ -25,7 +25,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { LogOut, PanelLeft, Lock, KeyRound, Mail, Bell, ChevronDown, Grid2X2 } from "lucide-react";
+import { LogOut, PanelLeft, Lock, KeyRound, Mail, Bell, CheckCircle2, ChevronDown, Grid2X2 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -33,6 +33,7 @@ import { Button } from "./ui/button";
 import { canAccessPath, canAccessProduct, canViewMenuItem, productForPath, PRODUCTS, type ProductId } from "@/lib/productCatalog";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
 import { ProductLogo } from "@/components/ProductLogo";
+import { useProjectContext } from "@/hooks/useProjectContext";
 
 const menuItems = PRODUCTS.flatMap(product => product.menus.map(item => ({ ...item, productId: product.id, permKey: item.permission })));
 
@@ -224,6 +225,7 @@ function DashboardLayoutContent({
   const activeProduct = productForPath(location);
   const activeMenuItem = menuItems.filter(item => pathname === item.path || pathname.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
   const isMobile = useIsMobile();
+  const { withProject } = useProjectContext();
   const [expandedProducts, setExpandedProducts] = useState<Partial<Record<ProductId, boolean>>>(() => (
     activeProduct ? { [activeProduct.id]: true } : {}
   ));
@@ -239,11 +241,22 @@ function DashboardLayoutContent({
     enabled: Boolean(appUser?.permissions.activities),
     refetchInterval: 60_000,
   });
+  const notificationActivitiesQuery = trpc.activities.list.useQuery(undefined, {
+    enabled: Boolean(appUser?.permissions.activities && notificationsQuery.data?.length),
+    refetchOnWindowFocus: false,
+  });
   const markNotificationsRead = trpc.activities.markNotificationsRead.useMutation({
     onSuccess: () => notificationsQuery.refetch(),
   });
   const notifications = notificationsQuery.data || [];
   const unreadNotifications = notifications.filter(notification => !notification.readAt);
+  const completeFromNotification = trpc.activities.update.useMutation({
+    onSuccess: async () => {
+      await Promise.all([notificationsQuery.refetch(), notificationActivitiesQuery.refetch()]);
+      toast.success("Atividade concluída");
+    },
+    onError: error => toast.error(error.message || "Não foi possível concluir a atividade"),
+  });
 
   const notificationButton = (
     <DropdownMenu>
@@ -255,7 +268,10 @@ function DashboardLayoutContent({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-96 w-80 overflow-y-auto">
         <div className="flex items-center justify-between px-2 py-1.5"><span className="text-sm font-semibold">Notificações</span>{unreadNotifications.length > 0 && <Button variant="ghost" size="sm" onClick={() => markNotificationsRead.mutate({})}>Marcar lidas</Button>}</div>
-        {notifications.slice(0, 20).map(notification => <DropdownMenuItem key={notification.id} className={`block cursor-pointer whitespace-normal ${notification.readAt ? "opacity-60" : "bg-muted/50"}`} onClick={() => { markNotificationsRead.mutate({ id: notification.id }); setLocation(`/techtask/board?activityId=${encodeURIComponent(notification.activityId)}`); }}><p className="text-sm font-medium">{notification.title}</p><p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{notification.message}</p></DropdownMenuItem>)}
+        {notifications.slice(0, 20).map(notification => {
+          const activity = notificationActivitiesQuery.data?.find(item => item.id === notification.activityId);
+          return <DropdownMenuItem key={notification.id} className={`block cursor-pointer whitespace-normal ${notification.readAt ? "opacity-60" : "bg-muted/50"}`} onClick={() => { markNotificationsRead.mutate({ id: notification.id }); setLocation(`/techtask/my-work?view=mine&activityId=${encodeURIComponent(notification.activityId)}${activity?.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`); }}><div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{notification.title}</p><p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{notification.message}</p>{activity && <p className="mt-1 text-[11px] text-muted-foreground">{activity.projectName || "Operação interna"} · {activity.priority} · {activity.dueDate || "Sem prazo"}</p>}</div>{activity && activity.status !== "Concluída" && <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Concluir atividade" disabled={completeFromNotification.isPending} onClick={event => { event.preventDefault(); event.stopPropagation(); completeFromNotification.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { status: "Concluída" } }); markNotificationsRead.mutate({ id: notification.id }); }}><CheckCircle2 className="h-4 w-4 text-emerald-600" /></Button>}</div></DropdownMenuItem>;
+        })}
         {notifications.length === 0 && <p className="p-4 text-center text-sm text-muted-foreground">Nenhuma notificação.</p>}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -282,7 +298,7 @@ function DashboardLayoutContent({
   }, [activeProduct?.id]);
 
   const navigateFromSidebar = (path: string) => {
-    setLocation(path);
+    setLocation(path === "/" ? path : withProject(path));
     if (isMobile) setOpenMobile(false);
   };
 
