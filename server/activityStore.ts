@@ -1166,7 +1166,7 @@ export async function upsertSourceActivity(input: CreateActivityInput) {
         : requestedStatus;
     await db.query(
       `UPDATE "activities" SET "title"=$2,"description"=$3,"status"=$4,"priority"=$5,"assigneeUserId"=$6,"dueDate"=$7,"sourceUrl"=$8,"sourceResolved"=$9,
-       "completedAt"=CASE WHEN $4='Concluída' THEN COALESCE("completedAt",now()) ELSE NULL END,"updatedAt"=now() WHERE "id"=$1`,
+       "completedAt"=CASE WHEN $10::boolean THEN COALESCE("completedAt",now()) ELSE NULL END,"updatedAt"=now() WHERE "id"=$1`,
       [
         existing.id,
         input.title,
@@ -1177,6 +1177,7 @@ export async function upsertSourceActivity(input: CreateActivityInput) {
         input.dueDate || "",
         input.sourceUrl || "",
         input.sourceResolved || false,
+        status === "Concluída",
       ]
     );
     if (input.assigneeUserId)

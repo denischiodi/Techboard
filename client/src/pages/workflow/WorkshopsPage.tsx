@@ -81,6 +81,7 @@ export default function WorkshopsPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
+      <GeneratedModelItems projectId={PROJECT_ID} types={["workshop"]} title="Workshops padrão aplicados" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Workshops</h1>
