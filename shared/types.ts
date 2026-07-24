@@ -702,6 +702,9 @@ export interface Activity {
   sourceUrl: string;
   sourceResolved: boolean;
   archivedAt: string;
+  archivedByUserId: string;
+  archiveReason: string;
+  archiveSnapshot: Record<string, unknown>;
   completedAt: string;
   createdAt: string;
   updatedAt: string;

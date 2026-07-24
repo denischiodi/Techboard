@@ -59,9 +59,29 @@ describe("kanban de atividades", () => {
     const sourceKey = `admin-delete-${Date.now()}-${Math.random()}`;
     const activity = await activityStore.createActivity({ scope: "project", projectId: "p1", title: "Pendência automática", creatorUserId: "u3", sourceType: "workflow_test", sourceKey });
     const admin = appRouter.createCaller(context("defechi@gmail.com"));
-    await expect(admin.activities.archive({ id: activity!.id })).resolves.toEqual({ success: true });
+    await expect(admin.activities.admin.archive({ id: activity!.id, reason: "Remoção administrativa de item automático" })).resolves.toBeTruthy();
     expect((await activityStore.getActivity(activity!.id))?.archivedAt).not.toBe("");
     expect((await admin.activities.list()).some(item => item.id === activity!.id)).toBe(false);
+  });
+
+  it("permite ao administrador editar, arquivar e restaurar item automático com auditoria", async () => {
+    const sourceKey = `admin-lifecycle-${Date.now()}-${Math.random()}`;
+    const activity = await activityStore.createActivity({ scope: "project", projectId: "p1", title: "Entregável automático", creatorUserId: "u3", sourceType: "techlead", sourceKey });
+    const admin = appRouter.createCaller(context("defechi@gmail.com"));
+    const updated = await admin.activities.admin.update({ id: activity!.id, data: { title: "Entregável revisado", priority: "Crítica", dueDate: "2035-08-20" } });
+    expect(updated).toMatchObject({ title: "Entregável revisado", priority: "Crítica", dueDate: "2035-08-20" });
+    expect(updated?.history[0]).toMatchObject({ action: "ADMIN_UPDATED" });
+    await admin.activities.admin.archive({ id: activity!.id, reason: "Item substituído pelo planejamento revisado" });
+    expect((await admin.activities.admin.archived()).some(item => item.id === activity!.id)).toBe(true);
+    await expect(activityStore.upsertSourceActivity({ scope: "project", projectId: "p1", title: "Não deve reaparecer", creatorUserId: "u3", sourceType: "techlead", sourceKey })).resolves.toBeNull();
+    const restored = await admin.activities.admin.restore({ id: activity!.id, reason: "Planejamento retomado pelo administrador" });
+    expect(restored).toMatchObject({ archivedAt: "", title: "Entregável revisado", priority: "Crítica" });
+    expect(restored?.history[0]).toMatchObject({ action: "ADMIN_RESTORED" });
+  });
+
+  it("bloqueia consulta de arquivados para não administradores", async () => {
+    const member = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    await expect(member.activities.admin.archived()).rejects.toThrow();
   });
 
   it("mostra para o admin uma atividade criada por outro usuário", async () => {

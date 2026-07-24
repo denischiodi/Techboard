@@ -112,6 +112,17 @@ async function deleteRow(table: string, id: string) {
   ]);
 }
 
+const administrableWorkflowTables = new Set(["bdcq_questions", "configurations", "workflow_test_cases", "gaps"]);
+export async function setWorkflowEntityArchived(table: string, id: string, archived: boolean) {
+  if (!administrableWorkflowTables.has(table)) throw new Error("Tipo de entregável não administrável");
+  const pool = getPgPool();
+  if (!pool) return null;
+  const current = await pool.query(`SELECT * FROM ${quoteIdentifier(table)} WHERE "id"=$1 LIMIT 1`, [id]);
+  if (!current.rows[0]) throw new Error("Entregável de origem não encontrado");
+  await pool.query(`UPDATE ${quoteIdentifier(table)} SET "archivedAt"=${archived ? "now()" : "NULL"},"updatedAt"=now() WHERE "id"=$1`, [id]);
+  return current.rows[0] as Record<string, unknown>;
+}
+
 async function bulkUpdateRows(
   table: string,
   ids: string[],

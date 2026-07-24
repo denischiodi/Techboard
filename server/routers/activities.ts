@@ -6,7 +6,13 @@ import * as activityStore from "../activityStore";
 import * as activityTemplateStore from "../activityTemplateStore";
 import { syncActivityTemplates } from "../activityTemplateSync";
 import { flushActivityEmailOutbox } from "../activityMailer";
-import { syncActivitiesFromSources, syncActivityStatusToSource } from "../activitySync";
+import {
+  archiveAdminActivitySource,
+  restoreAdminActivitySource,
+  syncActivitiesFromSources,
+  syncActivityStatusToSource,
+  syncAdminActivityFieldsToSource,
+} from "../activitySync";
 import * as plannerStore from "../plannerStore";
 import { storagePut } from "../storage";
 import * as projectAccess from "../projectAccess";
@@ -16,6 +22,14 @@ const statusSchema = z.enum(["A fazer", "Em andamento", "Bloqueada", "Em valida�
 const prioritySchema = z.enum(["Baixa", "Média", "Alta", "Crítica"]);
 const stageSchema = z.enum(["DCD", "BDCQ", "TESTE", "GERAL"]);
 const isoDateSchema = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]);
+const adminActivityDataSchema = z.object({
+  title: z.string().trim().min(1).max(500).optional(),
+  description: z.string().max(10000).optional(),
+  status: statusSchema.optional(),
+  priority: prioritySchema.optional(),
+  assigneeUserId: z.string().optional(),
+  dueDate: isoDateSchema.optional(),
+});
 const templateInputSchema = z.object({
   title: z.string().trim().min(1).max(500),
   description: z.string().max(10000).default(""),
@@ -163,6 +177,82 @@ function scheduleSourceSync() {
 }
 
 export const activitiesRouter = router({
+  admin: router({
+    archived: adminProcedure.query(async () =>
+      (await activityStore.listActivities(true)).filter(item => Boolean(item.archivedAt))
+    ),
+    audit: adminProcedure.query(async () => {
+      const activities = await activityStore.listActivities(true);
+      return activities.flatMap(activity =>
+        activity.history.filter(event => event.action.startsWith("ADMIN_")).map(event => ({
+          ...event,
+          activityTitle: activity.title,
+          trackingCode: activity.trackingCode,
+          projectName: activity.projectName,
+          sourceType: activity.sourceType,
+        }))
+      ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }),
+    update: adminProcedure.input(z.object({
+      id: z.string().min(1),
+      expectedUpdatedAt: z.string().optional(),
+      data: adminActivityDataSchema,
+    })).mutation(async ({ ctx, input }) => {
+      const activity = await requireActivity(input.id, ctx.appUser, true);
+      if (input.expectedUpdatedAt && activity.updatedAt !== input.expectedUpdatedAt)
+        throw new TRPCError({ code: "CONFLICT", message: "A atividade foi alterada por outra pessoa. Recarregue e tente novamente." });
+      if (input.data.assigneeUserId !== undefined)
+        await assertEligibleUser(activity, input.data.assigneeUserId);
+      const before = Object.fromEntries(
+        Object.keys(input.data).map(key => [key, activity[key as keyof Activity]])
+      ) as Partial<Pick<Activity, "title" | "description" | "status" | "priority" | "assigneeUserId" | "dueDate">>;
+      const sourceSyncResult = await syncAdminActivityFieldsToSource(activity, input.data);
+      let updated;
+      try {
+        updated = await activityStore.updateActivity(activity.id, input.data);
+      } catch (error) {
+        await syncAdminActivityFieldsToSource(activity, before);
+        throw error;
+      }
+      if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada" });
+      await activityStore.addHistory(activity.id, ctx.appUser, "ADMIN_UPDATED", {
+        before,
+        after: input.data,
+        sourceType: activity.sourceType,
+        sourceKey: activity.sourceKey,
+        sourceSynchronizedFields: sourceSyncResult.synced,
+        cardOnlyFields: sourceSyncResult.cardOnly,
+      });
+      return activityStore.getActivity(activity.id);
+    }),
+    archive: adminProcedure.input(z.object({
+      id: z.string().min(1),
+      reason: z.string().trim().min(5).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const activity = await requireActivity(input.id, ctx.appUser);
+      const originSnapshot = await archiveAdminActivitySource(activity);
+      try {
+        return await activityStore.adminArchiveActivity(input.id, ctx.appUser, input.reason, originSnapshot);
+      } catch (error) {
+        if (originSnapshot)
+          await restoreAdminActivitySource({ ...activity, archiveSnapshot: { origin: originSnapshot } });
+        throw error;
+      }
+    }),
+    restore: adminProcedure.input(z.object({
+      id: z.string().min(1),
+      reason: z.string().trim().min(5).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const activity = await requireActivity(input.id, ctx.appUser);
+      await restoreAdminActivitySource(activity);
+      try {
+        return await activityStore.adminRestoreActivity(input.id, ctx.appUser, input.reason);
+      } catch (error) {
+        await archiveAdminActivitySource(activity);
+        throw error;
+      }
+    }),
+  }),
   templates: router({
     list: adminProcedure.query(() => activityTemplateStore.listActivityTemplates()),
     options: adminProcedure.query(async () => {
@@ -304,10 +394,12 @@ export const activitiesRouter = router({
     if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada" });
     if (input.data.status) await syncActivityStatusToSource(activity, input.data.status);
     const current = await activityStore.getActivity(activity.id) as Activity;
-    await activityStore.addHistory(activity.id, ctx.appUser, "UPDATED", {
+    await activityStore.addHistory(activity.id, ctx.appUser, ctx.appUser.role === "admin" ? "ADMIN_UPDATED" : "UPDATED", {
       before,
       after: input.data,
       afterUpdatedAt: current.updatedAt,
+      sourceType: activity.sourceType,
+      sourceKey: activity.sourceKey,
     });
     await notify(current, ctx.appUser, input.data.status ? "status_changed" : "updated", input.data.status ? `Status alterado para ${input.data.status}.` : "A atividade foi atualizada.", input.data.assigneeUserId ? [input.data.assigneeUserId] : []);
     return current;
@@ -334,12 +426,12 @@ export const activitiesRouter = router({
 
   archive: activityModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
     const activity = await requireActivity(input.id, ctx.appUser);
-    if (ctx.appUser.role !== "admin") {
-      if (activity.sourceType !== "manual") throw new TRPCError({ code: "BAD_REQUEST", message: "Atividades automáticas só podem ser excluídas por administradores" });
-      if (activity.creatorUserId !== ctx.appUser.id) forbidden();
-    }
+    if (ctx.appUser.role === "admin")
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Administradores devem informar o motivo no arquivamento administrativo" });
+    if (activity.sourceType !== "manual") throw new TRPCError({ code: "BAD_REQUEST", message: "Atividades automáticas só podem ser excluídas por administradores" });
+    if (activity.creatorUserId !== ctx.appUser.id) forbidden();
     await activityStore.archiveActivity(activity.id);
-    await activityStore.addHistory(activity.id, ctx.appUser, ctx.appUser.role === "admin" ? "ADMIN_DELETED" : "ARCHIVED");
+    await activityStore.addHistory(activity.id, ctx.appUser, "ARCHIVED");
     return { success: true };
   }),
 

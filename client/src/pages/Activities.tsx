@@ -15,8 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Bookmark, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
-  GripVertical, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users, X,
+  AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, Bookmark, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
+  GripVertical, History, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users, X,
 } from "lucide-react";
 import type { Activity, ActivityPriority, ActivityScope, ActivityStage, ActivityStatus } from "../../../shared/types";
 
@@ -149,6 +149,7 @@ export default function Activities() {
   const excelInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("activityId"));
   const [createOpen, setCreateOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [viewName, setViewName] = useState("");
   const [savedViews, setSavedViews] = useState<SavedActivityView[]>(() => {
@@ -339,6 +340,7 @@ export default function Activities() {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div><h1 className="text-2xl font-bold">{view === "mine" ? "Meu trabalho" : "Atividades"}</h1><p className="text-sm text-muted-foreground">{view === "mine" ? "Suas prioridades, prazos e bloqueios em um único lugar." : "Tarefas manuais e pendências integradas dos projetos."}</p></div>
         <div className="flex flex-wrap gap-2">
+          {appUser?.role === "admin" && <Button variant="outline" onClick={() => setAdminPanelOpen(true)}><ArchiveRestore className="mr-2 h-4 w-4" />Arquivados e auditoria</Button>}
           <Button variant="outline" onClick={() => void handleExportExcel()}><Download className="mr-2 h-4 w-4" />Baixar Excel</Button>
           <Button variant="outline" disabled={importExcel.isPending} onClick={() => excelInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" />Importar Excel</Button>
           <input ref={excelInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={event => void handleImportExcel(event.target.files?.[0])} />
@@ -371,15 +373,42 @@ export default function Activities() {
 
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Salvar visão</DialogTitle></DialogHeader><div><Label htmlFor="saved-view-name">Nome da visão</Label><Input id="saved-view-name" value={viewName} onChange={event => setViewName(event.target.value)} placeholder="Ex.: Críticas atrasadas" onKeyDown={event => { if (event.key === "Enter") saveCurrentView(); }} /></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)}>Cancelar</Button><Button disabled={!viewName.trim()} onClick={saveCurrentView}>Salvar</Button></DialogFooter></DialogContent></Dialog>
 
+      {appUser?.role === "admin" && <AdminActivityPanel open={adminPanelOpen} onOpenChange={setAdminPanelOpen} />}
       {selected && <ActivityDetails key={`${selected.id}:${selected.updatedAt}`} activity={selected} appUserId={appUser?.id || ""} isAdmin={appUser?.role === "admin"} open={Boolean(selectedId)} onOpenChange={open => !open && setSelectedId(null)} onNavigate={setLocation} />}
     </div>
   );
+}
+
+function AdminActivityPanel({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const utils = trpc.useUtils();
+  const archived = trpc.activities.admin.archived.useQuery(undefined, { enabled: open });
+  const audit = trpc.activities.admin.audit.useQuery(undefined, { enabled: open });
+  const [search, setSearch] = useState("");
+  const [restoreTarget, setRestoreTarget] = useState<Activity | null>(null);
+  const [reason, setReason] = useState("");
+  const restore = trpc.activities.admin.restore.useMutation({
+    onSuccess: async () => {
+      await Promise.all([utils.activities.list.invalidate(), utils.activities.admin.archived.invalidate(), utils.activities.admin.audit.invalidate()]);
+      setRestoreTarget(null); setReason(""); toast.success("Item restaurado com todo o histórico");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const term = normalizeSearch(search);
+  const items = (archived.data || []).filter(item => !term || [item.title, item.trackingCode, item.projectName, item.sourceType, item.assigneeName, item.creatorName, item.archiveReason].some(value => normalizeSearch(value || "").includes(term)));
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto"><DialogHeader><DialogTitle>Administração de itens e auditoria</DialogTitle></DialogHeader>
+    <div className="space-y-6"><section className="space-y-3"><div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold">Itens arquivados</h3><p className="text-xs text-muted-foreground">Visível somente para administradores.</p></div><div className="relative w-full max-w-sm"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={event => setSearch(event.target.value)} placeholder="Projeto, origem, responsável..." /></div></div>
+      <div className="space-y-2">{items.map(item => <Card key={item.id}><CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{item.trackingCode} — {item.title}</p><div className="mt-1 flex flex-wrap gap-1"><Badge variant="outline">{item.projectName}</Badge><Badge variant="secondary">{item.sourceType.replaceAll("_", " ")}</Badge><Badge variant="outline">{item.assigneeName || "Sem responsável"}</Badge></div><p className="mt-2 text-xs text-muted-foreground">Arquivado em {new Date(item.archivedAt).toLocaleString("pt-BR")} · {item.archiveReason}</p></div><Button variant="outline" onClick={() => setRestoreTarget(item)}><ArchiveRestore className="mr-2 h-4 w-4" />Restaurar</Button></CardContent></Card>)}{!archived.isLoading && !items.length && <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum item arquivado.</p>}</div></section>
+      <section className="space-y-3"><h3 className="flex items-center gap-2 font-semibold"><History className="h-4 w-4" />Log administrativo</h3><div className="max-h-80 space-y-2 overflow-y-auto rounded-lg border p-3">{(audit.data || []).map(event => <div key={event.id} className="border-b pb-2 text-sm last:border-0"><p><strong>{event.actorName}</strong> · {event.action.replaceAll("_", " ").toLowerCase()}</p><p className="text-xs text-muted-foreground">{event.trackingCode} · {event.projectName} · {new Date(event.createdAt).toLocaleString("pt-BR")}</p></div>)}{!audit.isLoading && !audit.data?.length && <p className="text-sm text-muted-foreground">Nenhuma ação administrativa registrada.</p>}</div></section></div>
+    <Dialog open={Boolean(restoreTarget)} onOpenChange={value => !value && setRestoreTarget(null)}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Restaurar item?</DialogTitle></DialogHeader><p className="text-sm text-muted-foreground">O card e o entregável voltarão com o estado anterior preservado.</p><div><Label>Motivo da restauração *</Label><Textarea value={reason} onChange={event => setReason(event.target.value)} /></div><DialogFooter><Button variant="outline" onClick={() => setRestoreTarget(null)}>Cancelar</Button><Button disabled={reason.trim().length < 5 || restore.isPending} onClick={() => restoreTarget && restore.mutate({ id: restoreTarget.id, reason })}>Restaurar</Button></DialogFooter></DialogContent></Dialog>
+  </DialogContent></Dialog>;
 }
 
 function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onNavigate }: { activity: Activity; appUserId: string; isAdmin: boolean; open: boolean; onOpenChange: (open: boolean) => void; onNavigate: (path: string) => void }) {
   const utils = trpc.useUtils();
   const canEdit = isAdmin || activity.creatorUserId === appUserId || activity.assigneeUserId === appUserId || activity.participantUserIds.includes(appUserId);
   const [comment, setComment] = useState("");
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveReason, setArchiveReason] = useState("");
   const [checkForm, setCheckForm] = useState({ description: "", assigneeUserId: "", dueDate: "", required: true });
   const [contentForm, setContentForm] = useState({ title: activity.title, description: activity.description, priority: activity.priority });
   const eligible = trpc.activities.eligibleUsers.useQuery({ scope: activity.scope, projectId: activity.projectId });
@@ -393,7 +422,9 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
     },
     onError: (error: { message: string }) => toast.error(error.message),
   });
-  const archive = trpc.activities.archive.useMutation({ onSuccess: async () => { await invalidate(); onOpenChange(false); toast.success("Card excluído"); }, onError: (error: { message: string }) => toast.error(error.message) });
+  const adminUpdate = trpc.activities.admin.update.useMutation({ onSuccess: async () => { await Promise.all([invalidate(), utils.activities.admin.audit.invalidate()]); toast.success("Alteração administrativa registrada"); }, onError: (error: { message: string }) => toast.error(error.message) });
+  const saveUpdate = (data: Partial<Pick<Activity, "title" | "description" | "priority" | "status" | "assigneeUserId" | "dueDate">>) => isAdmin ? adminUpdate.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data }) : update.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data });
+  const archive = trpc.activities.admin.archive.useMutation({ onSuccess: async () => { await Promise.all([invalidate(), utils.activities.admin.archived.invalidate(), utils.activities.admin.audit.invalidate()]); setArchiveOpen(false); onOpenChange(false); toast.success("Item arquivado e registrado no log"); }, onError: (error: { message: string }) => toast.error(error.message) });
   const join = trpc.activities.join.useMutation(mutationOptions);
   const checklistCreate = trpc.activities.checklistCreate.useMutation({ ...mutationOptions, onSuccess: async () => { setCheckForm({ description: "", assigneeUserId: "", dueDate: "", required: true }); await invalidate(); } });
   const checklistUpdate = trpc.activities.checklistUpdate.useMutation(mutationOptions);
@@ -421,10 +452,10 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle className="pr-8">{activity.displayTitle}</DialogTitle></DialogHeader>
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}{isAdmin && <Button className="ml-auto" size="sm" variant="destructive" disabled={archive.isPending} onClick={() => { if (window.confirm(`Excluir o card ${activity.trackingCode}? O número de acompanhamento não será reutilizado.`)) archive.mutate({ id: activity.id }); }}><Trash2 className="mr-2 h-4 w-4" />Excluir card</Button>}</div>
+      <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}{isAdmin && <Button className="ml-auto" size="sm" variant="destructive" disabled={archive.isPending} onClick={() => setArchiveOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Arquivar item</Button>}</div>
       {!canEdit && <Button variant="outline" onClick={() => join.mutate({ id: activity.id })}><UserPlus className="mr-2 h-4 w-4" />Participar para colaborar</Button>}
-      <div className="grid gap-3 sm:grid-cols-3"><div><Label>Status</Label><Select disabled={!canEdit} value={activity.status} onValueChange={(status: ActivityStatus) => update.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { status } })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div><Label>Responsável</Label><Select disabled={!canEdit} value={activity.assigneeUserId || "none"} onValueChange={assigneeUserId => update.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { assigneeUserId: assigneeUserId === "none" ? "" : assigneeUserId } })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligible.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prazo</Label><Input disabled={!canEdit} type="date" value={activity.dueDate} onChange={event => update.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { dueDate: event.target.value } })} /></div></div>
-      {activity.sourceType === "manual" && canEdit ? <section className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">Conteúdo</h3><div><Label>Título</Label><Input value={contentForm.title} onChange={event => setContentForm(form => ({ ...form, title: event.target.value }))} /></div><div><Label>Descrição</Label><Textarea value={contentForm.description} onChange={event => setContentForm(form => ({ ...form, description: event.target.value }))} /></div><div className="max-w-48"><Label>Prioridade</Label><Select value={contentForm.priority} onValueChange={(priority: ActivityPriority) => setContentForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div><Button disabled={!contentForm.title.trim()} onClick={() => update.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: contentForm })}>Salvar conteúdo</Button></section> : <div><Label>Descrição</Label><p className="mt-1 whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 text-sm">{activity.description || "Sem descrição"}</p></div>}
+      <div className="grid gap-3 sm:grid-cols-3"><div><Label>Status</Label><Select disabled={!canEdit} value={activity.status} onValueChange={(status: ActivityStatus) => saveUpdate({ status })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div><Label>Responsável</Label><Select disabled={!canEdit} value={activity.assigneeUserId || "none"} onValueChange={assigneeUserId => saveUpdate({ assigneeUserId: assigneeUserId === "none" ? "" : assigneeUserId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligible.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prazo</Label><Input disabled={!canEdit} type="date" value={activity.dueDate} onChange={event => saveUpdate({ dueDate: event.target.value })} /></div></div>
+      {(activity.sourceType === "manual" || isAdmin) && canEdit ? <section className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">Conteúdo {activity.sourceType !== "manual" && <Badge variant="outline" className="ml-2">Personalização administrativa</Badge>}</h3><div><Label>Título</Label><Input value={contentForm.title} onChange={event => setContentForm(form => ({ ...form, title: event.target.value }))} /></div><div><Label>Descrição</Label><Textarea value={contentForm.description} onChange={event => setContentForm(form => ({ ...form, description: event.target.value }))} /></div><div className="max-w-48"><Label>Prioridade</Label><Select value={contentForm.priority} onValueChange={(priority: ActivityPriority) => setContentForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div><Button disabled={!contentForm.title.trim()} onClick={() => saveUpdate(contentForm)}>Salvar conteúdo</Button></section> : <div><Label>Descrição</Label><p className="mt-1 whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 text-sm">{activity.description || "Sem descrição"}</p></div>}
       {activity.sourceUrl && <Button variant="outline" onClick={() => onNavigate(activity.sourceUrl)}><ExternalLink className="mr-2 h-4 w-4" />Abrir origem</Button>}
 
       <section className="space-y-3 rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="flex items-center gap-2 font-semibold"><ListChecks className="h-4 w-4" />Checklist</h3><span className="text-sm text-muted-foreground">{completeCount} de {activity.checklist.length}</span></div>{activity.checklist.length > 0 && <Progress value={(completeCount / activity.checklist.length) * 100} />}
@@ -439,5 +470,6 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
 
       <section className="space-y-2 rounded-xl border p-4"><h3 className="font-semibold">Histórico</h3>{activity.history.slice(0, 20).map(event => <div key={event.id} className="flex items-start gap-2 text-xs"><span className="mt-1">{event.action.includes("COMPLETED") ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Circle className="h-3.5 w-3.5 text-muted-foreground" />}</span><span><strong>{event.actorName}</strong> · {event.action.replaceAll("_", " ").toLowerCase()} · {new Date(event.createdAt).toLocaleString("pt-BR")}</span></div>)}</section>
     </div>
+    <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Arquivar item e entregável?</DialogTitle></DialogHeader><p className="text-sm text-muted-foreground">O número {activity.trackingCode} não será reutilizado. A restauração será exclusiva do administrador.</p><div><Label>Motivo do arquivamento *</Label><Textarea value={archiveReason} onChange={event => setArchiveReason(event.target.value)} /></div><DialogFooter><Button variant="outline" onClick={() => setArchiveOpen(false)}>Cancelar</Button><Button variant="destructive" disabled={archiveReason.trim().length < 5 || archive.isPending} onClick={() => archive.mutate({ id: activity.id, reason: archiveReason })}>Arquivar</Button></DialogFooter></DialogContent></Dialog>
   </DialogContent></Dialog>;
 }

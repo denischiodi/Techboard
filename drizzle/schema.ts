@@ -208,9 +208,23 @@ export const activities = mysqlTable("activities", {
   sourceUrl: text("sourceUrl"),
   sourceResolved: mysqlBoolean("sourceResolved").notNull().default(false),
   archivedAt: timestamp("archivedAt"),
+  archivedByUserId: varchar("archivedByUserId", { length: 64 }).notNull().default(""),
+  archiveReason: text("archiveReason"),
+  archiveSnapshot: json("archiveSnapshot").$type<Record<string, unknown>>().default({}),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const activitySourceSuppressions = mysqlTable("activity_source_suppressions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  sourceType: varchar("sourceType", { length: 64 }).notNull(),
+  sourceKey: varchar("sourceKey", { length: 255 }).notNull(),
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  reason: text("reason").notNull(),
+  createdByUserId: varchar("createdByUserId", { length: 64 }).notNull(),
+  restoredAt: timestamp("restoredAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const activitySequenceCounters = mysqlTable(

@@ -286,3 +286,91 @@ export async function syncActivityStatusToSource(activity: Activity, status: Act
   }
   await plannerStore.saveTechMoveData(activity.projectId, data);
 }
+
+export async function syncAdminActivityFieldsToSource(
+  activity: Activity,
+  changes: Partial<Pick<Activity, "title" | "description" | "status" | "priority" | "assigneeUserId" | "dueDate">>
+) {
+  const users = await plannerStore.listAppUsers();
+  const responsible = changes.assigneeUserId === undefined ? undefined : users.find(user => user.id === changes.assigneeUserId)?.name || "";
+  const synced: string[] = [];
+  if (activity.sourceType === "gp_checklist") {
+    await gpStore.updateChecklistItem(activity.projectId, activity.sourceKey, {
+      title: changes.title, description: changes.description,
+      status: changes.status ? gpSourceStatus(changes.status) : undefined,
+      responsible, dueDate: changes.dueDate,
+    });
+    synced.push(...Object.keys(changes).filter(key => ["title", "description", "status", "assigneeUserId", "dueDate"].includes(key)));
+  } else if (activity.sourceType === "gp_fit_step") {
+    await gpStore.updateFitToStandardStep(activity.projectId, activity.sourceKey, {
+      title: changes.title, status: changes.status ? gpSourceStatus(changes.status) : undefined,
+      responsible, dueDate: changes.dueDate,
+    });
+    synced.push(...Object.keys(changes).filter(key => ["title", "status", "assigneeUserId", "dueDate"].includes(key)));
+  } else if (activity.sourceType === "bdcq_question" && changes.title !== undefined) {
+    await workflowDb.updateBdcqQuestion(activity.sourceKey, { question: changes.title });
+    synced.push("title");
+  } else if (activity.sourceType === "workflow_test") {
+    await workflowDb.updateWorkflowTestCase(activity.sourceKey, {
+      title: changes.title, description: changes.description, responsible,
+      status: changes.status === undefined ? undefined : changes.status === "Concluída" ? "Aprovado" : changes.status === "Bloqueada" ? "Bloqueado" : changes.status === "Em andamento" || changes.status === "Em validação" ? "Em execução" : "Não iniciado",
+    });
+    synced.push(...Object.keys(changes).filter(key => ["title", "description", "status", "assigneeUserId"].includes(key)));
+  } else if (activity.sourceType === "workflow_configuration") {
+    await workflowDb.updateConfiguration(activity.sourceKey, {
+      description: changes.title, notes: changes.description, responsible,
+      status: changes.status === undefined ? undefined : changes.status === "Concluída" ? "Concluído" : changes.status === "Bloqueada" ? "Bloqueado" : changes.status === "Em andamento" || changes.status === "Em validação" ? "Em Progresso" : "Pendente",
+    });
+    synced.push(...Object.keys(changes).filter(key => ["title", "description", "status", "assigneeUserId"].includes(key)));
+  } else if (activity.sourceType.startsWith("techmove_")) {
+    const data = await plannerStore.getTechMoveData(activity.projectId);
+    const entityId = activity.sourceKey.slice(activity.projectId.length + 1);
+    if (activity.sourceType === "techmove_question")
+      data.questions = data.questions.map(item => item.id === entityId ? { ...item, text: changes.title ?? item.text, objective: changes.description ?? item.objective, status: changes.status === undefined ? item.status : changes.status === "Concluída" ? "Validado" : changes.status === "Em validação" ? "Respondido" : changes.status === "Bloqueada" ? "Gap" : "Pendente" } : item);
+    else if (activity.sourceType === "techmove_gap")
+      data.gaps = data.gaps.map(item => item.id === entityId ? { ...item, title: changes.title ?? item.title, description: changes.description ?? item.description, assignedTo: responsible ?? item.assignedTo, dueDate: changes.dueDate ?? item.dueDate, status: changes.status === undefined ? item.status : changes.status === "Concluída" ? "Resolvido" : changes.status === "Em validação" ? "Aprovado" : changes.status === "Em andamento" ? "Em analise" : "Aberto" } : item);
+    else if (activity.sourceType === "techmove_configuration")
+      data.configurations = (data.configurations || []).map(item => item.id === entityId ? { ...item, title: changes.title ?? item.title, description: changes.description ?? item.description, owner: responsible ?? item.owner, priority: changes.priority === undefined ? item.priority : changes.priority === "Baixa" ? "Baixa" : changes.priority === "Alta" || changes.priority === "Crítica" ? "Alta" : "Normal", status: changes.status === undefined ? item.status : changes.status === "Concluída" ? "Concluido" : changes.status === "Bloqueada" ? "Bloqueado" : changes.status === "Em andamento" || changes.status === "Em validação" ? "Em andamento" : "Pendente" } : item);
+    await plannerStore.saveTechMoveData(activity.projectId, data);
+    synced.push(...Object.keys(changes).filter(key => ["title", "description", "status", "priority", "assigneeUserId", "dueDate"].includes(key)));
+  }
+  return { synced, cardOnly: Object.keys(changes).filter(key => !synced.includes(key)) };
+}
+
+const workflowSourceTables: Partial<Record<ActivitySourceType, string>> = {
+  bdcq_question: "bdcq_questions",
+  workflow_configuration: "configurations",
+  workflow_test: "workflow_test_cases",
+};
+
+export async function archiveAdminActivitySource(activity: Activity) {
+  const table = workflowSourceTables[activity.sourceType];
+  if (table) {
+    const value = await workflowDb.setWorkflowEntityArchived(table, activity.sourceKey, true);
+    return value ? { kind: "workflow", table, value } : null;
+  }
+  if (!activity.sourceType.startsWith("techmove_")) return null;
+  const data = await plannerStore.getTechMoveData(activity.projectId);
+  const entityId = activity.sourceKey.slice(activity.projectId.length + 1);
+  let value: any = null;
+  if (activity.sourceType === "techmove_question") { value = data.questions.find(item => item.id === entityId); data.questions = data.questions.filter(item => item.id !== entityId); }
+  else if (activity.sourceType === "techmove_gap") { value = data.gaps.find(item => item.id === entityId); data.gaps = data.gaps.filter(item => item.id !== entityId); }
+  else if (activity.sourceType === "techmove_configuration") { value = (data.configurations || []).find(item => item.id === entityId); data.configurations = (data.configurations || []).filter(item => item.id !== entityId); }
+  if (value) await plannerStore.saveTechMoveData(activity.projectId, data);
+  return value ? { kind: "techmove", sourceType: activity.sourceType, value } : null;
+}
+
+export async function restoreAdminActivitySource(activity: Activity) {
+  const origin = activity.archiveSnapshot?.origin as { kind?: string; table?: string; sourceType?: ActivitySourceType; value?: any } | undefined;
+  if (!origin?.value) return;
+  if (origin.kind === "workflow" && origin.table) {
+    await workflowDb.setWorkflowEntityArchived(origin.table, activity.sourceKey, false);
+    return;
+  }
+  if (origin.kind !== "techmove") return;
+  const data = await plannerStore.getTechMoveData(activity.projectId);
+  if (origin.sourceType === "techmove_question" && !data.questions.some(item => item.id === origin.value.id)) data.questions.push(origin.value);
+  else if (origin.sourceType === "techmove_gap" && !data.gaps.some(item => item.id === origin.value.id)) data.gaps.push(origin.value);
+  else if (origin.sourceType === "techmove_configuration" && !(data.configurations || []).some(item => item.id === origin.value.id)) data.configurations = [...(data.configurations || []), origin.value];
+  await plannerStore.saveTechMoveData(activity.projectId, data);
+}

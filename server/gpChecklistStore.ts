@@ -242,7 +242,7 @@ export async function createChecklistItem(projectId: string, input: CreateCheckl
 }
 
 type ChecklistItemUpdate = Partial<Pick<GpChecklistItem,
-  "status" | "responsible" | "dueDate" | "evidenceUrl" | "notes" | "blockingReason"
+  "title" | "description" | "status" | "responsible" | "dueDate" | "evidenceUrl" | "notes" | "blockingReason"
 >>;
 
 export async function updateChecklistItem(projectId: string, id: string, data: ChecklistItemUpdate) {
@@ -262,7 +262,7 @@ export async function updateChecklistItem(projectId: string, id: string, data: C
     return items[index];
   }
 
-  const allowed = ["status", "responsible", "dueDate", "evidenceUrl", "notes", "blockingReason"];
+  const allowed = ["title", "description", "status", "responsible", "dueDate", "evidenceUrl", "notes", "blockingReason"];
   const entries = Object.entries(normalized).filter(([key, value]) => allowed.includes(key) && value !== undefined);
   if (entries.length === 0) throw new Error("Nenhuma alteração informada");
   const assignments = entries.map(([key], index) => `"${key}" = $${index + 3}`);
@@ -397,7 +397,7 @@ export async function createFitToStandardCycle(projectId: string, name: string, 
 }
 
 type CycleStepUpdate = Partial<Pick<GpFitToStandardStep,
-  "status" | "responsible" | "dueDate" | "evidenceUrl" | "notes" | "blockingReason"
+  "title" | "status" | "responsible" | "dueDate" | "evidenceUrl" | "notes" | "blockingReason"
 >>;
 
 function aggregateCycleStatus(steps: GpFitToStandardStep[]): GpChecklistStatus {
