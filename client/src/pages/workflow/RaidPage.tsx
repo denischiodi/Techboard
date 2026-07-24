@@ -25,13 +25,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -50,6 +43,8 @@ const RISK_STRATEGIES = [
   { value: "transfer", label: "Transferir" },
   { value: "accept", label: "Aceitar" },
 ] as const;
+const SELECT_CLASS =
+  "border-input focus-visible:border-ring focus-visible:ring-ring/50 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50";
 
 const INITIAL_FORM = {
   kind: "risk" as "risk" | "issue",
@@ -504,41 +499,41 @@ export default function RaidPage() {
             onChange={event => setSearch(event.target.value)}
           />
         </div>
-        <Select value={kindFilter} onValueChange={setKindFilter}>
-          <SelectTrigger className="w-full lg:w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Riscos e issues</SelectItem>
-            <SelectItem value="risk">Riscos</SelectItem>
-            <SelectItem value="issue">Issues</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="w-full lg:w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as fases</SelectItem>
-            {PHASES.map(phase => (
-              <SelectItem key={phase} value={phase}>
-                {phase}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={severityFilter} onValueChange={setSeverityFilter}>
-          <SelectTrigger className="w-full lg:w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toda severidade</SelectItem>
-            <SelectItem value="critical">Crítico</SelectItem>
-            <SelectItem value="high">Alto</SelectItem>
-            <SelectItem value="medium">Médio</SelectItem>
-            <SelectItem value="low">Baixo</SelectItem>
-          </SelectContent>
-        </Select>
+        <select
+          className={`${SELECT_CLASS} lg:w-40`}
+          value={kindFilter}
+          onChange={event => setKindFilter(event.target.value)}
+          aria-label="Filtrar por tipo"
+        >
+          <option value="all">Riscos e issues</option>
+          <option value="risk">Riscos</option>
+          <option value="issue">Issues</option>
+        </select>
+        <select
+          className={`${SELECT_CLASS} lg:w-40`}
+          value={phaseFilter}
+          onChange={event => setPhaseFilter(event.target.value)}
+          aria-label="Filtrar por fase"
+        >
+          <option value="all">Todas as fases</option>
+          {PHASES.map(phase => (
+            <option key={phase} value={phase}>
+              {phase}
+            </option>
+          ))}
+        </select>
+        <select
+          className={`${SELECT_CLASS} lg:w-40`}
+          value={severityFilter}
+          onChange={event => setSeverityFilter(event.target.value)}
+          aria-label="Filtrar por severidade"
+        >
+          <option value="all">Toda severidade</option>
+          <option value="critical">Crítico</option>
+          <option value="high">Alto</option>
+          <option value="medium">Médio</option>
+          <option value="low">Baixo</option>
+        </select>
         <div className="flex rounded-md border p-1 lg:ml-auto">
           <Button
             size="sm"
@@ -714,67 +709,60 @@ export default function RaidPage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 [&>*]:min-w-0 [&_[data-slot=select-trigger]]:w-full">
               <div>
                 <Label>Tipo *</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={form.kind}
-                  onValueChange={(value: "risk" | "issue") =>
+                  onChange={event => {
+                    const value = event.target.value as "risk" | "issue";
                     setForm(current => ({
                       ...current,
                       kind: value,
                       strategy: value === "issue" ? "" : current.strategy,
-                    }))
-                  }
+                    }));
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="risk">Risco — evento futuro</SelectItem>
-                    <SelectItem value="issue">
-                      Issue — problema ocorrido
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                  <option value="risk">Risco — evento futuro</option>
+                  <option value="issue">Issue — problema ocorrido</option>
+                </select>
               </div>
               <div>
                 <Label>Fase</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={form.phase}
-                  onValueChange={phase =>
-                    setForm(current => ({ ...current, phase }))
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      phase: event.target.value,
+                    }))
                   }
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PHASES.map(phase => (
-                      <SelectItem key={phase} value={phase}>
-                        {phase}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {PHASES.map(phase => (
+                    <option key={phase} value={phase}>
+                      {phase}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Módulo</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={form.module || "general"}
-                  onValueChange={module =>
-                    setForm(current => ({ ...current, module }))
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      module: event.target.value,
+                    }))
                   }
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="general">Geral</SelectItem>
-                    {modules.map(module => (
-                      <SelectItem key={module} value={module}>
-                        {module}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <option value="general">Geral</option>
+                  {modules.map(module => (
+                    <option key={module} value={module}>
+                      {module}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Categoria</Label>
@@ -844,46 +832,41 @@ export default function RaidPage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 [&>*]:min-w-0 [&_[data-slot=select-trigger]]:w-full">
               <div>
                 <Label>Probabilidade (1–5)</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={String(form.probability)}
-                  onValueChange={value =>
+                  onChange={event =>
                     setForm(current => ({
                       ...current,
-                      probability: Number(value),
+                      probability: Number(event.target.value),
                     }))
                   }
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5].map(value => (
-                      <SelectItem key={value} value={String(value)}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {[1, 2, 3, 4, 5].map(value => (
+                    <option key={value} value={String(value)}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Impacto (1–5)</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={String(form.impact)}
-                  onValueChange={value =>
-                    setForm(current => ({ ...current, impact: Number(value) }))
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      impact: Number(event.target.value),
+                    }))
                   }
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[1, 2, 3, 4, 5].map(value => (
-                      <SelectItem key={value} value={String(value)}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {[1, 2, 3, 4, 5].map(value => (
+                    <option key={value} value={String(value)}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Severidade calculada</Label>
@@ -897,29 +880,26 @@ export default function RaidPage() {
               {form.kind === "risk" && (
                 <div>
                   <Label>Estratégia</Label>
-                  <Select
+                  <select
+                    className={SELECT_CLASS}
                     value={form.strategy || "undefined"}
-                    onValueChange={(
-                      strategy: typeof form.strategy | "undefined"
-                    ) =>
+                    onChange={event => {
+                      const strategy = event.target.value as
+                        | typeof form.strategy
+                        | "undefined";
                       setForm(current => ({
                         ...current,
                         strategy: strategy === "undefined" ? "" : strategy,
-                      }))
-                    }
+                      }));
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="undefined">Definir depois</SelectItem>
-                      {RISK_STRATEGIES.map(strategy => (
-                        <SelectItem key={strategy.value} value={strategy.value}>
-                          {strategy.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <option value="undefined">Definir depois</option>
+                    {RISK_STRATEGIES.map(strategy => (
+                      <option key={strategy.value} value={strategy.value}>
+                        {strategy.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
             </div>
@@ -974,52 +954,46 @@ export default function RaidPage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 [&>*]:min-w-0 [&_[data-slot=select-trigger]]:w-full">
               <div>
                 <Label>Responsável</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={form.responsibleId || "unassigned"}
-                  onValueChange={responsibleId =>
+                  onChange={event => {
+                    const responsibleId = event.target.value;
                     setForm(current => ({
                       ...current,
                       responsibleId:
                         responsibleId === "unassigned" ? "" : responsibleId,
-                    }))
-                  }
+                    }));
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned">Não atribuído</SelectItem>
-                    {allocatedResources.map((resource: any) => (
-                      <SelectItem key={resource.id} value={resource.id}>
-                        {resource.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <option value="unassigned">Não atribuído</option>
+                  {allocatedResources.map((resource: any) => (
+                    <option key={resource.id} value={resource.id}>
+                      {resource.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Patrocinador</Label>
-                <Select
+                <select
+                  className={SELECT_CLASS}
                   value={form.sponsorId || "unassigned"}
-                  onValueChange={sponsorId =>
+                  onChange={event => {
+                    const sponsorId = event.target.value;
                     setForm(current => ({
                       ...current,
                       sponsorId: sponsorId === "unassigned" ? "" : sponsorId,
-                    }))
-                  }
+                    }));
+                  }}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned">Não atribuído</SelectItem>
-                    {allocatedResources.map((resource: any) => (
-                      <SelectItem key={resource.id} value={resource.id}>
-                        {resource.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <option value="unassigned">Não atribuído</option>
+                  {allocatedResources.map((resource: any) => (
+                    <option key={resource.id} value={resource.id}>
+                      {resource.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Prazo</Label>
