@@ -15,6 +15,9 @@ import { useWorkflowProject } from "./useWorkflowProject";
 const TYPES: Array<{ value: ApprovalEntityType; label: string }> = [
   { value: "bdcq_answer", label: "Respostas BDCQ" }, { value: "dcd", label: "DCDs" },
   { value: "gap", label: "Gaps" }, { value: "test_case", label: "Testes" }, { value: "activity", label: "Atividades em validação" },
+  { value: "workshop", label: "Workshops" }, { value: "configuration", label: "Configurações do consultor" },
+  { value: "risk", label: "Aceite de riscos" }, { value: "issue", label: "Issues críticas" },
+  { value: "cutover", label: "Cutover e decisão go/no-go" }, { value: "closure", label: "Encerramento do projeto" },
 ];
 type PolicyDraft = { enabled: boolean; quorum: ApprovalQuorum; minimumApprovals: number; approverMembershipIds: string[] };
 
@@ -41,10 +44,10 @@ export default function GovernancePage() {
     catch (error: any) { toast.error(error?.message || "Não foi possível salvar"); }
   };
   return <div className="space-y-5 p-3 sm:p-6">
-    <div><div className="flex items-center gap-2"><ShieldCheck className="h-6 w-6 text-primary" /><h1 className="text-2xl font-bold">Governança e aprovações</h1></div><p className="mt-1 text-sm text-muted-foreground">Defina quais entregas exigem aprovação e quem pode decidir neste projeto.</p></div>
+    <div><div className="flex items-center gap-2"><ShieldCheck className="h-6 w-6 text-primary" /><h1 className="text-2xl font-bold">Governança e aprovações</h1></div><p className="mt-1 text-sm text-muted-foreground">Ative os marcos que precisam de decisão formal. “Qualquer um” exige uma aprovação; “Todos” exige todos; “Mínimo N” usa o quórum definido. Itens aprovados ficam versionados e uma rejeição devolve a entrega para correção.</p></div>
     <div className="grid gap-4">{TYPES.map(type => { const draft = drafts[type.value]; if (!draft) return null; return <Card key={type.value}><CardHeader className="pb-3"><CardTitle className="flex items-center justify-between gap-3 text-base"><span>{type.label}</span><Switch checked={draft.enabled} onCheckedChange={enabled => update(type.value, { enabled })} /></CardTitle></CardHeader><CardContent className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2"><div><Label>Regra de quórum</Label><Select value={draft.quorum} onValueChange={quorum => update(type.value, { quorum: quorum as ApprovalQuorum })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="any">Qualquer um</SelectItem><SelectItem value="all">Todos</SelectItem><SelectItem value="minimum">Mínimo N</SelectItem></SelectContent></Select></div>{draft.quorum === "minimum" && <div><Label>Mínimo de aprovações</Label><Input type="number" min={1} max={Math.max(1, draft.approverMembershipIds.length)} value={draft.minimumApprovals} onChange={event => update(type.value, { minimumApprovals: Number(event.target.value) || 1 })} /></div>}</div>
-      <div><Label>Aprovadores padrão</Label><div className="mt-2 flex flex-wrap gap-2">{approvers.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum membro possui permissão de aprovação.</p> : approvers.map((member: any) => { const selected = draft.approverMembershipIds.includes(member.id); return <button type="button" key={member.id} onClick={() => update(type.value, { approverMembershipIds: selected ? draft.approverMembershipIds.filter(id => id !== member.id) : [...draft.approverMembershipIds, member.id] })}><Badge variant={selected ? "default" : "outline"}>{member.user?.name || member.appUserId}</Badge></button>; })}</div></div>
+      <div><Label>Aprovadores padrão</Label><div className="mt-2 flex flex-wrap gap-2">{approvers.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum membro possui permissão de aprovação. Cadastre o usuário em Acessos, vincule-o a este projeto e habilite a capacidade de aprovação.</p> : approvers.map((member: any) => { const selected = draft.approverMembershipIds.includes(member.id); return <button type="button" key={member.id} onClick={() => update(type.value, { approverMembershipIds: selected ? draft.approverMembershipIds.filter(id => id !== member.id) : [...draft.approverMembershipIds, member.id] })}><Badge variant={selected ? "default" : "outline"}>{member.user?.name || member.appUserId}</Badge></button>; })}</div></div>
       <div className="flex justify-end"><Button disabled={configure.isPending || (draft.enabled && draft.approverMembershipIds.length === 0)} onClick={() => save(type.value)}>Salvar política</Button></div>
     </CardContent></Card>; })}</div>
   </div>;

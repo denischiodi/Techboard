@@ -27,6 +27,7 @@ import { buildWorkflowConsolidatedMarkdown } from "../workflowConsolidatedReport
 import type { ProjectCapabilities, TechMoveData } from "../../shared/types";
 import * as projectAccess from "../projectAccess";
 import * as approvalStore from "../approvalStore";
+import { deliveryMasterRouter } from "./deliveryMaster";
 
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
@@ -489,7 +490,7 @@ const paginationInput = {
   offset: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(500).optional(),
 };
-const testTypeSchema = z.enum(["Unitário", "Integrado"]);
+const testTypeSchema = z.enum(["Unitário", "Ciclo 1", "Ciclo 2", "Integrado"]);
 const testStatusSchema = z.enum([
   "Não iniciado",
   "Em execução",
@@ -928,6 +929,7 @@ async function assertEntitiesBelongToProject(
 }
 
 export const workflowRouter = router({
+  delivery: deliveryMasterRouter,
   prompts: router({
     models: adminProcedure.query(async () => {
       try {
@@ -1875,7 +1877,11 @@ export const workflowRouter = router({
     keyUsers: router({
       list: workflowProjectProcedure(false, "viewProject")
         .input(z.object({ projectId: z.string() }))
-        .query(({ input }) => wdb.listProjectKeyUsers(input.projectId)),
+        .query(async ({ input }) => {
+          const memberships = await projectAccess.listProjectMemberships(input.projectId);
+          await wdb.syncProjectKeyUsersFromAccess(input.projectId, memberships);
+          return wdb.listProjectKeyUsers(input.projectId);
+        }),
       create: workflowProjectProcedure(true)
         .input(z.object({ projectId: z.string(), name: z.string().trim().min(1).max(255), email: z.string().trim().email().max(320), role: z.string().trim().max(255).optional() }))
         .mutation(async ({ input }) => {
@@ -1916,8 +1922,12 @@ export const workflowRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
-          if (input.consultantResourceId && !(await plannerStore.getResourceById(input.consultantResourceId)))
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
+          if (input.consultantResourceId) {
+            const [resource, allocations] = await Promise.all([plannerStore.getResourceById(input.consultantResourceId), plannerStore.listAllocations()]);
+            if (!resource) throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
+            if (!allocations.some(item => item.projectId === input.projectId && item.resourceId === input.consultantResourceId))
+              throw new TRPCError({ code: "BAD_REQUEST", message: "O consultor responsável precisa estar alocado no projeto pelo Planner" });
+          }
           if (input.keyUserId && await wdb.getWorkflowEntityProjectId("workflow_project_key_users", input.keyUserId) !== input.projectId)
             throw new TRPCError({ code: "BAD_REQUEST", message: "Key user não pertence ao projeto" });
           if (input.scopeItemIds?.length)
@@ -1952,8 +1962,13 @@ export const workflowRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
-          if (input.data.consultantResourceId && !(await plannerStore.getResourceById(input.data.consultantResourceId)))
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
+          if (input.data.consultantResourceId) {
+            const questionProjectId = await wdb.getWorkflowEntityProjectId("bdcq_questions", input.id);
+            const [resource, allocations] = await Promise.all([plannerStore.getResourceById(input.data.consultantResourceId), plannerStore.listAllocations()]);
+            if (!resource) throw new TRPCError({ code: "BAD_REQUEST", message: "Consultor responsável não encontrado" });
+            if (!questionProjectId || !allocations.some(item => item.projectId === questionProjectId && item.resourceId === input.data.consultantResourceId))
+              throw new TRPCError({ code: "BAD_REQUEST", message: "O consultor responsável precisa estar alocado no projeto pelo Planner" });
+          }
           if (input.data.keyUserId) {
             const [questionProjectId, keyUserProjectId] = await Promise.all([
               wdb.getWorkflowEntityProjectId("bdcq_questions", input.id),
@@ -1974,9 +1989,13 @@ export const workflowRouter = router({
             questions: z
               .array(
                 z.object({
+                  id: z.string().optional(),
                   module: z.string().min(1),
                   category: z.string().optional(),
                   question: z.string().min(1),
+                  consultantResourceId: z.string().optional(),
+                  keyUserId: z.string().optional(),
+                  scopeItemIds: z.array(z.string()).max(200).optional(),
                 })
               )
               .min(1)
@@ -1984,17 +2003,40 @@ export const workflowRouter = router({
           })
         )
         .mutation(async ({ input }) => {
-          const existing = await wdb.listBdcqQuestions(input.projectId);
+          const [existing, allocations, keyUsers, scopeItems] = await Promise.all([
+            wdb.listBdcqQuestions(input.projectId),
+            plannerStore.listAllocations(),
+            wdb.listProjectKeyUsers(input.projectId),
+            wdb.listScopeItems(input.projectId),
+          ]);
+          const keyUserIds = new Set(keyUsers.map((item: any) => item.id));
+          const scopeItemIds = new Set(scopeItems.map((item: any) => item.id));
           const normalize = (value: string) =>
             value.trim().toLocaleLowerCase("pt-BR");
-          const known = new Set(
-            existing.map((question: any) => normalize(question.question))
-          );
+          const byId = new Map(existing.map((question: any) => [question.id, question]));
+          const byQuestion = new Map(existing.map((question: any) => [normalize(question.question), question]));
           let added = 0;
-          let ignored = 0;
+          let updated = 0;
           for (const question of input.questions) {
-            if (known.has(normalize(question.question))) {
-              ignored++;
+            const current: any = (question.id && byId.get(question.id)) || byQuestion.get(normalize(question.question));
+            if (question.consultantResourceId) {
+              if (!allocations.some(item => item.projectId === input.projectId && item.resourceId === question.consultantResourceId))
+                throw new TRPCError({ code: "BAD_REQUEST", message: `O consultor da pergunta “${question.question}” não está alocado no projeto` });
+            }
+            if (question.keyUserId && !keyUserIds.has(question.keyUserId))
+              throw new TRPCError({ code: "BAD_REQUEST", message: `O Key User da pergunta “${question.question}” não pertence ao projeto` });
+            if (question.scopeItemIds?.some(id => !scopeItemIds.has(id)))
+              throw new TRPCError({ code: "BAD_REQUEST", message: `Um scope item da pergunta “${question.question}” não pertence ao projeto` });
+            if (current) {
+              await wdb.updateBdcqQuestion(current.id, {
+                module: question.module,
+                category: question.category || "",
+                question: question.question,
+                consultantResourceId: question.consultantResourceId || "",
+                keyUserId: question.keyUserId || "",
+                scopeItemIds: question.scopeItemIds || [],
+              });
+              updated++;
               continue;
             }
             await wdb.createBdcqQuestion({
@@ -2003,13 +2045,15 @@ export const workflowRouter = router({
               module: question.module,
               category: question.category || "",
               question: question.question,
+              consultantResourceId: question.consultantResourceId || "",
+              keyUserId: question.keyUserId || "",
+              scopeItemIds: question.scopeItemIds || [],
               isDefault: 0,
               sortOrder: existing.length + added,
             });
-            known.add(normalize(question.question));
             added++;
           }
-          return { added, ignored };
+          return { added, updated, ignored: 0 };
         }),
       seedDefaults: workflowProjectProcedure(true)
         .input(z.object({ projectId: z.string() }))
@@ -3299,7 +3343,7 @@ Retorne APENAS um JSON array com objetos no formato:
           wdb.listWorkflowTestStepsByProject(input.projectId),
         ]);
         return {
-          scenarios: scenarios.filter(item => item.type === "Integrado"),
+          scenarios: scenarios.filter(item => ["Ciclo 1", "Ciclo 2", "Integrado"].includes(item.type)),
           steps,
         };
       }),
@@ -3310,6 +3354,7 @@ Retorne APENAS um JSON array com objetos no formato:
           rows: z
             .array(
               z.object({
+                scenarioType: testTypeSchema.default("Ciclo 1"),
                 scenarioCode: z.string(),
                 scenarioTitle: z.string().trim().min(1),
                 scenarioDescription: z.string().optional(),
@@ -3334,21 +3379,21 @@ Retorne APENAS um JSON array com objetos no formato:
         const existing = await wdb.listWorkflowTestCases(input.projectId);
         const byCode = new Map<string, any>(
           existing
-            .filter(item => item.type === "Integrado" && item.code)
-            .map(item => [item.code.trim().toLocaleLowerCase("pt-BR"), item])
+            .filter(item => ["Ciclo 1", "Ciclo 2", "Integrado"].includes(item.type) && item.code)
+            .map(item => [`${item.type}|${item.code.trim().toLocaleLowerCase("pt-BR")}`, item])
         );
         let scenariosCreated = 0;
         let stepsCreated = 0;
         for (const row of input.rows) {
-          const key = (row.scenarioCode || row.scenarioTitle)
+          const key = `${row.scenarioType}|${(row.scenarioCode || row.scenarioTitle)
             .trim()
-            .toLocaleLowerCase("pt-BR");
+            .toLocaleLowerCase("pt-BR")}`;
           let scenario = byCode.get(key);
           if (!scenario) {
             scenario = await wdb.createWorkflowTestCase({
               id: nanoid(),
               projectId: input.projectId,
-              type: "Integrado",
+              type: row.scenarioType === "Integrado" ? "Ciclo 1" : row.scenarioType,
               code: row.scenarioCode,
               title: row.scenarioTitle,
               description: row.scenarioDescription,

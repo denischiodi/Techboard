@@ -93,7 +93,7 @@ export async function syncActivityTemplates(today = zonedToday()) {
         scope: "project",
         projectId: project.id,
         title: template.title,
-        description: template.description,
+        description: [`Fase ${template.gpPhase}`, template.required ? "Atividade obrigatória" : "Atividade opcional", template.description].filter(Boolean).join(" · "),
         status: existing?.status || "A fazer",
         priority: template.priority,
         assigneeUserId: assignee.id,
@@ -102,6 +102,7 @@ export async function syncActivityTemplates(today = zonedToday()) {
         dueDate: occurrence.dueDate,
         sourceType: "activity_template",
         sourceKey,
+        sourceUrl: `/techlead/gp-track?projectId=${encodeURIComponent(project.id)}&phase=${encodeURIComponent(template.gpPhase)}`,
         sourceResolved: false,
       });
       if (existing) updated++;

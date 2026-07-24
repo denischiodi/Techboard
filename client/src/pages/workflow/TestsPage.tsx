@@ -51,7 +51,7 @@ const statuses: TestStatus[] = [
   "Bloqueado",
 ];
 const emptyScenario = {
-  type: "Integrado" as const,
+  type: "Ciclo 1" as "Ciclo 1" | "Ciclo 2" | "Unitário",
   code: "",
   title: "",
   description: "",
@@ -477,6 +477,8 @@ function ScenarioSteps({
 
 export default function TestsPage() {
   const { projectId } = useWorkflowProject();
+  const requestedType = new URLSearchParams(window.location.search).get("testType");
+  const selectedType = requestedType === "unit_test" ? "Unitário" : requestedType === "cycle_2" ? "Ciclo 2" : requestedType === "cycle_1" ? "Ciclo 1" : "";
   const [selected, setSelected] = useState<any>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(emptyScenario);
@@ -498,7 +500,7 @@ export default function TestsPage() {
       setShowAdd(false);
       setForm(emptyScenario);
       setSelected(scenario);
-      toast.success("Cenário E2E criado. Agora adicione as etapas.");
+      toast.success("Cenário criado. Agora adicione as etapas e evidências.");
     },
     onError: error => toast.error(error.message),
   });
@@ -528,7 +530,8 @@ export default function TestsPage() {
     writeWorkbook(
       [
         {
-          "Código cenário": "E2E-001",
+          "Tipo de teste": "Ciclo 1",
+          "Código cenário": "TST-001",
           "Nome cenário": "Order to Cash completo",
           "Descrição cenário": "Validar o processo ponta a ponta",
           Módulo: "SD",
@@ -544,7 +547,8 @@ export default function TestsPage() {
           "Data execução": "",
         },
         {
-          "Código cenário": "E2E-001",
+          "Tipo de teste": "Ciclo 1",
+          "Código cenário": "TST-001",
           "Nome cenário": "Order to Cash completo",
           "Descrição cenário": "Validar o processo ponta a ponta",
           Módulo: "FI",
@@ -572,6 +576,7 @@ export default function TestsPage() {
     const rows = result.data.steps.map((step: any) => {
       const scenario: any = scenariosById.get(step.testCaseId);
       return {
+        "Tipo de teste": scenario?.type === "Integrado" ? "Ciclo 1" : scenario?.type || "Ciclo 1",
         "Código cenário": scenario?.code || "",
         "Nome cenário": scenario?.title || "",
         "Descrição cenário": scenario?.description || "",
@@ -612,6 +617,7 @@ export default function TestsPage() {
             `Linha ${index + 2}: nome do cenário e nome da etapa são obrigatórios.`
           );
         return {
+          scenarioType: (["Unitário", "Ciclo 1", "Ciclo 2"].includes(String(row["Tipo de teste"])) ? String(row["Tipo de teste"]) : "Ciclo 1") as "Unitário" | "Ciclo 1" | "Ciclo 2",
           scenarioCode: String(row["Código cenário"] || "").trim(),
           scenarioTitle,
           scenarioDescription: String(row["Descrição cenário"] || ""),
@@ -636,8 +642,8 @@ export default function TestsPage() {
     }
   };
   const scenarios = useMemo(
-    () => tests.filter((test: any) => test.type === "Integrado"),
-    [tests]
+    () => tests.filter((test: any) => ["Unitário", "Ciclo 1", "Ciclo 2", "Integrado"].includes(test.type) && (!selectedType || test.type === selectedType || (selectedType === "Ciclo 1" && test.type === "Integrado"))),
+    [tests, selectedType]
   );
   if (selected)
     return (
@@ -655,7 +661,7 @@ export default function TestsPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <FlaskConical className="h-6 w-6" />
-            Cenários de teste E2E
+            {selectedType ? `Testes · ${selectedType}` : "Cenários de teste"}
           </h1>
           <p className="text-sm text-muted-foreground">
             Distribua cada etapa aos Key Users e acompanhe execução, aprovação e
@@ -688,7 +694,7 @@ export default function TestsPage() {
           </Button>
           <Button onClick={() => setShowAdd(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Novo cenário E2E
+            Novo cenário
           </Button>
         </div>
       </div>
@@ -697,7 +703,7 @@ export default function TestsPage() {
           <Card className="md:col-span-2 xl:col-span-3">
             <CardContent className="py-12 text-center">
               <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-              <p className="font-medium">Nenhum cenário E2E criado</p>
+              <p className="font-medium">Nenhum cenário de teste criado</p>
               <p className="text-sm text-muted-foreground">
                 Crie um fluxo e depois distribua suas etapas aos Key Users.
               </p>
@@ -735,16 +741,27 @@ export default function TestsPage() {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Novo cenário de teste E2E</DialogTitle>
+            <DialogTitle>Novo cenário de teste</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label>Tipo de teste *</Label>
+                <Select value={form.type} onValueChange={(type: "Unitário" | "Ciclo 1" | "Ciclo 2") => setForm(value => ({ ...value, type }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Unitário">Teste unitário</SelectItem>
+                    <SelectItem value="Ciclo 1">Ciclo 1</SelectItem>
+                    <SelectItem value="Ciclo 2">Ciclo 2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label>Código</Label>
                 <Input
                   value={form.code}
                   onChange={e => setForm(v => ({ ...v, code: e.target.value }))}
-                  placeholder="E2E-001"
+                  placeholder="TST-001"
                 />
               </div>
               <div>

@@ -11,12 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Plus, Trash2, Search, MessageSquare, Sparkles, Upload, FileSpreadsheet, History, Check, LoaderCircle, Library, Pencil, Paperclip, ExternalLink, Users, ShieldCheck, RotateCcw } from "lucide-react";
+import { Plus, Trash2, Search, MessageSquare, Sparkles, Upload, Download, FileSpreadsheet, History, Check, LoaderCircle, Library, Pencil, Paperclip, ExternalLink, Users, ShieldCheck, RotateCcw } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 
 import { useWorkflowProject } from "./useWorkflowProject";
 
 export default function BDCQPage() {
+  const [, setLocation] = useLocation();
   const PAGE_SIZE = 50;
   const { projectId: PROJECT_ID } = useWorkflowProject();
   const { user } = useAuth();
@@ -50,6 +52,11 @@ export default function BDCQPage() {
   const myMembership: any = projectMembers.find((item: any) => item.user?.email?.toLowerCase() === user?.email?.toLowerCase());
   const canManageBdcq = isAdmin || !myMembership || myMembership.profile === "gp_internal" || myMembership.profile === "internal_team";
   const { data: resources = [] } = trpc.resources.list.useQuery(undefined, { enabled: canManageBdcq });
+  const { data: allocations = [] } = trpc.allocations.list.useQuery(undefined, { enabled: canManageBdcq });
+  const exportQuestions = trpc.workflow.bdcq.questions.list.useQuery(
+    { projectId: PROJECT_ID, offset: 0, limit: 500 },
+    { enabled: false }
+  );
   const { data: keyUsers = [], refetch: refetchKeyUsers } = trpc.workflow.bdcq.keyUsers.list.useQuery({ projectId: PROJECT_ID });
   const { data: templates = [], refetch: refetchTemplates } = trpc.workflow.bdcq.templates.list.useQuery();
   const { data: approvalPolicies = [] } = trpc.approvals.policies.useQuery({ projectId: PROJECT_ID });
@@ -66,7 +73,7 @@ export default function BDCQPage() {
   const uploadAttachment = trpc.workflow.upload.useMutation();
   const { data: answerHistory = [] } = trpc.workflow.bdcq.answers.history.useQuery({ answerId: showHistory?.id || "" }, { enabled: Boolean(showHistory?.id) });
   const seedMut = trpc.workflow.bdcq.questions.seedDefaults.useMutation({ onSuccess: (data: any) => { refetchQ(); toast.success(`${data.added} perguntas padrão adicionadas`); } });
-  const bulkCreate = trpc.workflow.bdcq.questions.bulkCreate.useMutation({ onSuccess: data => { refetchQ(); toast.success(`${data.added} perguntas importadas${data.ignored ? `; ${data.ignored} duplicadas ignoradas` : ""}`); }, onError: error => toast.error(error.message || "Erro ao importar perguntas") });
+  const bulkCreate = trpc.workflow.bdcq.questions.bulkCreate.useMutation({ onSuccess: data => { refetchQ(); toast.success(`${data.added} criadas e ${data.updated} atualizadas`); }, onError: error => toast.error(error.message || "Erro ao importar perguntas") });
   const createTemplate = trpc.workflow.bdcq.templates.create.useMutation({ onSuccess: () => { refetchTemplates(); setTemplateForm(emptyTemplate); toast.success("Pergunta padrão criada"); }, onError: error => toast.error(error.message) });
   const updateTemplate = trpc.workflow.bdcq.templates.update.useMutation({ onSuccess: () => { refetchTemplates(); setTemplateForm(emptyTemplate); toast.success("Pergunta padrão atualizada"); }, onError: error => toast.error(error.message) });
   const deleteTemplate = trpc.workflow.bdcq.templates.delete.useMutation({ onSuccess: () => { refetchTemplates(); toast.success("Pergunta padrão removida"); }, onError: error => toast.error(error.message) });
@@ -85,6 +92,19 @@ export default function BDCQPage() {
   );
   const answeredCount = new Set(answers.filter((answer: any) => String(answer.answer || "").trim()).map((answer: any) => answer.questionId)).size;
   const moduleOptions = [...new Set([...(lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value), ...scopeItems.map((item: any) => item.module).filter(Boolean)])].sort();
+  const projectAllocationMap = new Map(
+    allocations
+      .filter((allocation: any) => allocation.projectId === PROJECT_ID)
+      .map((allocation: any) => [allocation.resourceId, allocation])
+  );
+  const consultantOptions = (module: string) => resources
+    .filter((resource: any) => projectAllocationMap.has(resource.id))
+    .sort((left: any, right: any) => {
+      const leftAllocation: any = projectAllocationMap.get(left.id);
+      const rightAllocation: any = projectAllocationMap.get(right.id);
+      const matches = (resource: any, allocation: any) => [resource.front, ...(resource.fronts || []), allocation?.front].filter(Boolean).includes(module);
+      return Number(matches(right, rightAllocation)) - Number(matches(left, leftAllocation)) || left.name.localeCompare(right.name, "pt-BR");
+    });
   const bdcqPolicy = approvalPolicies.find((policy: any) => policy.entityType === "bdcq_answer");
   const latestApproval: any = approvalRounds[0];
   const answerLocked = latestApproval?.status === "approved";
@@ -164,14 +184,44 @@ export default function BDCQPage() {
         return String(entry?.[1] || "").trim();
       };
       const parsed = rows.map(row => ({
+        id: valueFrom(row, ["id", "identificador", "codigo"]),
         question: valueFrom(row, ["pergunta", "question", "questao", "texto"]),
         module: valueFrom(row, ["modulo", "module", "frente", "lob"]) || "Geral",
         category: valueFrom(row, ["categoria", "category", "tema", "processo"]),
+        consultantResourceId: valueFrom(row, ["id consultor", "consultor id", "consultant id"]),
+        keyUserId: valueFrom(row, ["id key user", "key user id"]),
+        scopeItemIds: valueFrom(row, ["ids scope items", "scope item ids"]).split(/[;,]/).map(value => value.trim()).filter(Boolean),
       })).filter(row => row.question);
       if (!parsed.length) { toast.error("Nenhuma pergunta encontrada. Use colunas Pergunta, Módulo e Categoria."); return; }
       bulkCreate.mutate({ projectId: PROJECT_ID, questions: parsed });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível ler a planilha");
+    }
+  };
+
+  const downloadExcelModel = async () => {
+    try {
+      const result = await exportQuestions.refetch();
+      const registered = result.data || [];
+      const rows = registered.length ? registered.map((question: any) => ({
+        ID: question.id,
+        Pergunta: question.question,
+        Módulo: question.module,
+        Categoria: question.category || "",
+        "ID consultor": question.consultantResourceId || "",
+        "Consultor responsável": resourceMap.get(question.consultantResourceId)?.name || "",
+        "ID key user": question.keyUserId || "",
+        "Key user responsável": keyUserMap.get(question.keyUserId)?.name || "",
+        "IDs scope items": (question.scopeItemIds || []).join(";"),
+      })) : [{ ID: "", Pergunta: "", Módulo: "", Categoria: "", "ID consultor": "", "Consultor responsável": "", "ID key user": "", "Key user responsável": "", "IDs scope items": "" }];
+      const XLSX = await import("xlsx");
+      const sheet = XLSX.utils.json_to_sheet(rows);
+      sheet["!cols"] = [{ wch: 24 }, { wch: 60 }, { wch: 16 }, { wch: 24 }, { wch: 24 }, { wch: 30 }, { wch: 24 }, { wch: 30 }, { wch: 36 }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, "BDCQ");
+      XLSX.writeFile(workbook, `modelo-bdcq-${PROJECT_ID}.xlsx`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível gerar o modelo");
     }
   };
 
@@ -184,7 +234,8 @@ export default function BDCQPage() {
         </div>
         <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap sm:justify-end">
           {canManageBdcq && <><Button variant="outline" onClick={() => setShowLibrary(true)}><Library className="mr-2 h-4 w-4" />Lista padrão</Button>
-          <Button variant="outline" onClick={() => setShowKeyUsers(true)}><Users className="mr-2 h-4 w-4" />Key users</Button>
+          <Button variant="outline" onClick={() => setLocation("/admin/users")}><Users className="mr-2 h-4 w-4" />Gerenciar Key Users em Acessos</Button>
+          <Button variant="outline" onClick={downloadExcelModel}><Download className="h-4 w-4 mr-2" />Baixar modelo</Button>
           <Button variant="outline" asChild><label className="cursor-pointer"><Upload className="h-4 w-4 mr-2" />Importar Excel<input className="hidden" type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelImport} /></label></Button>
           <Button variant="outline" onClick={() => seedMut.mutate({ projectId: PROJECT_ID })} disabled={seedMut.isPending}>
             <Sparkles className="h-4 w-4 mr-2" />Carregar Padrão SAP
@@ -265,7 +316,7 @@ export default function BDCQPage() {
               <div><Label>Frente/Módulo</Label><Select value={form.module} onValueChange={v => setForm(f => ({ ...f, module: v }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{moduleOptions.map(module => <SelectItem key={module} value={module}>{module}</SelectItem>)}</SelectContent></Select></div>
               <div><Label>Categoria</Label><Input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Pricing, Purchasing..." /></div>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><Label>Consultor responsável</Label><Select value={form.consultantResourceId || "none"} onValueChange={value => setForm(current => ({ ...current, consultantResourceId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um recurso" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{resources.map(resource => <SelectItem key={resource.id} value={resource.id}>{resource.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Key user responsável</Label><Select value={form.keyUserId || "none"} onValueChange={value => setForm(current => ({ ...current, keyUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um key user" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{keyUsers.filter((keyUser: any) => keyUser.active).map((keyUser: any) => <SelectItem key={keyUser.id} value={keyUser.id}>{keyUser.name}{keyUser.role ? ` · ${keyUser.role}` : ""}</SelectItem>)}</SelectContent></Select></div></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><Label>Consultor responsável</Label><Select value={form.consultantResourceId || "none"} onValueChange={value => setForm(current => ({ ...current, consultantResourceId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um recurso alocado" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{consultantOptions(form.module).map(resource => <SelectItem key={resource.id} value={resource.id}>{resource.name}{projectAllocationMap.get(resource.id)?.front ? ` · ${(projectAllocationMap.get(resource.id) as any).front}` : ""}</SelectItem>)}</SelectContent></Select><p className="mt-1 text-xs text-muted-foreground">Somente consultores alocados no projeto; o módulo selecionado aparece primeiro.</p></div><div><Label>Key user responsável</Label><Select value={form.keyUserId || "none"} onValueChange={value => setForm(current => ({ ...current, keyUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um key user" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{keyUsers.filter((keyUser: any) => keyUser.active).map((keyUser: any) => <SelectItem key={keyUser.id} value={keyUser.id}>{keyUser.name}{keyUser.role ? ` · ${keyUser.role}` : ""}</SelectItem>)}</SelectContent></Select></div></div>
             <div className="grid gap-2"><Label>Scope items relacionados (opcional)</Label><div className="max-h-40 space-y-1 overflow-auto rounded-md border p-2">{scopeItems.length === 0 ? <p className="text-xs text-muted-foreground">Nenhum scope item cadastrado.</p> : scopeItems.map((item: any) => <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"><Checkbox checked={form.scopeItemIds.includes(item.id)} onCheckedChange={() => setForm(current => ({ ...current, scopeItemIds: toggleValue(current.scopeItemIds, item.id) }))} /><span>{item.code ? `${item.code} - ` : ""}{item.name}</span><Badge variant="outline" className="ml-auto">{item.module}</Badge></label>)}</div></div>
           </div>
           <DialogFooter><Button onClick={() => createQ.mutate({ projectId: PROJECT_ID, module: form.module || "Geral", question: form.question, category: form.category, scopeItemIds: form.scopeItemIds, consultantResourceId: form.consultantResourceId, keyUserId: form.keyUserId })} disabled={!form.question}>Criar</Button></DialogFooter>
@@ -307,7 +358,7 @@ export default function BDCQPage() {
           <DialogHeader><DialogTitle>Detalhes da pergunta BDCQ</DialogTitle></DialogHeader>
           {showAnswer && <div className="space-y-3 rounded-lg border bg-muted/30 p-4"><div className="flex flex-wrap gap-2"><Badge variant="outline">{showAnswer.module || "Sem módulo"}</Badge>{showAnswer.category && <Badge variant="secondary">{showAnswer.category}</Badge>}</div><p className="whitespace-pre-wrap text-base font-medium leading-relaxed">{showAnswer.question}</p>{showAnswer.scopeItemIds?.length > 0 && <div className="flex flex-wrap gap-1">{showAnswer.scopeItemIds.map((id: string) => { const item = scopeItems.find((scope: any) => scope.id === id); return item ? <Badge key={id} className="bg-blue-50 text-blue-800">{item.code ? `${item.code} - ` : ""}{item.name}</Badge> : null; })}</div>}</div>}
           <div className="grid gap-3">
-            {canManageBdcq && <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2"><div><Label>Consultor responsável</Label><Select value={ownerForm.consultantResourceId || "none"} onValueChange={value => setOwnerForm(current => ({ ...current, consultantResourceId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um recurso" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{resources.map(resource => <SelectItem key={resource.id} value={resource.id}>{resource.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Key user responsável</Label><Select value={ownerForm.keyUserId || "none"} onValueChange={value => setOwnerForm(current => ({ ...current, keyUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um key user" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{keyUsers.filter((keyUser: any) => keyUser.active).map((keyUser: any) => <SelectItem key={keyUser.id} value={keyUser.id}>{keyUser.name}{keyUser.role ? ` · ${keyUser.role}` : ""}</SelectItem>)}</SelectContent></Select></div><Button variant="outline" className="sm:col-span-2" disabled={updateQ.isPending || (ownerForm.consultantResourceId === (showAnswer?.consultantResourceId || "") && ownerForm.keyUserId === (showAnswer?.keyUserId || ""))} onClick={() => updateQ.mutate({ id: showAnswer.id, data: ownerForm })}>Salvar responsáveis</Button></div>}
+            {canManageBdcq && <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2"><div><Label>Consultor responsável</Label><Select value={ownerForm.consultantResourceId || "none"} onValueChange={value => setOwnerForm(current => ({ ...current, consultantResourceId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um recurso alocado" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{consultantOptions(showAnswer?.module || "").map(resource => <SelectItem key={resource.id} value={resource.id}>{resource.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Key user responsável</Label><Select value={ownerForm.keyUserId || "none"} onValueChange={value => setOwnerForm(current => ({ ...current, keyUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue placeholder="Selecione um key user" /></SelectTrigger><SelectContent><SelectItem value="none">Não definido</SelectItem>{keyUsers.filter((keyUser: any) => keyUser.active).map((keyUser: any) => <SelectItem key={keyUser.id} value={keyUser.id}>{keyUser.name}{keyUser.role ? ` · ${keyUser.role}` : ""}</SelectItem>)}</SelectContent></Select></div><Button variant="outline" className="sm:col-span-2" disabled={updateQ.isPending || (ownerForm.consultantResourceId === (showAnswer?.consultantResourceId || "") && ownerForm.keyUserId === (showAnswer?.keyUserId || ""))} onClick={() => updateQ.mutate({ id: showAnswer.id, data: ownerForm })}>Salvar responsáveis</Button></div>}
             <div><Label>Resposta ou complemento</Label><Textarea disabled={answerLocked} value={answerForm.answer} onChange={e => setAnswerForm(f => ({ ...f, answer: e.target.value }))} rows={7} placeholder="Registre a resposta, decisão ou informação complementar..." /></div>
             <div><Label>Respondido por</Label><Input disabled={answerLocked} value={answerForm.answeredBy} onChange={e => setAnswerForm(f => ({ ...f, answeredBy: e.target.value }))} /></div>
             <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-2"><div><Label>Anexos complementares</Label><p className="text-xs text-muted-foreground">PDF, imagens, planilhas ou documentos de até 10 MB.</p></div><Button variant="outline" size="sm" asChild disabled={answerLocked || uploadAttachment.isPending}><label className="cursor-pointer"><Upload className="mr-2 h-4 w-4" />{uploadAttachment.isPending ? "Enviando..." : "Adicionar anexo"}<input disabled={answerLocked} type="file" className="hidden" onChange={event => { void handleAnswerAttachment(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></Button></div>{answerForm.attachments.length === 0 ? <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhum anexo adicionado.</p> : <div className="space-y-2">{answerForm.attachments.map((url, index) => <div key={`${url}-${index}`} className="flex items-center gap-2 rounded-md border p-2"><Paperclip className="h-4 w-4 shrink-0 text-blue-600" /><a href={url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-sm text-blue-700 hover:underline">{decodeURIComponent(url.split("/").pop()?.split("?")[0] || `Anexo ${index + 1}`)}</a><Button variant="ghost" size="icon" asChild><a href={url} target="_blank" rel="noreferrer" title="Abrir anexo"><ExternalLink className="h-4 w-4" /></a></Button>{!answerLocked && <Button variant="ghost" size="icon" onClick={() => setAnswerForm(current => ({ ...current, attachments: current.attachments.filter((_, itemIndex) => itemIndex !== index) }))} title="Remover anexo"><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div>)}</div>}</div>

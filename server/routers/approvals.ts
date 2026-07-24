@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as approvalStore from "../approvalStore";
 import * as projectAccess from "../projectAccess";
 
-const entityType = z.enum(["bdcq_answer", "dcd", "gap", "test_case", "activity"]);
+const entityType = z.enum(["bdcq_answer", "dcd", "gap", "test_case", "activity", "workshop", "configuration", "risk", "issue", "cutover", "closure"]);
 const quorum = z.enum(["any", "all", "minimum"]);
 
 export const approvalsRouter = router({

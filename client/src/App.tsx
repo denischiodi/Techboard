@@ -31,6 +31,8 @@ import TechTaskDashboard from "./pages/TechTaskDashboard";
 import TechLeadTeams from "./pages/TechLeadTeams";
 import StandardConfigurations from "./pages/StandardConfigurations";
 import GovernancePage from "./pages/workflow/GovernancePage";
+import RaidPage from "./pages/workflow/RaidPage";
+import TrailStagePage from "./pages/workflow/TrailStagePage";
 
 function AppRoutes() {
   return (
@@ -73,6 +75,8 @@ function AppRoutes() {
               />
               <Route path={"/techmove/tests"} component={TestsPage} />
               <Route path={"/techmove/governance"} component={GovernancePage} />
+              <Route path={"/techmove/raid"} component={RaidPage} />
+              <Route path={"/techmove/trail"} component={TrailStagePage} />
               <Route path={"/workflow/scope-items"}>
                 <Redirect to="/techmove/scope-items" />
               </Route>

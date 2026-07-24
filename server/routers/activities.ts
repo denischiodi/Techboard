@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import type { Activity, AppUser, Project } from "../../shared/types";
+import type { Activity, ActivityStatus, AppUser, Project } from "../../shared/types";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import * as activityStore from "../activityStore";
 import * as activityTemplateStore from "../activityTemplateStore";
@@ -25,6 +25,8 @@ const templateInputSchema = z.object({
   monthDay: z.number().int().min(1).max(31).default(1),
   dueOffsetDays: z.number().int().min(0).max(3650).default(0),
   ownerRole: z.enum(["manager", "technical_lead", "consultant"]).default("manager"),
+  gpPhase: z.enum(["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"]).default("Prepare"),
+  required: z.boolean().default(true),
   appliesToAllProjects: z.boolean().default(true),
   active: z.boolean().default(true),
   projects: z.array(z.object({ projectId: z.string().min(1), assigneeUserId: z.string().default("") })).max(1000).default([]),
@@ -295,13 +297,39 @@ export const activitiesRouter = router({
     }
     if (["bdcq_question", "workflow_test", "approval"].includes(activity.sourceType) && input.data.status !== undefined)
       throw new TRPCError({ code: "BAD_REQUEST", message: "O status desta pendência é controlado pelo item de origem" });
+    const before = Object.fromEntries(
+      Object.keys(input.data).map(key => [key, activity[key as keyof Pick<Activity, "title" | "description" | "status" | "priority" | "assigneeUserId" | "dueDate">]])
+    );
     const updated = await activityStore.updateActivity(activity.id, input.data);
     if (!updated) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada" });
     if (input.data.status) await syncActivityStatusToSource(activity, input.data.status);
-    await activityStore.addHistory(activity.id, ctx.appUser, "UPDATED", input.data);
     const current = await activityStore.getActivity(activity.id) as Activity;
+    await activityStore.addHistory(activity.id, ctx.appUser, "UPDATED", {
+      before,
+      after: input.data,
+      afterUpdatedAt: current.updatedAt,
+    });
     await notify(current, ctx.appUser, input.data.status ? "status_changed" : "updated", input.data.status ? `Status alterado para ${input.data.status}.` : "A atividade foi atualizada.", input.data.assigneeUserId ? [input.data.assigneeUserId] : []);
     return current;
+  }),
+
+  undoLastUpdate: activityModifyProcedure.input(z.object({ id: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    const activity = await requireActivity(input.id, ctx.appUser, true);
+    await approvalStore.assertEntityEditable("activity", activity.id);
+    const event = activity.history.find(item => item.action === "UPDATED" && item.details?.before && item.details?.afterUpdatedAt);
+    if (!event) throw new TRPCError({ code: "BAD_REQUEST", message: "Não existe uma alteração recente que possa ser desfeita" });
+    if (event.actorUserId !== ctx.appUser.id && ctx.appUser.role !== "admin")
+      throw new TRPCError({ code: "FORBIDDEN", message: "Somente quem fez a alteração ou um administrador pode desfazê-la" });
+    if (activity.updatedAt !== event.details.afterUpdatedAt)
+      throw new TRPCError({ code: "CONFLICT", message: "A atividade foi alterada depois dessa ação e não pode mais ser desfeita" });
+    const allowed = new Set(["title", "description", "status", "priority", "assigneeUserId", "dueDate"]);
+    const before = Object.fromEntries(Object.entries(event.details.before as Record<string, unknown>).filter(([key]) => allowed.has(key)));
+    if (!Object.keys(before).length) throw new TRPCError({ code: "BAD_REQUEST", message: "A alteração não possui dados reversíveis" });
+    const restored = await activityStore.updateActivity(activity.id, before);
+    if (!restored) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada" });
+    if (typeof before.status === "string") await syncActivityStatusToSource(activity, before.status as ActivityStatus);
+    await activityStore.addHistory(activity.id, ctx.appUser, "UPDATE_UNDONE", { revertedEventId: event.id, restored: before });
+    return activityStore.getActivity(activity.id);
   }),
 
   archive: activityModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {

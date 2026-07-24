@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
-import { FileSpreadsheet, MessageSquare, Users, FileText, AlertTriangle, Settings2, ArrowRight, History, Search, Download, DatabaseZap, FlaskConical, ShieldCheck } from "lucide-react";
+import { FileSpreadsheet, MessageSquare, Users, FileText, AlertTriangle, Settings2, ArrowRight, History, Search, Download, DatabaseZap, FlaskConical, ShieldCheck, LockKeyhole, PlayCircle, CheckCircle2, ClipboardCheck, Layers3, Rocket, Flag, RefreshCw, Sparkles } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -13,15 +13,36 @@ import { ProjectName } from "@/components/ProjectLogo";
 import { useEffect, useState } from "react";
 
 const steps = [
-  { id: "scope-items", title: "DDA / Scope Items", description: "Upload e gestão dos scope items do projeto", icon: FileSpreadsheet, path: "/techmove/scope-items", color: "bg-blue-500" },
-  { id: "bdcq", title: "BDCQ", description: "Perguntas de levantamento e respostas do cliente", icon: MessageSquare, path: "/techmove/bdcq", color: "bg-purple-500" },
-  { id: "workshops", title: "Workshops", description: "Agendamento, transcrições e atas automáticas", icon: Users, path: "/techmove/workshops", color: "bg-green-500" },
-  { id: "dcd", title: "DCD (IA)", description: "Documento de configuração detalhada gerado por IA", icon: FileText, path: "/techmove/dcd", color: "bg-orange-500" },
-  { id: "gaps", title: "Gaps", description: "Lista de gaps extraída automaticamente do DCD", icon: AlertTriangle, path: "/techmove/gaps", color: "bg-red-500" },
-  { id: "configurations", title: "Configurações", description: "Checklist de configurações a executar", icon: Settings2, path: "/techmove/configurations", color: "bg-teal-500" },
-  { id: "tests", title: "Testes", description: "Testes unitários e integrados com evidências e rastreabilidade", icon: FlaskConical, path: "/techmove/tests", color: "bg-indigo-500" },
-  { id: "governance", title: "Governança", description: "Aprovadores, quórum e políticas por tipo de entrega", icon: ShieldCheck, path: "/techmove/governance", color: "bg-slate-700" },
+  { id: "governance", title: "Preparação e governança", description: "Defina responsáveis, aprovadores e regras antes das entregas críticas", icon: ShieldCheck, path: "/techmove/governance", color: "bg-slate-700", dependencies: [] as string[], action: "Configurar governança" },
+  { id: "scope-items", title: "Escopo e DDA", description: "Importe o DDA e confirme os scope items que orientam a implementação", icon: FileSpreadsheet, path: "/techmove/scope-items", color: "bg-blue-500", dependencies: [] as string[], action: "Preparar escopo" },
+  { id: "bdcq", title: "Levantamento BDCQ", description: "Organize perguntas, responsáveis e respostas do cliente", icon: MessageSquare, path: "/techmove/bdcq", color: "bg-purple-500", dependencies: ["scope-items"], action: "Responder BDCQ" },
+  { id: "workshops", title: "Workshops", description: "Planeje sessões, registre decisões e gere atas", icon: Users, path: "/techmove/workshops", color: "bg-green-500", dependencies: ["scope-items"], action: "Preparar workshop" },
+  { id: "dcd", title: "Documentação DCD", description: "Consolide o desenho e envie a versão para validação", icon: FileText, path: "/techmove/dcd", color: "bg-orange-500", dependencies: ["bdcq", "workshops"], action: "Revisar documentação" },
+  { id: "gaps", title: "Gaps", description: "Classifique impactos, responsáveis e decisões", icon: AlertTriangle, path: "/techmove/gaps", color: "bg-red-500", dependencies: ["dcd"], action: "Resolver gaps" },
+  { id: "configurations", title: "Configurações do consultor", description: "Execute o checklist rastreado ao escopo, BDCQ, DCD e gaps", icon: Settings2, path: "/techmove/configurations", color: "bg-teal-500", dependencies: ["dcd"], action: "Executar configurações" },
+  { id: "unit-tests", title: "Testes unitários", description: "Valide cada configuração e registre as evidências obrigatórias", icon: ClipboardCheck, path: "/techmove/tests?testType=unit_test", color: "bg-cyan-600", dependencies: ["configurations"], action: "Executar testes unitários" },
+  { id: "cycle-1", title: "Ciclo 1", description: "Execute o primeiro ciclo integrado e trate as reprovações", icon: FlaskConical, path: "/techmove/tests?testType=cycle_1", color: "bg-indigo-500", dependencies: ["unit-tests"], action: "Executar Ciclo 1" },
+  { id: "cycle-2", title: "Ciclo 2", description: "Confirme as correções e a prontidão para entrada em produção", icon: Layers3, path: "/techmove/tests?testType=cycle_2", color: "bg-violet-600", dependencies: ["cycle-1"], action: "Executar Ciclo 2" },
+  { id: "cutover", title: "Cutover", description: "Planeje ondas, responsáveis, validações e retorno", icon: Rocket, path: "/techmove/trail?stage=cutover", color: "bg-amber-600", dependencies: ["cycle-2"], action: "Preparar cutover" },
+  { id: "go-live", title: "Go-live e estabilização", description: "Controle a entrada em produção, suporte e estabilização", icon: Sparkles, path: "/techmove/trail?stage=go-live", color: "bg-emerald-600", dependencies: ["cutover"], action: "Acompanhar go-live" },
+  { id: "closure", title: "Encerramento", description: "Consolide entregas, pendências aceitas e aprovação final", icon: Flag, path: "/techmove/trail?stage=closure", color: "bg-slate-600", dependencies: ["go-live"], action: "Encerrar projeto" },
 ];
+
+const deliveryTypesByStep: Record<string, string[]> = {
+  governance: ["activity"],
+  "scope-items": ["activity"],
+  bdcq: ["bdcq"],
+  workshops: ["workshop"],
+  dcd: ["dcd"],
+  gaps: ["gap", "risk", "issue"],
+  configurations: ["configuration"],
+  "unit-tests": ["unit_test"],
+  "cycle-1": ["cycle_1"],
+  "cycle-2": ["cycle_2"],
+  cutover: ["cutover"],
+  "go-live": ["go_live"],
+  closure: ["closure"],
+};
 
 export default function ProjectWorkflow() {
   const [, setLocation] = useLocation();
@@ -44,6 +65,24 @@ export default function ProjectWorkflow() {
     { projectId },
     { enabled: Boolean(projectId && hasSelectedProject) },
   );
+  const { data: trailPreview, isFetching: previewingTrail } = trpc.workflow.delivery.trail.preview.useQuery(
+    { projectId },
+    { enabled: Boolean(projectId && hasSelectedProject) },
+  );
+  const { data: deliveryItems = [] } = trpc.workflow.delivery.trail.list.useQuery(
+    { projectId },
+    { enabled: Boolean(projectId && hasSelectedProject) },
+  );
+  const applyTrail = trpc.workflow.delivery.trail.apply.useMutation({
+    onSuccess: async result => {
+      toast.success(`Trilha atualizada: ${result.added} adicionados, ${result.updated} atualizados e ${result.preserved} personalizados preservados.`);
+      await Promise.all([
+        utils.workflow.delivery.trail.invalidate(),
+        utils.workflow.progress.invalidate(),
+      ]);
+    },
+    onError: error => toast.error(error.message || "Erro ao aplicar os modelos à trilha"),
+  });
   const importLegacy = trpc.workflow.legacy.import.useMutation({
     onSuccess: async result => {
       const imported = Object.entries(result).filter(([key]) => key !== "ignored").reduce((sum, [, value]) => sum + value, 0);
@@ -62,6 +101,49 @@ export default function ProjectWorkflow() {
     onError: error => toast.error(error.message || "Erro ao exportar relatório"),
   });
   const progressByStep = new Map((progress?.steps || []).map(step => [step.id, step]));
+  const itemsForStep = (stepId: string) => {
+    const acceptedTypes = deliveryTypesByStep[stepId] || [];
+    return (deliveryItems as any[]).filter(item => {
+      const normalizedStage = String(item.stage || "").toLocaleLowerCase("pt-BR").replaceAll("_", "-");
+      if (item.type === "activity") {
+        if (stepId === "governance") return ["governance", "governanca", "preparation", "preparacao"].includes(normalizedStage);
+        if (stepId === "scope-items") return ["scope", "scope-items", "dda", "escopo"].includes(normalizedStage);
+        return normalizedStage === stepId;
+      }
+      return acceptedTypes.includes(item.type) || normalizedStage === stepId;
+    });
+  };
+  const deliverySummary = (stepId: string) => {
+    const items = itemsForStep(stepId);
+    const completedStatuses = new Set(["completed", "concluido", "approved", "aprovado", "accepted", "aceito"]);
+    const completed = items.filter(item => completedStatuses.has(String(item.status || "").toLocaleLowerCase("pt-BR"))).length;
+    const requiredPending = items.filter(item => item.required && !completedStatuses.has(String(item.status || "").toLocaleLowerCase("pt-BR"))).length;
+    const evidencePending = items.filter(item => {
+      const requirements = Array.isArray(item.evidenceRequirements) ? item.evidenceRequirements : [];
+      const evidences = Array.isArray(item.evidences) ? item.evidences : [];
+      return requirements.length > evidences.length;
+    }).length;
+    return {
+      total: items.length,
+      completed,
+      requiredPending,
+      evidencePending,
+      percent: items.length ? Math.round((completed / items.length) * 100) : null,
+    };
+  };
+  const stateForStep = (step: typeof steps[number]) => {
+    const summary = deliverySummary(step.id);
+    const percent = summary.percent ?? progressByStep.get(step.id)?.percent ?? 0;
+    const missingDependencies = step.dependencies.filter(id => {
+      const dependencySummary = deliverySummary(id);
+      if (dependencySummary.total > 0) return dependencySummary.requiredPending > 0;
+      return (dependencySummary.percent ?? progressByStep.get(id)?.percent ?? 0) < 100;
+    });
+    if (percent >= 100) return { label: "Concluído", className: "bg-emerald-100 text-emerald-800", blocked: false, missingDependencies };
+    if (percent > 0) return { label: "Em andamento", className: "bg-blue-100 text-blue-800", blocked: false, missingDependencies };
+    if (missingDependencies.length) return { label: "Aguardando dependência", className: "bg-amber-100 text-amber-800", blocked: true, missingDependencies };
+    return { label: "Pronto para começar", className: "bg-violet-100 text-violet-800", blocked: false, missingDependencies };
+  };
   const selectProject = (value: string) => { rememberProject(value); setLocation(`/techmove?projectId=${encodeURIComponent(value)}`); };
   useEffect(() => {
     if (projects.length && !hasSelectedProject) selectProject((projects[0] as any).id);
@@ -82,9 +164,39 @@ export default function ProjectWorkflow() {
             <SelectTrigger className="w-full sm:w-72"><SelectValue placeholder="Selecione o projeto" /></SelectTrigger>
             <SelectContent>{projects.map((project: any) => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}</SelectContent>
           </Select>
+          <Button variant="outline" onClick={() => setLocation(withProject("/techmove/raid"))}><AlertTriangle className="mr-2 h-4 w-4" />Issues e riscos</Button>
           <Button variant="outline" onClick={() => consolidatedReport.mutate({ projectId })} disabled={!hasSelectedProject || consolidatedReport.isPending}><Download className="mr-2 h-4 w-4" />{consolidatedReport.isPending ? "Gerando..." : "Relatório consolidado"}</Button>
         </div>
       </div>
+      {hasSelectedProject && (
+        <Card className="border-primary/25 bg-primary/[0.03]">
+          <CardContent className="flex flex-col gap-4 py-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <h2 className="font-semibold">Modelos aplicáveis a este projeto</h2>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                A prévia considera modelos gerais, módulos e scope items. Personalizações feitas no projeto são preservadas.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Badge variant="outline">{trailPreview?.items.length || 0} modelos aplicáveis</Badge>
+                <Badge variant="secondary">{trailPreview?.added || 0} novos</Badge>
+                <Badge variant="secondary">{trailPreview?.updated || 0} atualizações</Badge>
+                <Badge variant="outline">{trailPreview?.preserved || 0} personalizados preservados</Badge>
+                <Badge variant="outline">{trailPreview?.outOfScope || 0} fora do escopo</Badge>
+              </div>
+            </div>
+            <Button
+              onClick={() => applyTrail.mutate({ projectId })}
+              disabled={applyTrail.isPending || previewingTrail || (!trailPreview?.added && !trailPreview?.updated)}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${applyTrail.isPending ? "animate-spin" : ""}`} />
+              {applyTrail.isPending ? "Aplicando..." : trailPreview?.added || trailPreview?.updated ? "Aplicar modelos" : "Trilha atualizada"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       {(legacyPreview?.total || 0) > 0 && (
         <Card className="border-amber-300 bg-amber-50/60 dark:bg-amber-950/20">
           <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -126,8 +238,12 @@ export default function ProjectWorkflow() {
         </Card>
       )}
       <div className="grid gap-4">
-        {steps.map((step, index) => (
-          <Card key={step.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setLocation(withProject(step.path))}>
+        {steps.map((step, index) => {
+          const state = stateForStep(step);
+          const summary = deliverySummary(step.id);
+          const percent = summary.percent ?? progressByStep.get(step.id)?.percent ?? 0;
+          return (
+          <Card key={step.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => setLocation(withProject(step.path))}>
             <CardContent className="flex items-center gap-4 py-4">
               <div className={`p-3 rounded-lg ${step.color} text-white`}>
                 <step.icon className="h-6 w-6" />
@@ -136,18 +252,30 @@ export default function ProjectWorkflow() {
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">{index + 1}</Badge>
                   <h3 className="min-w-0 break-words font-semibold">{step.title}</h3>
+                  <Badge className={state.className} variant="secondary">{state.label}</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">{step.description}</p>
                 <div className="mt-3 flex items-center gap-3">
-                  <Progress value={progressByStep.get(step.id)?.percent || 0} className="h-2" />
-                  <span className="w-10 text-right text-xs font-medium">{progressByStep.get(step.id)?.percent || 0}%</span>
+                  <Progress value={percent} className="h-2" />
+                  <span className="w-10 text-right text-xs font-medium">{percent}%</span>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{progressByStep.get(step.id)?.label || "Sem dados"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{progressByStep.get(step.id)?.label || (summary.total ? `${summary.total} itens gerados pelos modelos` : "Nenhum modelo aplicado nesta etapa")}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="flex items-center gap-1 font-medium text-primary">{state.blocked ? <LockKeyhole className="h-3.5 w-3.5" /> : percent >= 100 ? <CheckCircle2 className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}{percent >= 100 ? "Consultar entrega" : step.action}</span>
+                  {state.missingDependencies.length > 0 && <span className="text-muted-foreground">Depende de: {state.missingDependencies.map(id => steps.find(item => item.id === id)?.title).join(", ")}</span>}
+                </div>
+                {summary.total > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge variant="outline">{summary.completed}/{summary.total} itens concluídos</Badge>
+                    {summary.requiredPending > 0 && <Badge className="bg-amber-100 text-amber-800">{summary.requiredPending} obrigatórios pendentes</Badge>}
+                    {summary.evidencePending > 0 && <Badge className="bg-rose-100 text-rose-800">{summary.evidencePending} evidências pendentes</Badge>}
+                  </div>
+                )}
               </div>
               <ArrowRight className="h-5 w-5 text-muted-foreground" />
             </CardContent>
           </Card>
-        ))}
+        )})}
       </div>
       <Card>
         <CardContent className="py-5">
