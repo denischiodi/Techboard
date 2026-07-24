@@ -228,15 +228,13 @@ export default function BDCQPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
-      <GeneratedModelItems projectId={PROJECT_ID} types={["bdcq"]} title="Perguntas padrão aplicadas" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">BDCQ</h1>
           <p className="text-muted-foreground text-sm">Business Driven Configuration Questionnaire</p>
         </div>
         <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap sm:justify-end">
-          {canManageBdcq && <><Button variant="outline" onClick={() => setShowLibrary(true)}><Library className="mr-2 h-4 w-4" />Lista padrão</Button>
-          <Button variant="outline" onClick={() => setLocation("/admin/users")}><Users className="mr-2 h-4 w-4" />Gerenciar Key Users em Acessos</Button>
+          {canManageBdcq && <><Button variant="outline" onClick={() => setLocation("/admin/users")}><Users className="mr-2 h-4 w-4" />Gerenciar Key Users em Acessos</Button>
           <Button variant="outline" onClick={downloadExcelModel}><Download className="h-4 w-4 mr-2" />Baixar modelo</Button>
           <Button variant="outline" asChild><label className="cursor-pointer"><Upload className="h-4 w-4 mr-2" />Importar Excel<input className="hidden" type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelImport} /></label></Button>
           <Button variant="outline" onClick={() => seedMut.mutate({ projectId: PROJECT_ID })} disabled={seedMut.isPending}>

@@ -780,6 +780,40 @@ export const deliveryItems = mysqlTable("delivery_items", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** Asynchronous distribution of a central template to compatible projects. */
+export const deliveryPublicationJobs = mysqlTable("delivery_publication_jobs", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  templateId: varchar("templateId", { length: 64 }).notNull(),
+  templateVersion: int("templateVersion").notNull().default(1),
+  trigger: varchar("trigger", { length: 64 }).notNull().default("template_changed"),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  attempts: int("attempts").notNull().default(0),
+  summary: json("summary").$type<Record<string, unknown>>().default({}),
+  lastError: text("lastError").notNull().default(""),
+  createdBy: varchar("createdBy", { length: 64 }).notNull().default(""),
+  startedAt: timestamp("startedAt"),
+  finishedAt: timestamp("finishedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Idempotent link between one applicable template occurrence and its operational record. */
+export const deliveryMaterializations = mysqlTable("delivery_materializations", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  templateId: varchar("templateId", { length: 64 }).notNull(),
+  templateVersion: int("templateVersion").notNull().default(1),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull(),
+  targetType: varchar("targetType", { length: 64 }).notNull(),
+  targetId: varchar("targetId", { length: 64 }).notNull().default(""),
+  state: varchar("state", { length: 32 }).notNull().default("current"),
+  reason: text("reason").notNull().default(""),
+  publishedAt: timestamp("publishedAt"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const deliveryRaidItems = mysqlTable("delivery_raid_items", {
   id: varchar("id", { length: 64 }).primaryKey(),
   deliveryItemId: varchar("deliveryItemId", { length: 64 }).notNull().unique(),

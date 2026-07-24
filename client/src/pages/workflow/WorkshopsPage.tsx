@@ -81,14 +81,12 @@ export default function WorkshopsPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
-      <GeneratedModelItems projectId={PROJECT_ID} types={["workshop"]} title="Workshops padrão aplicados" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Workshops</h1>
           <p className="text-muted-foreground text-sm">Gestão de workshops de levantamento</p>
         </div>
         <div className="flex flex-col gap-2 min-[420px]:flex-row sm:flex-wrap sm:justify-end">
-          <Button variant="outline" onClick={() => setShowLibrary(true)}><Library className="mr-2 h-4 w-4" />Workshops padrão</Button>
           <Button variant="outline" onClick={() => suggestAgenda.mutate({ projectId: PROJECT_ID })} disabled={suggestAgenda.isPending}>
             <Lightbulb className="h-4 w-4 mr-2" />{suggestAgenda.isPending ? "Gerando..." : "Sugerir Agenda (IA)"}
           </Button>

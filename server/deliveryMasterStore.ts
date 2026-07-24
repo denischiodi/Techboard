@@ -54,7 +54,18 @@ export async function listTemplates(options: { type?: string; includeArchived?: 
   const clauses = [options.includeArchived ? "TRUE" : '"archivedAt" IS NULL'];
   const values: unknown[] = [];
   if (options.type) { values.push(options.type); clauses.push(`"type"=$${values.length}`); }
-  const result = await pool.query(`SELECT * FROM "delivery_templates" WHERE ${clauses.join(" AND ")} ORDER BY "type","sortOrder","title"`, values);
+  const result = await pool.query(
+    `SELECT t.*,
+      (SELECT COUNT(DISTINCT m."projectId")::int FROM "delivery_materializations" m
+       WHERE m."templateId"=t."id" AND m."state"<>'blocked') AS "publicationProjectCount",
+      (SELECT COUNT(*)::int FROM "delivery_materializations" m
+       WHERE m."templateId"=t."id" AND m."state"='blocked') AS "blockedPublicationCount",
+      (SELECT j."status" FROM "delivery_publication_jobs" j
+       WHERE j."templateId"=t."id" ORDER BY j."createdAt" DESC LIMIT 1) AS "lastPublicationStatus"
+     FROM "delivery_templates" t WHERE ${clauses.join(" AND ")}
+     ORDER BY t."type",t."sortOrder",t."title"`,
+    values,
+  );
   return result.rows;
 }
 

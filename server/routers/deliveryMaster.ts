@@ -5,6 +5,7 @@ import { assertWorkflowProjectAccess } from "../workflowAccess";
 import * as store from "../deliveryMasterStore";
 import * as workflowDb from "./workflowDb";
 import * as plannerStore from "../plannerStore";
+import * as publisher from "../deliveryPublisher";
 
 const typeSchema = z.enum(store.DELIVERY_TYPES);
 const approvalSchema = z.object({
@@ -56,22 +57,48 @@ function assertTemplateManager(appUser: any, input: { type?: string; modules?: s
 export const deliveryMasterRouter = router({
   templates: router({
     list: protectedProcedure.input(z.object({ type: typeSchema.optional(), includeArchived: z.boolean().default(false) }).default({ includeArchived: false })).query(({ input }) => store.listTemplates(input)),
-    create: protectedProcedure.input(templateInput).mutation(({ ctx, input }) => {
+    create: protectedProcedure.input(templateInput).mutation(async ({ ctx, input }) => {
       assertTemplateManager(ctx.appUser, input);
-      return store.createTemplate(input, ctx.appUser.id);
+      const template: any = await store.createTemplate(input, ctx.appUser.id);
+      const publicationJobId = await publisher.enqueueTemplatePublication(template, ctx.appUser.id, "template_created");
+      return { ...template, publicationJobId };
     }),
     update: protectedProcedure.input(z.object({ id: z.string(), data: templateInput.partial() })).mutation(async ({ ctx, input }) => {
       const current: any = await store.getTemplate(input.id);
       if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Padrão não encontrado" });
       assertTemplateManager(ctx.appUser, { type: input.data.type || current.type, modules: input.data.modules || current.modules || [] });
       assertTemplateManager(ctx.appUser, { type: current.type, modules: current.modules || [] });
-      return store.updateTemplate(input.id, input.data, ctx.appUser.id);
+      const template: any = await store.updateTemplate(input.id, input.data, ctx.appUser.id);
+      if (template.active === false) await publisher.cancelTemplatePublications(template.id);
+      const publicationJobId = await publisher.enqueueTemplatePublication(template, ctx.appUser.id, "template_updated");
+      return { ...template, publicationJobId };
     }),
     archive: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const current: any = await store.getTemplate(input.id);
       if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Padrão não encontrado" });
       assertTemplateManager(ctx.appUser, current);
-      return store.archiveTemplate(input.id, ctx.appUser.id);
+      const archived = await store.archiveTemplate(input.id, ctx.appUser.id);
+      await publisher.cancelTemplatePublications(input.id);
+      return archived;
+    }),
+  }),
+  publications: router({
+    history: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(500).default(100) }).default({ limit: 100 }))
+      .query(({ input }) => publisher.listPublicationHistory(input.limit)),
+    retry: adminProcedure.input(z.object({ id: z.string().min(1) }))
+      .mutation(({ input }) => publisher.processPublicationJob(input.id)),
+    blocked: protectedProcedure.input(z.object({ projectId: z.string().min(1) }))
+      .query(async ({ ctx, input }) => {
+        await assertWorkflowProjectAccess(ctx.appUser, input.projectId, false);
+        return publisher.listBlocked(input.projectId);
+      }),
+    confirmBlocked: protectedProcedure.input(z.object({
+      projectId: z.string().min(1),
+      templateIds: z.array(z.string().min(1)).min(1).max(500),
+    })).mutation(async ({ ctx, input }) => {
+      await assertWorkflowProjectAccess(ctx.appUser, input.projectId, true);
+      return publisher.confirmBlocked(input.projectId, input.templateIds);
     }),
   }),
   trail: router({

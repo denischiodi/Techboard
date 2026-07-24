@@ -62,7 +62,6 @@ export default function ConfigurationsPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
-      <GeneratedModelItems projectId={PROJECT_ID} types={["configuration"]} title="Configurações padrão aplicadas" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Configurações</h1>
@@ -70,7 +69,6 @@ export default function ConfigurationsPage() {
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" onClick={() => generateFromBdcq.mutate({ projectId: PROJECT_ID })} disabled={generateFromBdcq.isPending}><ClipboardCheck className="mr-2 h-4 w-4" />{generateFromBdcq.isPending ? "Gerando..." : "Gerar do BDCQ"}</Button>
-          <Button variant="outline" onClick={() => applyTemplates.mutate({ projectId: PROJECT_ID })} disabled={applyTemplates.isPending}><BookTemplate className="mr-2 h-4 w-4" />{applyTemplates.isPending ? "Aplicando..." : "Aplicar modelos"}</Button>
           <Select value={sourceDcdId} onValueChange={setSourceDcdId}><SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Selecione um DCD" /></SelectTrigger><SelectContent>{dcds.map((dcd: any) => <SelectItem key={dcd.id} value={dcd.id}>{dcd.title}</SelectItem>)}</SelectContent></Select>
           <Button variant="outline" onClick={() => generateFromDcd.mutate({ projectId: PROJECT_ID, dcdId: sourceDcdId })} disabled={!sourceDcdId || generateFromDcd.isPending}><Sparkles className="mr-2 h-4 w-4" />{generateFromDcd.isPending ? "Extraindo..." : "Gerar do DCD"}</Button>
           <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Nova Configuração</Button>

@@ -53,6 +53,7 @@ export default function ProjectWorkflow() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [modelsOpen, setModelsOpen] = useState(false);
   const [selectedOccurrences, setSelectedOccurrences] = useState<string[]>([]);
+  const [selectedBlocked, setSelectedBlocked] = useState<string[]>([]);
   const { data: projects = [] } = trpc.projects.list.useQuery();
   const utils = trpc.useUtils();
   const hasSelectedProject = projects.some((project: any) => project.id === projectId);
@@ -77,6 +78,19 @@ export default function ProjectWorkflow() {
     { projectId },
     { enabled: Boolean(projectId && hasSelectedProject) },
   );
+  const { data: blockedPublications = [], refetch: refetchBlocked } =
+    trpc.workflow.delivery.publications.blocked.useQuery(
+      { projectId },
+      { enabled: Boolean(projectId && hasSelectedProject) },
+    );
+  const confirmBlocked = trpc.workflow.delivery.publications.confirmBlocked.useMutation({
+    onSuccess: async result => {
+      setSelectedBlocked([]);
+      await Promise.all([refetchBlocked(), utils.workflow.invalidate()]);
+      toast.success(`${result.created} padrões aplicados e ${result.preserved} itens preservados`);
+    },
+    onError: error => toast.error(error.message),
+  });
   const applyTrail = trpc.workflow.delivery.trail.applyModels.useMutation({
     onSuccess: async result => {
       setModelsOpen(false);
@@ -181,76 +195,33 @@ export default function ProjectWorkflow() {
       </div>
       {hasSelectedProject && (
         <Card className="border-primary/25 bg-primary/[0.03]">
-          <CardContent className="flex flex-col gap-4 py-5 lg:flex-row lg:items-center lg:justify-between">
+          <CardContent className="py-5">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <h2 className="font-semibold">Modelos aplicáveis a este projeto</h2>
+                <h2 className="font-semibold">Padrões publicados automaticamente</h2>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                A prévia considera modelos gerais, módulos e scope items. Personalizações feitas no projeto são preservadas.
+                Configurações do Tech distribui os padrões compatíveis com módulos e scope items. Personalizações e etapas concluídas são preservadas.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Badge variant="outline">{trailPreview?.items.length || 0} modelos aplicáveis</Badge>
-                <Badge variant="secondary">{trailPreview?.added || 0} novos</Badge>
-                <Badge variant="secondary">{trailPreview?.updated || 0} atualizações</Badge>
-                <Badge variant="outline">{trailPreview?.preserved || 0} personalizados preservados</Badge>
-                <Badge variant="outline">{trailPreview?.outOfScope || 0} fora do escopo</Badge>
+                <Badge variant="outline">{deliveryItems.length} itens centrais na trilha</Badge>
+                <Badge variant={blockedPublications.length ? "destructive" : "secondary"}>{blockedPublications.length} pendentes por etapa concluída</Badge>
               </div>
             </div>
-            <Button
-              onClick={() => setModelsOpen(true)}
-              disabled={applyTrail.isPending || previewingTrail || (!trailPreview?.added && !trailPreview?.updated)}
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${applyTrail.isPending ? "animate-spin" : ""}`} />
-              {applyTrail.isPending ? "Aplicando..." : trailPreview?.added || trailPreview?.updated ? "Aplicar modelos" : "Trilha atualizada"}
-            </Button>
+            {blockedPublications.length > 0 && <div className="mt-4 space-y-2 border-t pt-4">
+              <p className="text-sm font-medium">A etapa foi reaberta? Selecione os padrões que deseja publicar.</p>
+              {blockedPublications.map((item: any) => <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-md border bg-background p-3">
+                <Checkbox checked={selectedBlocked.includes(item.templateId)} onCheckedChange={() => setSelectedBlocked(current => current.includes(item.templateId) ? current.filter(id => id !== item.templateId) : [...current, item.templateId])} />
+                <span className="flex-1 text-sm">{item.title}</span><Badge variant="outline">{item.stage}</Badge><Badge variant="secondary">v{item.version}</Badge>
+              </label>)}
+              <Button disabled={!selectedBlocked.length || confirmBlocked.isPending} onClick={() => confirmBlocked.mutate({ projectId, templateIds: [...new Set(selectedBlocked)] })}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />Confirmar {selectedBlocked.length} padrão(ões)
+              </Button>
+            </div>}
           </CardContent>
         </Card>
       )}
-      <Dialog open={modelsOpen} onOpenChange={setModelsOpen}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Selecionar padrões para aplicar</DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
-            <div>
-              <p className="font-medium">{selectedOccurrences.length} ocorrência(s) selecionada(s)</p>
-              <p className="text-xs text-muted-foreground">Cada módulo e scope item gera sua própria ocorrência.</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => {
-              const candidates = (trailPreview?.items || []).filter((item: any) => ["new", "update"].includes(item.state)).map((item: any) => item.key);
-              setSelectedOccurrences(selectedOccurrences.length === candidates.length ? [] : candidates);
-            }}>{selectedOccurrences.length ? "Limpar seleção" : "Selecionar tudo"}</Button>
-          </div>
-          <div className="space-y-2">
-            {(trailPreview?.items || []).map((item: any) => {
-              const selectable = ["new", "update"].includes(item.state);
-              const checked = selectedOccurrences.includes(item.key);
-              return <label key={item.key} className={`flex items-start gap-3 rounded-md border p-3 ${selectable ? "cursor-pointer" : "opacity-65"}`}>
-                <Checkbox disabled={!selectable} checked={checked} onCheckedChange={() => setSelectedOccurrences(current => checked ? current.filter(key => key !== item.key) : [...current, item.key])} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{item.template.title}</span>
-                    <Badge variant="outline">{item.template.type}</Badge>
-                    {item.module && <Badge variant="secondary">{item.module}</Badge>}
-                    <Badge variant={item.state === "new" ? "default" : "outline"}>
-                      {item.state === "new" ? "Novo" : item.state === "update" ? "Atualização" : item.state === "customized" ? "Personalizado — preservado" : "Já atualizado"}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.template.phase} · {item.template.stage}{item.scopeItemIds?.length ? " · Por scope item" : item.module ? " · Por módulo" : " · Geral"}</p>
-                </div>
-              </label>;
-            })}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModelsOpen(false)}>Cancelar</Button>
-            <Button disabled={!selectedOccurrences.length || applyTrail.isPending} onClick={() => applyTrail.mutate({ projectId, occurrenceKeys: selectedOccurrences })}>
-              {applyTrail.isPending ? "Aplicando..." : `Aplicar ${selectedOccurrences.length} selecionado(s)`}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       {(legacyPreview?.total || 0) > 0 && (
         <Card className="border-amber-300 bg-amber-50/60 dark:bg-amber-950/20">
           <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">

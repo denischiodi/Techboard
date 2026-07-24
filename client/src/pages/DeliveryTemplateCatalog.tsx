@@ -50,7 +50,7 @@ const deliveryTypes = [
   "go_live",
   "closure",
 ] as const;
-type DeliveryType = (typeof deliveryTypes)[number];
+export type DeliveryType = (typeof deliveryTypes)[number];
 
 const typeLabels: Record<DeliveryType, string> = {
   activity: "Atividade do GP",
@@ -128,6 +128,16 @@ type TemplateForm = {
   workshopExpectedOutcomes: string;
   workshopPrerequisites: string;
   workshopRequiredRoles: string;
+  category: string;
+  impact: string;
+  priority: string;
+  recurrence: "none" | "weekly" | "monthly";
+  weekday: number;
+  monthDay: number;
+  preconditions: string;
+  testSteps: string;
+  expectedResult: string;
+  requiresKeyUser: boolean;
   source: "delivery" | "workshop";
 };
 
@@ -160,6 +170,16 @@ const emptyForm = (): TemplateForm => ({
   workshopExpectedOutcomes: "",
   workshopPrerequisites: "",
   workshopRequiredRoles: "",
+  category: "",
+  impact: "Médio",
+  priority: "Média",
+  recurrence: "none",
+  weekday: 1,
+  monthDay: 1,
+  preconditions: "",
+  testSteps: "",
+  expectedResult: "",
+  requiresKeyUser: false,
   source: "delivery",
 });
 
@@ -172,12 +192,18 @@ type CatalogProps = {
     module: string;
   }>;
   projectOptions?: Array<{ id: string; name: string }>;
+  allowedTypes?: DeliveryType[];
+  defaultType?: DeliveryType;
+  compactHeader?: boolean;
 };
 
 export default function DeliveryTemplateCatalog({
   moduleOptions = [],
   scopeOptions = [],
   projectOptions = [],
+  allowedTypes = [...deliveryTypes],
+  defaultType = "bdcq",
+  compactHeader = false,
 }: CatalogProps) {
   const { user } = useAuth();
   const { data: appUser } = trpc.access.getByEmail.useQuery(
@@ -198,8 +224,6 @@ export default function DeliveryTemplateCatalog({
   const [includeArchived, setIncludeArchived] = useState(false);
   const { data: templates = [], isLoading } =
     trpc.workflow.delivery.templates.list.useQuery({ includeArchived });
-  const { data: workshopTemplates = [], isLoading: workshopsLoading } =
-    trpc.workflow.workshops.templates.listAll.useQuery();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [phaseFilter, setPhaseFilter] = useState("all");
@@ -263,26 +287,12 @@ export default function DeliveryTemplateCatalog({
     });
 
   const catalogTemplates = useMemo(
-    () => [
-      ...(templates as any[]).map(template => ({
+    () =>
+      (templates as any[]).filter(template => allowedTypes.includes(template.type)).map(template => ({
         ...template,
         _source: "delivery" as const,
       })),
-      ...(workshopTemplates as any[]).map(template => ({
-        ...template,
-        _source: "workshop" as const,
-        type: "workshop",
-        description: template.objective || template.content || "",
-        instructions: template.content || "",
-        phase: "Explore",
-        stage: "workshops",
-        required: true,
-        ownerRole: "consultant",
-        dueOffsetDays: 0,
-        version: 1,
-      })),
-    ],
-    [templates, workshopTemplates]
+    [templates, allowedTypes]
   );
 
   const filtered = useMemo(() => {
@@ -318,7 +328,7 @@ export default function DeliveryTemplateCatalog({
       ? values.filter(item => item !== value)
       : [...values, value];
 
-  const openNew = (type: DeliveryType = "bdcq") => {
+  const openNew = (type: DeliveryType = defaultType) => {
     const next = emptyForm();
     next.type = type;
     next.stage = defaultStages[type];
@@ -361,6 +371,16 @@ export default function DeliveryTemplateCatalog({
       workshopExpectedOutcomes: (template.expectedOutcomes || template.payload?.expectedOutcomes || []).join("\n"),
       workshopPrerequisites: (template.prerequisites || template.payload?.prerequisites || []).join("\n"),
       workshopRequiredRoles: (template.requiredRoles || template.payload?.requiredRoles || []).join("\n"),
+      category: template.payload?.category || "",
+      impact: template.payload?.impact || "Médio",
+      priority: template.payload?.priority || "Média",
+      recurrence: template.payload?.recurrence || "none",
+      weekday: Number(template.payload?.weekday ?? 1),
+      monthDay: Number(template.payload?.monthDay ?? 1),
+      preconditions: template.payload?.preconditions || "",
+      testSteps: Array.isArray(template.payload?.steps) ? template.payload.steps.join("\n") : template.payload?.steps || "",
+      expectedResult: template.payload?.expectedResult || "",
+      requiresKeyUser: Boolean(template.payload?.requiresKeyUser),
       source: template._source || "delivery",
     });
     setEditorOpen(true);
@@ -423,7 +443,18 @@ export default function DeliveryTemplateCatalog({
         expectedOutcomes: form.workshopExpectedOutcomes.split("\n").map(item => item.trim()).filter(Boolean),
         prerequisites: form.workshopPrerequisites.split("\n").map(item => item.trim()).filter(Boolean),
         requiredRoles: form.workshopRequiredRoles.split("\n").map(item => item.trim()).filter(Boolean),
-      } : {},
+      } : {
+        category: form.category,
+        impact: form.impact,
+        priority: form.priority,
+        recurrence: form.recurrence,
+        weekday: form.weekday,
+        monthDay: form.monthDay,
+        preconditions: form.preconditions,
+        steps: form.testSteps.split("\n").map(item => item.trim()).filter(Boolean),
+        expectedResult: form.expectedResult,
+        requiresKeyUser: form.requiresKeyUser,
+      },
       effectiveFrom: form.effectiveFrom,
       active: form.active,
     };
@@ -449,7 +480,7 @@ export default function DeliveryTemplateCatalog({
 
   return (
     <div className="space-y-5">
-      <Card className="border-blue-200 bg-blue-50/50">
+      {!compactHeader && <Card className="border-blue-200 bg-blue-50/50">
         <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
             <div className="flex items-center gap-2 font-semibold text-blue-950">
@@ -467,11 +498,14 @@ export default function DeliveryTemplateCatalog({
             Novo item da trilha
           </Button>
         </CardContent>
-      </Card>
+      </Card>}
+      {compactHeader && <div className="flex justify-end">
+        <Button onClick={() => openNew()}><Plus className="mr-2 h-4 w-4" />Novo padrão</Button>
+      </div>}
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {(
-          ["bdcq", "workshop", "configuration", "unit_test"] as DeliveryType[]
+          allowedTypes.filter(type => ["bdcq", "workshop", "configuration", "unit_test"].includes(type))
         ).map(type => (
           <button
             key={type}
@@ -506,7 +540,7 @@ export default function DeliveryTemplateCatalog({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os tipos</SelectItem>
-            {deliveryTypes.map(type => (
+            {allowedTypes.map(type => (
               <SelectItem key={type} value={type}>
                 {typeLabels[type]}
               </SelectItem>
@@ -577,6 +611,9 @@ export default function DeliveryTemplateCatalog({
                     {template.dueOffsetDays || 0}
                   </Badge>
                   <Badge variant="outline">v{template.version || 1}</Badge>
+                  <Badge variant="outline">{template.publicationProjectCount || 0} projeto(s) publicado(s)</Badge>
+                  {template.blockedPublicationCount > 0 && <Badge className="bg-amber-100 text-amber-900">{template.blockedPublicationCount} pendente(s)</Badge>}
+                  {template.lastPublicationStatus && <Badge variant="secondary">Publicação: {template.lastPublicationStatus === "completed" ? "Concluída" : template.lastPublicationStatus === "completed_with_warnings" ? "Com alertas" : template.lastPublicationStatus === "failed" ? "Falhou" : template.lastPublicationStatus === "processing" ? "Processando" : "Aguardando"}</Badge>}
                   {template.approvalPolicy?.mode !== "none" && (
                     <Badge className="bg-amber-100 text-amber-900">
                       Aprovação:{" "}
@@ -635,7 +672,7 @@ export default function DeliveryTemplateCatalog({
             </CardContent>
           </Card>
         ))}
-        {!isLoading && !workshopsLoading && filtered.length === 0 && (
+        {!isLoading && filtered.length === 0 && (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
             Nenhum modelo corresponde aos filtros.
           </div>
@@ -656,7 +693,7 @@ export default function DeliveryTemplateCatalog({
               <FieldSelect
                 label="Tipo *"
                 value={form.type}
-                values={deliveryTypes.filter(value => !isTechnicalLead || value !== "activity").map(value => ({
+                values={allowedTypes.filter(value => !isTechnicalLead || value !== "activity").map(value => ({
                   value,
                   label: typeLabels[value],
                 }))}
@@ -806,6 +843,38 @@ export default function DeliveryTemplateCatalog({
                     }
                   />
                 </div>
+              </section>
+            )}
+
+            {form.type === "bdcq" && (
+              <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
+                <div><Label>Categoria da pergunta</Label><Input value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value }))} placeholder="Ex.: Compras, Fiscal, Pricing" /></div>
+                <label className="flex items-center gap-2 pt-6"><Switch checked={form.requiresKeyUser} onCheckedChange={requiresKeyUser => setForm(current => ({ ...current, requiresKeyUser }))} /><span className="text-sm font-medium">Exigir Key User responsável</span></label>
+                <p className="text-xs text-muted-foreground sm:col-span-2">Use o título como o texto da pergunta. Ela será publicada diretamente na tabela respondível do BDCQ.</p>
+              </section>
+            )}
+
+            {form.type === "gap" && (
+              <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
+                <div><Label>Categoria</Label><Input value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value }))} /></div>
+                <FieldSelect label="Impacto inicial" value={form.impact} values={["Baixo", "Médio", "Alto", "Crítico"].map(value => ({ value, label: value }))} onChange={impact => setForm(current => ({ ...current, impact }))} />
+              </section>
+            )}
+
+            {["unit_test", "cycle_1", "cycle_2"].includes(form.type) && (
+              <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
+                <div className="sm:col-span-2"><Label>Pré-condições</Label><Textarea rows={2} value={form.preconditions} onChange={event => setForm(current => ({ ...current, preconditions: event.target.value }))} /></div>
+                <div><Label>Passos (um por linha)</Label><Textarea rows={5} value={form.testSteps} onChange={event => setForm(current => ({ ...current, testSteps: event.target.value }))} /></div>
+                <div><Label>Resultado esperado</Label><Textarea rows={5} value={form.expectedResult} onChange={event => setForm(current => ({ ...current, expectedResult: event.target.value }))} /></div>
+              </section>
+            )}
+
+            {form.type === "activity" && (
+              <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
+                <FieldSelect label="Prioridade" value={form.priority} values={["Baixa", "Média", "Alta", "Crítica"].map(value => ({ value, label: value }))} onChange={priority => setForm(current => ({ ...current, priority }))} />
+                <FieldSelect label="Recorrência" value={form.recurrence} values={[{ value: "none", label: "Única" }, { value: "weekly", label: "Semanal" }, { value: "monthly", label: "Mensal" }]} onChange={recurrence => setForm(current => ({ ...current, recurrence: recurrence as TemplateForm["recurrence"] }))} />
+                {form.recurrence === "weekly" && <div><Label>Dia da semana (0–6)</Label><Input type="number" min={0} max={6} value={form.weekday} onChange={event => setForm(current => ({ ...current, weekday: Number(event.target.value) }))} /></div>}
+                {form.recurrence === "monthly" && <div><Label>Dia do mês</Label><Input type="number" min={1} max={31} value={form.monthDay} onChange={event => setForm(current => ({ ...current, monthDay: Number(event.target.value) }))} /></div>}
               </section>
             )}
 

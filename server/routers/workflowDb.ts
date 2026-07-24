@@ -308,6 +308,7 @@ export async function updateBdcqQuestion(
       "scopeItemIds",
       "consultantResourceId",
       "keyUserId",
+      "required",
       "isDefault",
       "sortOrder",
     ],

@@ -15,6 +15,7 @@ import { registerWorkflowStream } from "../workflowStream";
 import { syncActivitiesFromSources } from "../activitySync";
 import { flushActivityEmailOutbox } from "../activityMailer";
 import { startDashboardSnapshotScheduler } from "../dashboardSnapshots";
+import { enqueueReconciliation, resumePendingPublications } from "../deliveryPublisher";
 
 function isAllowedOrigin(req: express.Request) {
   const origin = req.headers.origin;
@@ -107,6 +108,19 @@ async function startServer() {
     60 * 60 * 1000
   );
   activityTimer.unref();
+
+  const runTemplatePublisher = () =>
+    enqueueReconciliation()
+      .then(() => resumePendingPublications())
+      .catch(error =>
+        console.warn("Falha na publicação automática de padrões", error)
+      );
+  void runTemplatePublisher();
+  const templatePublicationTimer = setInterval(
+    () => void runTemplatePublisher(),
+    5 * 60 * 1000
+  );
+  templatePublicationTimer.unref();
 }
 
 startServer().catch(console.error);

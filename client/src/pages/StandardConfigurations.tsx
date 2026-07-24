@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Activity, CalendarClock, ClipboardList, Pencil, Plus, RefreshCw, Search, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ActivityPriority, ActivityTemplate, ActivityTemplateOwnerRole, ActivityTemplateRecurrence } from "../../../shared/types";
-import DeliveryTemplateCatalog from "./DeliveryTemplateCatalog";
+import DeliveryTemplateCatalog, { type DeliveryType } from "./DeliveryTemplateCatalog";
 import DeliveryArchivePanel from "./DeliveryArchivePanel";
 import { useAuth } from "@/_core/hooks/useAuth";
 
@@ -92,12 +92,38 @@ export default function StandardConfigurations() {
 
   return <div className="space-y-6">
     <div><h1 className="text-2xl font-bold">Configurações do Tech</h1><p className="text-sm text-muted-foreground">Modelos globais que orientam a execução completa dos projetos.</p></div>
-    <Tabs defaultValue="master-trail" className="space-y-4">
-      <TabsList className={`grid h-auto w-full max-w-5xl ${isAdmin ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-1"}`}><TabsTrigger value="master-trail">Trilha Mestre</TabsTrigger>{isAdmin && <><TabsTrigger value="activities">Atividades padrão</TabsTrigger><TabsTrigger value="bdcq">Perguntas BDCQ</TabsTrigger><TabsTrigger value="configurations">Modelos de configuração</TabsTrigger></>}</TabsList>
-      <TabsContent value="master-trail" className="space-y-4">
-        <DeliveryTemplateCatalog moduleOptions={moduleOptions} scopeOptions={bdcqOptions} projectOptions={activityOptions.map(option => option.project)} />
-        {isAdmin && <DeliveryArchivePanel />}
-      </TabsContent>
+    <Tabs defaultValue="central-bdcq" className="space-y-4">
+      <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        <TabsTrigger value="central-bdcq">BDCQ padrões</TabsTrigger>
+        <TabsTrigger value="central-workshops">Workshops padrões</TabsTrigger>
+        <TabsTrigger value="central-configurations">Configurações padrões</TabsTrigger>
+        <TabsTrigger value="central-gaps">Gaps padrões</TabsTrigger>
+        <TabsTrigger value="central-tests">Testes padrões</TabsTrigger>
+        <TabsTrigger value="central-gp">Trilha do GP</TabsTrigger>
+        <TabsTrigger value="central-other">Demais etapas</TabsTrigger>
+        <TabsTrigger value="publication-history">Histórico</TabsTrigger>
+      </TabsList>
+      {([
+        ["central-bdcq", ["bdcq"], "bdcq"],
+        ["central-workshops", ["workshop"], "workshop"],
+        ["central-configurations", ["configuration"], "configuration"],
+        ["central-gaps", ["gap"], "gap"],
+        ["central-tests", ["unit_test", "cycle_1", "cycle_2"], "unit_test"],
+        ["central-gp", ["activity"], "activity"],
+        ["central-other", ["dcd", "risk", "issue", "cutover", "go_live", "closure"], "dcd"],
+      ] as Array<[string, DeliveryType[], DeliveryType]>).map(([value, allowedTypes, defaultType]) => (
+        <TabsContent key={value} value={value} className="space-y-4">
+          <DeliveryTemplateCatalog
+            moduleOptions={moduleOptions}
+            scopeOptions={bdcqOptions}
+            projectOptions={activityOptions.map(option => option.project)}
+            allowedTypes={allowedTypes}
+            defaultType={defaultType}
+            compactHeader
+          />
+        </TabsContent>
+      ))}
+      <TabsContent value="publication-history"><PublicationHistory /></TabsContent>
       <TabsContent value="activities" className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => syncActivities.mutate()} disabled={syncActivities.isPending}><RefreshCw className="mr-2 h-4 w-4" />Sincronizar</Button><Button onClick={openNewActivity}><Plus className="mr-2 h-4 w-4" />Nova atividade padrão</Button></div>
         <div className="grid gap-3 lg:grid-cols-2">{activityTemplates.map(template => <Card key={template.id} className={!template.active ? "opacity-60" : ""}><CardHeader className="pb-2"><div className="flex items-start justify-between gap-3"><CardTitle className="text-base">{template.title}</CardTitle><Switch checked={template.active} onCheckedChange={active => setActivityActive.mutate({ id: template.id, active })} /></div></CardHeader><CardContent className="space-y-3"><p className="line-clamp-2 text-sm text-muted-foreground">{template.description || "Sem descrição"}</p><div className="flex flex-wrap gap-1.5"><Badge>{template.priority}</Badge><Badge variant="secondary">Fase {template.gpPhase || "Prepare"}</Badge><Badge variant={template.required ? "default" : "outline"}>{template.required ? "Obrigatória" : "Opcional"}</Badge><Badge variant="outline">{template.recurrence === "none" ? `${template.dueOffsetDays} dias após início` : template.recurrence === "weekly" ? `Semanal · ${weekdays.find(day => day.value === template.weekday)?.label}` : `Mensal · dia ${template.monthDay}`}</Badge><Badge variant="secondary">{roleLabels[template.ownerRole]}</Badge><Badge variant="outline">{template.appliesToAllProjects ? "Todos os projetos" : `${template.projects.length} projetos`}</Badge></div><Button variant="outline" size="sm" onClick={() => openActivity(template)}><Pencil className="mr-2 h-3.5 w-3.5" />Editar</Button></CardContent></Card>)}{activityTemplates.length === 0 && <Empty label="Nenhuma atividade padrão cadastrada." />}</div>
@@ -124,6 +150,41 @@ export default function StandardConfigurations() {
     <Dialog open={bdcqOpen} onOpenChange={setBdcqOpen}><DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{bdcqForm.id ? "Editar pergunta padrão" : "Nova pergunta padrão"}</DialogTitle></DialogHeader><div className="grid gap-4"><div><Label>Pergunta *</Label><Textarea rows={4} value={bdcqForm.question} onChange={event => setBdcqForm(form => ({ ...form, question: event.target.value }))} /></div><div><Label>Categoria</Label><Input value={bdcqForm.category} onChange={event => setBdcqForm(form => ({ ...form, category: event.target.value }))} /></div><div className="flex flex-wrap gap-5"><label className="flex items-center gap-2"><Switch checked={bdcqForm.required} onCheckedChange={required => setBdcqForm(form => ({ ...form, required }))} /><span className="text-sm font-medium">Obrigatória</span></label><label className="flex items-center gap-2"><Switch checked={bdcqForm.active === 1} onCheckedChange={active => setBdcqForm(form => ({ ...form, active: active ? 1 : 0 }))} /><span className="text-sm font-medium">Ativa</span></label></div><div><Label>Módulos relacionados</Label><div className="mt-2 flex flex-wrap gap-2">{moduleOptions.map(module => <Button key={module} type="button" size="sm" variant={bdcqForm.modules.includes(module) ? "default" : "outline"} onClick={() => setBdcqForm(form => ({ ...form, modules: toggle(form.modules, module) }))}>{module}</Button>)}</div></div><div><Label>Scope items relacionados</Label><div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">{bdcqOptions.map(item => <label key={`${item.module}:${item.key}`} className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"><Checkbox checked={bdcqForm.scopeItemKeys.includes(item.key)} onCheckedChange={() => setBdcqForm(form => ({ ...form, scopeItemKeys: toggle(form.scopeItemKeys, item.key) }))} /><span>{item.code ? `${item.code} - ` : ""}{item.name}</span><Badge variant="outline" className="ml-auto">{item.module}</Badge></label>)}</div><p className="mt-1 text-xs text-muted-foreground">Sem módulos e scope items, a pergunta será geral. Com ambos, o projeto deve corresponder aos dois.</p></div></div><DialogFooter><Button variant="outline" onClick={() => setBdcqOpen(false)}>Cancelar</Button><Button onClick={saveBdcq} disabled={!bdcqForm.question.trim() || createBdcq.isPending || updateBdcq.isPending}>Salvar</Button></DialogFooter></DialogContent></Dialog>
 
     <Dialog open={configurationOpen} onOpenChange={setConfigurationOpen}><DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{configurationForm.id ? "Editar modelo de configuração" : "Novo modelo de configuração"}</DialogTitle></DialogHeader><div className="grid gap-4"><div><Label>Passo de configuração *</Label><Textarea rows={4} value={configurationForm.description} onChange={event => setConfigurationForm(form => ({ ...form, description: event.target.value }))} placeholder="Descreva o fluxo ou passo padrão a executar" /></div><div><Label>Categoria</Label><Input value={configurationForm.category} onChange={event => setConfigurationForm(form => ({ ...form, category: event.target.value }))} /></div><label className="flex items-center gap-2"><Switch checked={configurationForm.active} onCheckedChange={active => setConfigurationForm(form => ({ ...form, active }))} /><span className="text-sm font-medium">Modelo ativo</span></label><div><Label>Aplicar aos módulos</Label><div className="mt-2 flex flex-wrap gap-2">{moduleOptions.map(module => <Button key={module} type="button" size="sm" variant={configurationForm.modules.includes(module) ? "default" : "outline"} onClick={() => setConfigurationForm(form => ({ ...form, modules: toggle(form.modules, module) }))}>{module}</Button>)}</div></div><div><Label>Aplicar aos scope items</Label><div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">{bdcqOptions.map(item => <label key={`${item.module}:${item.key}`} className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"><Checkbox checked={configurationForm.scopeItemKeys.includes(item.key)} onCheckedChange={() => setConfigurationForm(form => ({ ...form, scopeItemKeys: toggle(form.scopeItemKeys, item.key) }))} /><span>{item.code ? `${item.code} - ` : ""}{item.name}</span><Badge variant="outline" className="ml-auto">{item.module}</Badge></label>)}</div><p className="mt-1 text-xs text-muted-foreground">Sem módulo ou scope item, o passo será aplicado uma vez ao projeto inteiro.</p></div></div><DialogFooter><Button variant="outline" onClick={() => setConfigurationOpen(false)}>Cancelar</Button><Button onClick={saveConfiguration} disabled={!configurationForm.description.trim() || createConfiguration.isPending || updateConfiguration.isPending}>Salvar</Button></DialogFooter></DialogContent></Dialog>
+  </div>;
+}
+
+function PublicationHistory() {
+  const utils = trpc.useUtils();
+  const { data: jobs = [], isLoading } = trpc.workflow.delivery.publications.history.useQuery({ limit: 100 });
+  const retry = trpc.workflow.delivery.publications.retry.useMutation({
+    onSuccess: async () => {
+      await utils.workflow.delivery.publications.history.invalidate();
+      toast.success("Publicação reprocessada");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const statusLabel: Record<string, string> = {
+    pending: "Aguardando", processing: "Processando", completed: "Concluído",
+    completed_with_warnings: "Concluído com alertas", failed: "Falhou", cancelled: "Cancelado",
+  };
+  if (isLoading) return <Empty label="Carregando histórico de publicação..." />;
+  return <div className="space-y-3">
+    <div className="rounded-lg border bg-muted/30 p-4">
+      <h2 className="font-semibold">Publicação automática</h2>
+      <p className="text-sm text-muted-foreground">Cada alteração é distribuída aos projetos compatíveis. Etapas concluídas e personalizações locais são preservadas.</p>
+    </div>
+    {jobs.map((job: any) => {
+      const summary = job.summary || {};
+      return <Card key={job.id}><CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{job.title || "Padrão removido"}</span><Badge variant="outline">{job.type}</Badge><Badge variant={job.status === "failed" ? "destructive" : "secondary"}>{statusLabel[job.status] || job.status}</Badge><Badge variant="outline">v{job.templateVersion}</Badge></div>
+          <p className="mt-2 text-xs text-muted-foreground">{summary.evaluated || 0} projetos avaliados · {summary.created || 0} criados · {summary.updated || 0} atualizados · {summary.preserved || 0} preservados · {summary.blocked || 0} bloqueados</p>
+          {job.lastError && <p className="mt-1 text-sm text-destructive">{job.lastError}</p>}
+        </div>
+        {job.status === "failed" && <Button variant="outline" onClick={() => retry.mutate({ id: job.id })} disabled={retry.isPending}><RefreshCw className="mr-2 h-4 w-4" />Reprocessar</Button>}
+      </CardContent></Card>;
+    })}
+    {!jobs.length && <Empty label="Nenhuma publicação registrada." />}
   </div>;
 }
 
