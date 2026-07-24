@@ -55,6 +55,15 @@ describe("kanban de atividades", () => {
     expect(activity!.displayTitle).toContain("Operação interna - GERAL - ");
   });
 
+  it("permite ao administrador excluir qualquer card, inclusive automático", async () => {
+    const sourceKey = `admin-delete-${Date.now()}-${Math.random()}`;
+    const activity = await activityStore.createActivity({ scope: "project", projectId: "p1", title: "Pendência automática", creatorUserId: "u3", sourceType: "workflow_test", sourceKey });
+    const admin = appRouter.createCaller(context("defechi@gmail.com"));
+    await expect(admin.activities.archive({ id: activity!.id })).resolves.toEqual({ success: true });
+    expect((await activityStore.getActivity(activity!.id))?.archivedAt).not.toBe("");
+    expect((await admin.activities.list()).some(item => item.id === activity!.id)).toBe(false);
+  });
+
   it("mostra para o admin uma atividade criada por outro usuário", async () => {
     const creator = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const created = await creator.activities.create({
