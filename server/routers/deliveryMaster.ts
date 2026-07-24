@@ -47,7 +47,7 @@ export const deliveryMasterRouter = router({
       const modules = [...new Set(scopeItems.map((item: any) => item.module).filter(Boolean))];
       return store.previewTrail(input.projectId, modules, scopeItems.map((item: any) => item.code || item.id));
     }),
-    apply: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    applyModels: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
       await assertWorkflowProjectAccess(ctx.appUser, input.projectId, true);
       const scopeItems = await workflowDb.listScopeItems(input.projectId);
       const modules = [...new Set(scopeItems.map((item: any) => item.module).filter(Boolean))] as string[];

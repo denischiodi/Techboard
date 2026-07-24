@@ -73,7 +73,7 @@ export default function ProjectWorkflow() {
     { projectId },
     { enabled: Boolean(projectId && hasSelectedProject) },
   );
-  const applyTrail = trpc.workflow.delivery.trail.apply.useMutation({
+  const applyTrail = trpc.workflow.delivery.trail.applyModels.useMutation({
     onSuccess: async result => {
       toast.success(`Trilha atualizada: ${result.added} adicionados, ${result.updated} atualizados e ${result.preserved} personalizados preservados.`);
       await Promise.all([
