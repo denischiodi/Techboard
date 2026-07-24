@@ -5,10 +5,12 @@ import {
   CalendarClock,
   Grid3X3,
   List,
+  Pencil,
   Plus,
   Search,
   ShieldAlert,
   Target,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -106,6 +108,10 @@ const statusLabel = (status: string) =>
 export default function RaidPage() {
   const { projectId } = useWorkflowProject();
   const [showAdd, setShowAdd] = useState(false);
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [deletingItem, setDeletingItem] = useState<any | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
   const [view, setView] = useState<"cards" | "table">("cards");
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
@@ -141,6 +147,31 @@ export default function RaidPage() {
     },
     onError: error =>
       toast.error(error.message || "Não foi possível criar o registro"),
+  });
+  const updateRaid = trpc.workflow.delivery.raid.update.useMutation({
+    onSuccess: (updated: any) => {
+      void refetch();
+      setShowAdd(false);
+      setEditingItem(null);
+      setForm(INITIAL_FORM);
+      toast.success(
+        `${updated.kind === "issue" ? "Issue" : "Risco"} atualizado com sucesso`
+      );
+    },
+    onError: error =>
+      toast.error(error.message || "Não foi possível atualizar o registro"),
+  });
+  const archiveRaid = trpc.workflow.delivery.raid.archive.useMutation({
+    onSuccess: () => {
+      void refetch();
+      const kind = deletingItem?.kind === "issue" ? "Issue" : "Risco";
+      setDeletingItem(null);
+      setDeleteConfirmation("");
+      setDeleteReason("");
+      toast.success(`${kind} apagado com sucesso`);
+    },
+    onError: error =>
+      toast.error(error.message || "Não foi possível apagar o registro"),
   });
 
   const projectResourceIds = useMemo(
@@ -245,22 +276,82 @@ export default function RaidPage() {
         : [...current.scopeItemIds, id],
     }));
 
+  const openCreate = () => {
+    setEditingItem(null);
+    setForm(INITIAL_FORM);
+    setShowAdd(true);
+  };
+
+  const openEdit = (item: any) => {
+    setEditingItem(item);
+    setForm({
+      ...INITIAL_FORM,
+      kind: item.kind === "issue" ? "issue" : "risk",
+      title: item.title || "",
+      description: item.description || "",
+      phase: item.phase || "Prepare",
+      module: item.module || "",
+      scopeItemIds: Array.isArray(item.scopeItemIds) ? item.scopeItemIds : [],
+      category: item.category || "",
+      cause: item.cause || "",
+      consequence: item.consequence || "",
+      probability: Number(item.probability || 1),
+      impact: Number(item.impact || 1),
+      strategy: item.strategy || "",
+      responsePlan: item.responsePlan || "",
+      workaround: item.workaround || "",
+      rootCause: item.rootCause || "",
+      responsibleId: item.responsibleId || "",
+      sponsorId: item.sponsorId || "",
+      nextAction: item.nextAction || "",
+      dueDate: item.dueDate || "",
+      reviewDate: item.reviewDate || "",
+      required: Boolean(item.required),
+      status: item.status || "open",
+    });
+    setShowAdd(true);
+  };
+
+  const closeForm = () => {
+    if (createRaid.isPending || updateRaid.isPending) return;
+    setShowAdd(false);
+    setEditingItem(null);
+    setForm(INITIAL_FORM);
+  };
+
   const submit = () => {
     if (!form.title.trim()) {
       toast.error("Informe o título");
       return;
     }
-    createRaid.mutate({
+    const data = {
+      ...form,
+      module: form.module === "general" ? "" : form.module,
+      attachments: editingItem?.evidences || [],
+      approvalPolicy:
+        form.kind === "risk" && form.strategy === "accept"
+          ? { mode: "any" as const, minimumApprovals: 1 }
+          : { mode: "none" as const, minimumApprovals: 1 },
+    };
+    if (editingItem) {
+      const { kind: _kind, ...updateData } = data;
+      updateRaid.mutate({
+        projectId,
+        id: editingItem.id,
+        data: updateData,
+      });
+      return;
+    }
+    createRaid.mutate({ projectId, data });
+  };
+
+  const confirmArchive = () => {
+    if (!deletingItem) return;
+    archiveRaid.mutate({
       projectId,
-      data: {
-        ...form,
-        module: form.module === "general" ? "" : form.module,
-        attachments: [],
-        approvalPolicy:
-          form.kind === "risk" && form.strategy === "accept"
-            ? { mode: "any", minimumApprovals: 1 }
-            : { mode: "none", minimumApprovals: 1 },
-      },
+      id: deletingItem.id,
+      confirmation: deleteConfirmation,
+      reason: deleteReason,
     });
   };
 
@@ -277,7 +368,7 @@ export default function RaidPage() {
             da entrega.
           </p>
         </div>
-        <Button onClick={() => setShowAdd(true)}>
+        <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Novo risco ou issue
         </Button>
@@ -600,9 +691,33 @@ export default function RaidPage() {
                         {severityLabel(Number(item.severity))} · {item.severity}
                       </Badge>
                     </div>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {item.code}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {item.code}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        aria-label={`Editar ${item.code}`}
+                        onClick={() => openEdit(item)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        aria-label={`Apagar ${item.code}`}
+                        onClick={() => {
+                          setDeletingItem(item);
+                          setDeleteConfirmation("");
+                          setDeleteReason("");
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <h3 className="mt-3 font-semibold leading-snug">
                     {item.title}
@@ -654,6 +769,7 @@ export default function RaidPage() {
                   <TableHead>Responsável</TableHead>
                   <TableHead>Próxima ação</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -697,6 +813,32 @@ export default function RaidPage() {
                         {statusLabel(item.status)}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          aria-label={`Editar ${item.code}`}
+                          onClick={() => openEdit(item)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          aria-label={`Apagar ${item.code}`}
+                          onClick={() => {
+                            setDeletingItem(item);
+                            setDeleteConfirmation("");
+                            setDeleteReason("");
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -705,10 +847,19 @@ export default function RaidPage() {
         </Card>
       )}
 
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+      <Dialog
+        open={showAdd}
+        onOpenChange={open => {
+          if (!open) closeForm();
+        }}
+      >
         <DialogContent className="max-h-[92vh] max-w-4xl overflow-x-hidden overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo risco ou issue</DialogTitle>
+            <DialogTitle>
+              {editingItem
+                ? `Editar ${editingItem.kind === "issue" ? "issue" : "risco"} ${editingItem.code}`
+                : "Novo risco ou issue"}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 [&>*]:min-w-0 [&_[data-slot=select-trigger]]:w-full">
@@ -716,6 +867,7 @@ export default function RaidPage() {
                 <Label>Tipo *</Label>
                 <Select
                   value={form.kind}
+                  disabled={Boolean(editingItem)}
                   onValueChange={(value: "risk" | "issue") =>
                     setForm(current => ({
                       ...current,
@@ -788,6 +940,28 @@ export default function RaidPage() {
                     }))
                   }
                 />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={form.status}
+                  onValueChange={status =>
+                    setForm(current => ({ ...current, status }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Aberto</SelectItem>
+                    <SelectItem value="monitoring">Em monitoramento</SelectItem>
+                    <SelectItem value="in_progress">Em tratamento</SelectItem>
+                    <SelectItem value="mitigated">Mitigado</SelectItem>
+                    <SelectItem value="resolved">Resolvido</SelectItem>
+                    <SelectItem value="accepted">Aceito</SelectItem>
+                    <SelectItem value="closed">Encerrado</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>
@@ -1100,14 +1274,93 @@ export default function RaidPage() {
             </label>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>
+            <Button variant="outline" onClick={closeForm}>
               Cancelar
             </Button>
             <Button
               onClick={submit}
-              disabled={createRaid.isPending || !form.title.trim()}
+              disabled={
+                createRaid.isPending ||
+                updateRaid.isPending ||
+                !form.title.trim()
+              }
             >
-              {createRaid.isPending ? "Criando..." : "Criar registro"}
+              {editingItem
+                ? updateRaid.isPending
+                  ? "Salvando..."
+                  : "Salvar alterações"
+                : createRaid.isPending
+                  ? "Criando..."
+                  : "Criar registro"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deletingItem)}
+        onOpenChange={open => {
+          if (!open && !archiveRaid.isPending) {
+            setDeletingItem(null);
+            setDeleteConfirmation("");
+            setDeleteReason("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Apagar {deletingItem?.kind === "issue" ? "issue" : "risco"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium">
+                {deletingItem?.code} · {deletingItem?.title}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                O registro será retirado dos indicadores e preservado na
+                auditoria. Sua numeração nunca será reutilizada.
+              </p>
+            </div>
+            <div>
+              <Label>Justificativa *</Label>
+              <Textarea
+                value={deleteReason}
+                onChange={event => setDeleteReason(event.target.value)}
+                placeholder="Explique por que este registro deve ser apagado"
+              />
+            </div>
+            <div>
+              <Label>
+                Digite {deletingItem?.code || "o código"} para confirmar *
+              </Label>
+              <Input
+                value={deleteConfirmation}
+                onChange={event => setDeleteConfirmation(event.target.value)}
+                placeholder={deletingItem?.code || ""}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeletingItem(null)}
+              disabled={archiveRaid.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmArchive}
+              disabled={
+                archiveRaid.isPending ||
+                deleteReason.trim().length < 5 ||
+                deleteConfirmation.trim().toUpperCase() !==
+                  String(deletingItem?.code || "").toUpperCase()
+              }
+            >
+              {archiveRaid.isPending ? "Apagando..." : "Apagar registro"}
             </Button>
           </DialogFooter>
         </DialogContent>
