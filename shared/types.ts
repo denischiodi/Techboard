@@ -585,6 +585,7 @@ export type ActivityStage = "DCD" | "BDCQ" | "TESTE" | "GERAL";
 export type ActivitySourceType =
   | "manual"
   | "activity_template"
+  | "delivery_template"
   | "gp_checklist"
   | "gp_fit_step"
   | "techmove_question"
