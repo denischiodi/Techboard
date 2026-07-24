@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { TRPCError } from "@trpc/server";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { assertWorkflowProjectAccess } from "../workflowAccess";
 import * as store from "../deliveryMasterStore";
@@ -65,6 +66,41 @@ const raidInput = z.object({
 });
 const raidUpdateInput = raidInput.omit({ kind: true }).partial();
 
+function normalizeModule(value: unknown) {
+  return String(value || "").trim().toLocaleUpperCase("pt-BR");
+}
+
+function assertTemplateManager(
+  appUser: any,
+  input: { type?: string; modules?: string[] }
+) {
+  if (appUser.role === "admin") return;
+  if (appUser.role !== "technical_lead") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Somente administradores e líderes técnicos podem manter padrões",
+    });
+  }
+  if (input.type === "activity" || !input.modules?.length) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Padrões gerais e da Trilha do GP são administrados pelo perfil administrador",
+    });
+  }
+  const owned = new Set((appUser.teamFronts || []).map(normalizeModule));
+  const unauthorized = input.modules.filter(
+    module => !owned.has(normalizeModule(module))
+  );
+  if (unauthorized.length) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Você não responde pelo(s) módulo(s): ${unauthorized.join(", ")}`,
+    });
+  }
+}
+
 async function assertAllocatedRaidPeople(
   projectId: string,
   responsibleId?: string,
@@ -120,21 +156,43 @@ export const deliveryMasterRouter = router({
           .default({ includeArchived: false })
       )
       .query(({ input }) => store.listTemplates(input)),
-    create: adminProcedure
+    create: protectedProcedure
       .input(templateInput)
-      .mutation(({ ctx, input }) =>
-        store.createTemplate(input, ctx.appUser.id)
-      ),
-    update: adminProcedure
+      .mutation(({ ctx, input }) => {
+        assertTemplateManager(ctx.appUser, input);
+        return store.createTemplate(input, ctx.appUser.id);
+      }),
+    update: protectedProcedure
       .input(z.object({ id: z.string(), data: templateInput.partial() }))
-      .mutation(({ ctx, input }) =>
-        store.updateTemplate(input.id, input.data, ctx.appUser.id)
-      ),
-    archive: adminProcedure
+      .mutation(async ({ ctx, input }) => {
+        const current: any = await store.getTemplate(input.id);
+        if (!current)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Padrão não encontrado",
+          });
+        assertTemplateManager(ctx.appUser, {
+          type: input.data.type || current.type,
+          modules: input.data.modules || current.modules || [],
+        });
+        assertTemplateManager(ctx.appUser, {
+          type: current.type,
+          modules: current.modules || [],
+        });
+        return store.updateTemplate(input.id, input.data, ctx.appUser.id);
+      }),
+    archive: protectedProcedure
       .input(z.object({ id: z.string() }))
-      .mutation(({ ctx, input }) =>
-        store.archiveTemplate(input.id, ctx.appUser.id)
-      ),
+      .mutation(async ({ ctx, input }) => {
+        const current: any = await store.getTemplate(input.id);
+        if (!current)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Padrão não encontrado",
+          });
+        assertTemplateManager(ctx.appUser, current);
+        return store.archiveTemplate(input.id, ctx.appUser.id);
+      }),
   }),
   trail: router({
     preview: protectedProcedure
@@ -150,11 +208,23 @@ export const deliveryMasterRouter = router({
         return store.previewTrail(
           input.projectId,
           modules,
-          scopeItems.map((item: any) => item.code || item.id)
+          scopeItems.map((item: any) => ({
+            id: item.id,
+            key: item.code || item.id,
+            module: item.module,
+          }))
         );
       }),
     applyModels: protectedProcedure
-      .input(z.object({ projectId: z.string().min(1) }))
+      .input(
+        z.object({
+          projectId: z.string().min(1),
+          occurrenceKeys: z
+            .array(z.string().max(1000))
+            .max(5000)
+            .optional(),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         await assertWorkflowProjectAccess(ctx.appUser, input.projectId, true);
         const scopeItems = await workflowDb.listScopeItems(input.projectId);
@@ -172,7 +242,8 @@ export const deliveryMasterRouter = router({
             key: item.code || item.id,
             module: item.module,
           })),
-          project?.startDate || ""
+          project?.startDate || "",
+          input.occurrenceKeys
         );
       }),
     list: protectedProcedure

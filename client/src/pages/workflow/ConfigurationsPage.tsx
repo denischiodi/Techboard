@@ -15,6 +15,7 @@ import { Plus, Trash2, Search, Settings2, BrainCircuit, RotateCcw, Pencil, Spark
 import { useAuth } from "@/_core/hooks/useAuth";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog";
 
 export default function ConfigurationsPage() {
@@ -61,6 +62,7 @@ export default function ConfigurationsPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
+      <GeneratedModelItems projectId={PROJECT_ID} types={["configuration"]} title="Configurações padrão aplicadas" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Configurações</h1>

@@ -14,6 +14,7 @@ import { Plus, Trash2, FileText, Sparkles, Upload, Calendar, Lightbulb, Clipboar
 import { useAuth } from "@/_core/hooks/useAuth";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 
 type SupportedAudioType = "audio/mpeg" | "audio/mp3" | "audio/wav" | "audio/wave" | "audio/webm" | "audio/ogg" | "audio/mp4" | "audio/m4a";
 
@@ -80,6 +81,7 @@ export default function WorkshopsPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
+      <GeneratedModelItems projectId={PROJECT_ID} types={["workshop"]} title="Workshops padrão aplicados" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Workshops</h1>

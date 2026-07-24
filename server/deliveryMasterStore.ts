@@ -102,6 +102,16 @@ export async function listTemplates(
   return result.rows;
 }
 
+export async function getTemplate(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query(
+    'SELECT * FROM "delivery_templates" WHERE "id"=$1',
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
 export async function createTemplate(
   input: DeliveryTemplateInput,
   userId: string
@@ -219,10 +229,7 @@ export async function updateItem(id: string, patch: Record<string, unknown>) {
     ([key], index) =>
       `"${key}"=$${index + 2}${jsonColumns.has(key) ? "::jsonb" : ""}`
   );
-  if (
-    entries.some(([key]) => ["title", "description", "payload"].includes(key))
-  )
-    sets.push('"customized"=true');
+  sets.push('"customized"=true');
   sets.push('"updatedAt"=now()');
   const result = await pool.query(
     `UPDATE "delivery_items" SET ${sets.join(",")} WHERE "id"=$1 AND "archivedAt" IS NULL RETURNING *`,
@@ -248,47 +255,113 @@ const PREFIX: Record<string, string> = {
   closure: "ENC",
 };
 
+type TrailScopeItem = { id: string; key: string; module?: string };
+
+function occurrenceKey(
+  templateId: string,
+  module: string,
+  scopeItemIds: string[]
+) {
+  return `${templateId}|${module}|${[...scopeItemIds].sort().join(",")}`;
+}
+
+export function applicableOccurrences(
+  template: any,
+  projectId: string,
+  modules: string[],
+  scopeItems: TrailScopeItem[]
+) {
+  if (!template.active) return [];
+  if (template.projectIds?.length && !template.projectIds.includes(projectId))
+    return [];
+  const allowedModules = new Set(
+    (template.modules || []).map((value: string) => value.toUpperCase())
+  );
+  const allowedScopes = new Set(template.scopeItemKeys || []);
+
+  if (allowedScopes.size) {
+    return scopeItems
+      .filter(item => allowedScopes.has(item.key))
+      .filter(
+        item =>
+          !allowedModules.size ||
+          allowedModules.has(String(item.module || "").toUpperCase())
+      )
+      .map(item => ({
+        key: occurrenceKey(template.id, item.module || "", [item.id]),
+        template,
+        module: item.module || "",
+        scopeItemIds: [item.id],
+      }));
+  }
+  if (allowedModules.size) {
+    return [
+      ...new Set(
+        modules.filter(module => allowedModules.has(module.toUpperCase()))
+      ),
+    ].map(module => ({
+      key: occurrenceKey(template.id, module, []),
+      template,
+      module,
+      scopeItemIds: [] as string[],
+    }));
+  }
+  return [
+    {
+      key: occurrenceKey(template.id, "", []),
+      template,
+      module: "",
+      scopeItemIds: [] as string[],
+    },
+  ];
+}
+
 export async function previewTrail(
   projectId: string,
   modules: string[],
-  scopeItemKeys: string[]
+  scopeItems: TrailScopeItem[]
 ) {
   const templates = await listTemplates();
-  const applicable = templates.filter((template: any) => {
-    if (!template.active) return false;
-    const projectOk =
-      !template.projectIds?.length || template.projectIds.includes(projectId);
-    const moduleOk =
-      !template.modules?.length ||
-      template.modules.some((module: string) => modules.includes(module));
-    const scopeOk =
-      !template.scopeItemKeys?.length ||
-      template.scopeItemKeys.some((key: string) => scopeItemKeys.includes(key));
-    return projectOk && moduleOk && scopeOk;
-  });
-  const existing = await listItems(projectId);
-  const existingByTemplate = new Map(
-    existing.map((item: any) => [item.templateId, item])
+  const occurrences = templates.flatMap((template: any) =>
+    applicableOccurrences(template, projectId, modules, scopeItems)
   );
+  const existing = await listItems(projectId);
+  const existingByOccurrence = new Map(
+    existing.map((item: any) => [
+      item.occurrenceKey ||
+        occurrenceKey(item.templateId, item.module || "", item.scopeItemIds || []),
+      item,
+    ])
+  );
+  const items = occurrences.map((occurrence: any) => {
+    const current: any = existingByOccurrence.get(occurrence.key) || null;
+    const state = !current
+      ? "new"
+      : current.customized
+        ? "customized"
+        : current.templateVersion < occurrence.template.version
+          ? "update"
+          : "current";
+    return { ...occurrence, existing: current, state };
+  });
   return {
-    items: applicable.map((template: any) => ({
-      template,
-      existing: existingByTemplate.get(template.id) || null,
-    })),
-    added: applicable.filter(
-      (template: any) => !existingByTemplate.has(template.id)
-    ).length,
-    updated: applicable.filter((template: any) => {
-      const item: any = existingByTemplate.get(template.id);
-      return (
-        item && !item.customized && item.templateVersion < template.version
-      );
-    }).length,
+    items,
+    added: items.filter((item: any) => item.state === "new").length,
+    updated: items.filter((item: any) => item.state === "update").length,
     preserved: existing.filter((item: any) => item.customized).length,
     outOfScope: existing.filter(
       (item: any) =>
         item.templateId &&
-        !applicable.some((template: any) => template.id === item.templateId)
+        !occurrences.some(
+          (occurrence: any) =>
+            occurrence.key ===
+            (item.occurrenceKey ||
+              occurrenceKey(
+                item.templateId,
+                item.module || "",
+                item.scopeItemIds || []
+              ))
+        )
     ).length,
   };
 }
@@ -297,13 +370,16 @@ export async function applyTrail(
   projectId: string,
   modules: string[],
   scopeItems: Array<{ id: string; key: string; module?: string }>,
-  projectStartDate = ""
+  projectStartDate = "",
+  selectedKeys?: string[]
 ) {
   const pool = getPgPool();
-  const preview = await previewTrail(
-    projectId,
-    modules,
-    scopeItems.map(item => item.key)
+  const preview = await previewTrail(projectId, modules, scopeItems);
+  const selected = selectedKeys ? new Set(selectedKeys) : null;
+  const selectedItems = (preview.items as any[]).filter(
+    entry =>
+      (!selected || selected.has(entry.key)) &&
+      ["new", "update"].includes(entry.state)
   );
   if (!pool)
     return {
@@ -317,15 +393,9 @@ export async function applyTrail(
   let updated = 0;
   try {
     await client.query("BEGIN");
-    for (const entry of preview.items as any[]) {
+    for (const entry of selectedItems) {
       const template = entry.template;
-      const matchingScopeIds = scopeItems
-        .filter(
-          item =>
-            !template.scopeItemKeys?.length ||
-            template.scopeItemKeys.includes(item.key)
-        )
-        .map(item => item.id);
+      const matchingScopeIds = entry.scopeItemIds;
       if (!entry.existing) {
         const sequenceResult = await client.query(
           `SELECT nextval('"delivery_card_global_seq"')::bigint AS value`
@@ -342,21 +412,22 @@ export async function applyTrail(
             })()
           : "";
         await client.query(
-          `INSERT INTO "delivery_items" ("id","code","sequenceNumber","projectId","templateId","templateVersion","type","title","description","phase","stage","module","scopeItemIds","required","sortOrder","ownerRole","dueDate","status","evidenceRequirements","approvalPolicy","payload")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,'not_started',$18::jsonb,$19::jsonb,$20::jsonb)`,
+          `INSERT INTO "delivery_items" ("id","code","sequenceNumber","projectId","templateId","occurrenceKey","templateVersion","type","title","description","phase","stage","module","scopeItemIds","required","sortOrder","ownerRole","dueDate","status","evidenceRequirements","approvalPolicy","payload")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,'not_started',$19::jsonb,$20::jsonb,$21::jsonb)`,
           [
             `di_${nanoid(20)}`,
             code,
             sequenceNumber,
             projectId,
             template.id,
+            entry.key,
             template.version,
             template.type,
             template.title,
             template.description || "",
             template.phase,
             template.stage,
-            template.modules?.[0] || "",
+            entry.module || "",
             JSON.stringify(matchingScopeIds),
             template.required,
             template.sortOrder,
@@ -364,7 +435,11 @@ export async function applyTrail(
             dueDate,
             JSON.stringify(template.evidenceRequirements || []),
             JSON.stringify(template.approvalPolicy || {}),
-            JSON.stringify(template.payload || {}),
+            JSON.stringify({
+              ...(template.payload || {}),
+              instructions: template.instructions || "",
+              completionCriteria: template.completionCriteria || "",
+            }),
           ]
         );
         added++;
@@ -387,7 +462,11 @@ export async function applyTrail(
             template.ownerRole,
             JSON.stringify(template.evidenceRequirements || []),
             JSON.stringify(template.approvalPolicy || {}),
-            JSON.stringify(template.payload || {}),
+            JSON.stringify({
+              ...(template.payload || {}),
+              instructions: template.instructions || "",
+              completionCriteria: template.completionCriteria || "",
+            }),
           ]
         );
         updated++;
@@ -400,7 +479,7 @@ export async function applyTrail(
     const itemByTemplate = new Map(
       projectItems.rows.map((item: any) => [item.templateId, item.id])
     );
-    for (const entry of preview.items as any[]) {
+    for (const entry of selectedItems) {
       const itemId = itemByTemplate.get(entry.template.id);
       if (!itemId) continue;
       const dependencyItemIds = (entry.template.dependencyTemplateIds || [])

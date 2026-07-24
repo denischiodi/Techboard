@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Check, ChevronsUpDown, Download, ExternalLink, FileText, FileUp, Filter, Flag, Loader2, Plus, Search, Settings2, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 
 const PHASES = ["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"] as const;
 const STATUSES = ["Pendente", "Em andamento", "Em validação", "Concluído", "Bloqueado", "Não aplicável"] as const;
@@ -384,6 +385,7 @@ export default function GpChecklist() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
+      <GeneratedModelItems projectId={selectedProjectId} types={["activity"]} title="Atividades corporativas aplicadas" />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2">

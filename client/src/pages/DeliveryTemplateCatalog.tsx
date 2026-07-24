@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -178,6 +179,21 @@ export default function DeliveryTemplateCatalog({
   scopeOptions = [],
   projectOptions = [],
 }: CatalogProps) {
+  const { user } = useAuth();
+  const { data: appUser } = trpc.access.getByEmail.useQuery(
+    { email: user?.email || "" },
+    { enabled: Boolean(user?.email) },
+  );
+  const isTechnicalLead = appUser?.role === "technical_lead";
+  const managedModules = isTechnicalLead
+    ? moduleOptions.filter(module =>
+        (appUser.teamFronts || []).some(front =>
+          String(front).toLocaleUpperCase("pt-BR") === module.toLocaleUpperCase("pt-BR")))
+    : moduleOptions;
+  const visibleScopeOptions = isTechnicalLead
+    ? scopeOptions.filter(item => managedModules.some(module =>
+        module.toLocaleUpperCase("pt-BR") === item.module.toLocaleUpperCase("pt-BR")))
+    : scopeOptions;
   const utils = trpc.useUtils();
   const [includeArchived, setIncludeArchived] = useState(false);
   const { data: templates = [], isLoading } =
@@ -338,20 +354,20 @@ export default function DeliveryTemplateCatalog({
       completionCriteria: template.completionCriteria || "",
       effectiveFrom: template.effectiveFrom || "",
       active: template.active !== false,
-      workshopObjective: template.objective || "",
-      workshopContent: template.content || "",
-      workshopDuration: template.duration || "",
-      workshopAgenda: (template.agenda || []).join("\n"),
-      workshopExpectedOutcomes: (template.expectedOutcomes || []).join("\n"),
-      workshopPrerequisites: (template.prerequisites || []).join("\n"),
-      workshopRequiredRoles: (template.requiredRoles || []).join("\n"),
+      workshopObjective: template.objective || template.payload?.objective || "",
+      workshopContent: template.content || template.payload?.content || "",
+      workshopDuration: template.duration || template.payload?.duration || "",
+      workshopAgenda: (template.agenda || template.payload?.agenda || []).join("\n"),
+      workshopExpectedOutcomes: (template.expectedOutcomes || template.payload?.expectedOutcomes || []).join("\n"),
+      workshopPrerequisites: (template.prerequisites || template.payload?.prerequisites || []).join("\n"),
+      workshopRequiredRoles: (template.requiredRoles || template.payload?.requiredRoles || []).join("\n"),
       source: template._source || "delivery",
     });
     setEditorOpen(true);
   };
 
   const save = () => {
-    if (form.type === "workshop") {
+    if (form.type === "workshop" && form.id && form.source === "workshop") {
       const lines = (value: string) =>
         value
           .split("\n")
@@ -372,9 +388,7 @@ export default function DeliveryTemplateCatalog({
         presentationFiles: [],
         active: form.active,
       };
-      if (form.id && form.source === "workshop")
-        updateWorkshopTemplate.mutate({ id: form.id, data });
-      else createWorkshopTemplate.mutate(data);
+      updateWorkshopTemplate.mutate({ id: form.id, data });
       return;
     }
     const data = {
@@ -401,7 +415,15 @@ export default function DeliveryTemplateCatalog({
         minimumApprovals: form.minimumApprovals,
       },
       completionCriteria: form.completionCriteria,
-      payload: {},
+      payload: form.type === "workshop" ? {
+        objective: form.workshopObjective,
+        content: form.workshopContent,
+        duration: form.workshopDuration,
+        agenda: form.workshopAgenda.split("\n").map(item => item.trim()).filter(Boolean),
+        expectedOutcomes: form.workshopExpectedOutcomes.split("\n").map(item => item.trim()).filter(Boolean),
+        prerequisites: form.workshopPrerequisites.split("\n").map(item => item.trim()).filter(Boolean),
+        requiredRoles: form.workshopRequiredRoles.split("\n").map(item => item.trim()).filter(Boolean),
+      } : {},
       effectiveFrom: form.effectiveFrom,
       active: form.active,
     };
@@ -417,6 +439,12 @@ export default function DeliveryTemplateCatalog({
     if (template.scopeItemKeys?.length) return "Por scope item";
     if (template.modules?.length) return "Por módulo";
     return "Geral";
+  };
+  const canManage = (template: any) => {
+    if (!isTechnicalLead) return true;
+    if (template.type === "activity" || template._source === "workshop" || !template.modules?.length) return false;
+    return template.modules.every((module: string) =>
+      managedModules.some(owned => owned.toLocaleUpperCase("pt-BR") === module.toLocaleUpperCase("pt-BR")));
   };
 
   return (
@@ -571,6 +599,7 @@ export default function DeliveryTemplateCatalog({
                   <Switch
                     aria-label="Ativar modelo"
                     checked={template.active !== false}
+                    disabled={!canManage(template)}
                     onCheckedChange={active =>
                       template._source === "workshop"
                         ? updateWorkshopTemplate.mutate({
@@ -586,6 +615,7 @@ export default function DeliveryTemplateCatalog({
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={!canManage(template)}
                     onClick={() => openEdit(template)}
                   >
                     <Pencil className="mr-2 h-3.5 w-3.5" />
@@ -595,6 +625,7 @@ export default function DeliveryTemplateCatalog({
                     variant="ghost"
                     size="icon"
                     title="Arquivar"
+                    disabled={!canManage(template)}
                     onClick={() => setArchiveTarget(template)}
                   >
                     <Archive className="h-4 w-4" />
@@ -625,7 +656,7 @@ export default function DeliveryTemplateCatalog({
               <FieldSelect
                 label="Tipo *"
                 value={form.type}
-                values={deliveryTypes.map(value => ({
+                values={deliveryTypes.filter(value => !isTechnicalLead || value !== "activity").map(value => ({
                   value,
                   label: typeLabels[value],
                 }))}
@@ -873,7 +904,7 @@ export default function DeliveryTemplateCatalog({
               <div>
                 <Label>Aplicar aos módulos</Label>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {moduleOptions.map(module => (
+                  {managedModules.map(module => (
                     <Button
                       type="button"
                       size="sm"
@@ -896,7 +927,7 @@ export default function DeliveryTemplateCatalog({
               <div>
                 <Label>Aplicar aos scope items</Label>
                 <div className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-md border p-2">
-                  {scopeOptions.map(item => (
+                  {visibleScopeOptions.map(item => (
                     <label
                       key={`${item.module}:${item.key}`}
                       className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"
@@ -957,6 +988,12 @@ export default function DeliveryTemplateCatalog({
                 geral. Selecione módulo, scope item ou ambos para direcionar a
                 aplicação.
               </p>
+              {isTechnicalLead && (
+                <p className="text-xs font-medium text-blue-700">
+                  Você publica diretamente padrões dos seus módulos: {managedModules.join(", ") || "nenhum módulo atribuído"}.
+                  Padrões gerais e da Trilha do GP são mantidos pelo administrador.
+                </p>
+              )}
             </section>
 
             <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
@@ -1063,6 +1100,7 @@ export default function DeliveryTemplateCatalog({
               disabled={
                 !form.title.trim() ||
                 !form.stage.trim() ||
+                (isTechnicalLead && (!form.modules.length || form.type === "activity")) ||
                 createTemplate.isPending ||
                 updateTemplate.isPending ||
                 createWorkshopTemplate.isPending ||

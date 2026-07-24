@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useWorkflowProject } from "./useWorkflowProject";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 
 type TestStatus =
   | "Não iniciado"
@@ -657,6 +658,7 @@ export default function TestsPage() {
     );
   return (
     <div className="space-y-4 p-3 sm:p-6">
+      <GeneratedModelItems projectId={projectId} types={selectedType === "Unitário" ? ["unit_test"] : selectedType === "Ciclo 1" ? ["cycle_1"] : selectedType === "Ciclo 2" ? ["cycle_2"] : ["unit_test", "cycle_1", "cycle_2"]} title="Testes padrão aplicados" />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold">

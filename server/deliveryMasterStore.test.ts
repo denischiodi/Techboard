@@ -105,3 +105,54 @@ describe("edição e arquivamento de RAID", () => {
     expect(result.item.archivedBy).toBe("u1");
   });
 });
+
+describe("delivery master applicability", () => {
+  const template = (patch: Record<string, unknown> = {}) => ({
+    id: "template-1",
+    active: true,
+    projectIds: [],
+    modules: [],
+    scopeItemKeys: [],
+    ...patch,
+  });
+  const scopeItems = [
+    { id: "scope-fi", key: "J01", module: "FI" },
+    { id: "scope-mm", key: "J45", module: "MM" },
+    { id: "scope-mm-2", key: "J46", module: "MM" },
+  ];
+
+  it("gera uma ocorrência geral ou uma por módulo", async () => {
+    const { applicableOccurrences } = await import("./deliveryMasterStore");
+    expect(
+      applicableOccurrences(template(), "project-1", ["FI", "MM"], scopeItems)
+    ).toHaveLength(1);
+    expect(
+      applicableOccurrences(
+        template({ modules: ["FI", "MM"] }),
+        "project-1",
+        ["FI", "MM", "SD"],
+        scopeItems
+      ).map(item => item.module)
+    ).toEqual(["FI", "MM"]);
+  });
+
+  it("gera uma ocorrência por scope item e exige o módulo configurado", async () => {
+    const { applicableOccurrences } = await import("./deliveryMasterStore");
+    expect(
+      applicableOccurrences(
+        template({ scopeItemKeys: ["J45", "J46"] }),
+        "project-1",
+        ["FI", "MM"],
+        scopeItems
+      ).map(item => item.scopeItemIds[0])
+    ).toEqual(["scope-mm", "scope-mm-2"]);
+    const constrained = applicableOccurrences(
+      template({ modules: ["FI"], scopeItemKeys: ["J01", "J45"] }),
+      "project-1",
+      ["FI", "MM"],
+      scopeItems
+    );
+    expect(constrained).toHaveLength(1);
+    expect(constrained[0].scopeItemIds).toEqual(["scope-fi"]);
+  });
+});

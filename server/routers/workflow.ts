@@ -2007,7 +2007,7 @@ export const workflowRouter = router({
           ...custom.map(template => ({ ...template, builtIn: false })),
         ];
       }),
-      options: adminProcedure.query(async () => {
+      options: protectedProcedure.query(async () => {
         const projects = await plannerStore.listProjects();
         const scopeByProject = await Promise.all(
           projects.map(project => wdb.listScopeItems(project.id))
@@ -2570,7 +2570,7 @@ export const workflowRouter = router({
   // ===== Workshops =====
   workshops: router({
     templates: router({
-      listAll: adminProcedure.query(() => wdb.listWorkshopTemplates()),
+      listAll: protectedProcedure.query(() => wdb.listWorkshopTemplates()),
       list: workflowProjectProcedure()
         .input(z.object({ projectId: z.string().min(1) }))
         .query(async ({ ctx, input }) => {

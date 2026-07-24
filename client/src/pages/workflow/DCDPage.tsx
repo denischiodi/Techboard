@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Trash2, Sparkles, FileText, Eye, Pencil, Save, GitCompare, Download } from "lucide-react";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 
 type DiffLine = { type: "same" | "added" | "removed"; text: string };
 
@@ -159,6 +160,7 @@ export default function DCDPage() {
 
   return (
     <div className="p-6 space-y-4">
+      <GeneratedModelItems projectId={PROJECT_ID} types={["dcd"]} title="DCDs padrão aplicados" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">DCD - Design de Configuração Detalhada</h1>

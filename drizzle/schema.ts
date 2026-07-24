@@ -731,6 +731,7 @@ export const deliveryItems = mysqlTable("delivery_items", {
   sequenceNumber: int("sequenceNumber").notNull().unique(),
   projectId: varchar("projectId", { length: 64 }).notNull(),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(1),
   type: varchar("type", { length: 32 }).notNull(),
   title: varchar("title", { length: 512 }).notNull(),
