@@ -59,6 +59,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog";
 
 const GAP_COLUMNS = [
@@ -455,6 +456,7 @@ export default function GapsPage() {
 
   return (
     <div className="space-y-5 p-3 sm:p-6">
+      <GeneratedModelItems projectId={PROJECT_ID} types={["gap"]} title="Gaps padrão aplicados" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Gaps</h1>

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import type { ActivityPriority, ActivityTemplate, ActivityTemplateOwnerRole, ActivityTemplateRecurrence } from "../../../shared/types";
 import DeliveryTemplateCatalog from "./DeliveryTemplateCatalog";
 import DeliveryArchivePanel from "./DeliveryArchivePanel";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 const priorities: ActivityPriority[] = ["Baixa", "Média", "Alta", "Crítica"];
 const weekdays = [{ value: 1, label: "Segunda-feira" }, { value: 2, label: "Terça-feira" }, { value: 3, label: "Quarta-feira" }, { value: 4, label: "Quinta-feira" }, { value: 5, label: "Sexta-feira" }, { value: 6, label: "Sábado" }, { value: 0, label: "Domingo" }];
@@ -30,9 +31,15 @@ type ConfigurationForm = { id: string; description: string; category: string; mo
 const emptyConfiguration = (): ConfigurationForm => ({ id: "", description: "", category: "Configuração", modules: [], scopeItemKeys: [], active: true });
 
 export default function StandardConfigurations() {
+  const { user } = useAuth();
+  const { data: appUser } = trpc.access.getByEmail.useQuery(
+    { email: user?.email || "" },
+    { enabled: Boolean(user?.email) },
+  );
+  const isAdmin = appUser?.role === "admin";
   const utils = trpc.useUtils();
-  const { data: activityTemplates = [] } = trpc.activities.templates.list.useQuery();
-  const { data: activityOptions = [] } = trpc.activities.templates.options.useQuery();
+  const { data: activityTemplates = [] } = trpc.activities.templates.list.useQuery(undefined, { enabled: isAdmin });
+  const { data: activityOptions = [] } = trpc.activities.templates.options.useQuery(undefined, { enabled: isAdmin });
   const { data: bdcqTemplates = [] } = trpc.workflow.bdcq.templates.list.useQuery();
   const { data: bdcqOptions = [] } = trpc.workflow.bdcq.templates.options.useQuery();
   const { data: configurationTemplates = [] } = trpc.workflow.configurations.templates.list.useQuery();
@@ -86,10 +93,10 @@ export default function StandardConfigurations() {
   return <div className="space-y-6">
     <div><h1 className="text-2xl font-bold">Configurações do Tech</h1><p className="text-sm text-muted-foreground">Modelos globais que orientam a execução completa dos projetos.</p></div>
     <Tabs defaultValue="master-trail" className="space-y-4">
-      <TabsList className="grid h-auto w-full max-w-5xl grid-cols-2 sm:grid-cols-4"><TabsTrigger value="master-trail">Trilha Mestre</TabsTrigger><TabsTrigger value="activities">Atividades padrão</TabsTrigger><TabsTrigger value="bdcq">Perguntas BDCQ</TabsTrigger><TabsTrigger value="configurations">Modelos de configuração</TabsTrigger></TabsList>
+      <TabsList className={`grid h-auto w-full max-w-5xl ${isAdmin ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-1"}`}><TabsTrigger value="master-trail">Trilha Mestre</TabsTrigger>{isAdmin && <><TabsTrigger value="activities">Atividades padrão</TabsTrigger><TabsTrigger value="bdcq">Perguntas BDCQ</TabsTrigger><TabsTrigger value="configurations">Modelos de configuração</TabsTrigger></>}</TabsList>
       <TabsContent value="master-trail" className="space-y-4">
         <DeliveryTemplateCatalog moduleOptions={moduleOptions} scopeOptions={bdcqOptions} projectOptions={activityOptions.map(option => option.project)} />
-        <DeliveryArchivePanel />
+        {isAdmin && <DeliveryArchivePanel />}
       </TabsContent>
       <TabsContent value="activities" className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => syncActivities.mutate()} disabled={syncActivities.isPending}><RefreshCw className="mr-2 h-4 w-4" />Sincronizar</Button><Button onClick={openNewActivity}><Plus className="mr-2 h-4 w-4" />Nova atividade padrão</Button></div>

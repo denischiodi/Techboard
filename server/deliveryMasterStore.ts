@@ -58,6 +58,13 @@ export async function listTemplates(options: { type?: string; includeArchived?: 
   return result.rows;
 }
 
+export async function getTemplate(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query('SELECT * FROM "delivery_templates" WHERE "id"=$1', [id]);
+  return result.rows[0] || null;
+}
+
 export async function createTemplate(input: DeliveryTemplateInput, userId: string) {
   const id = `dt_${nanoid(20)}`;
   const created = await insert("delivery_templates", {
@@ -110,7 +117,7 @@ export async function updateItem(id: string, patch: Record<string, unknown>) {
   const entries = Object.entries(patch).filter(([key, value]) => allowed.has(key) && value !== undefined);
   if (!entries.length) return null;
   const sets = entries.map(([key], index) => `"${key}"=$${index + 2}${jsonColumns.has(key) ? "::jsonb" : ""}`);
-  if (entries.some(([key]) => ["title", "description", "payload"].includes(key))) sets.push('"customized"=true');
+  sets.push('"customized"=true');
   sets.push('"updatedAt"=now()');
   const result = await pool.query(`UPDATE "delivery_items" SET ${sets.join(",")} WHERE "id"=$1 AND "archivedAt" IS NULL RETURNING *`, [id, ...entries.map(([key, value]) => serialize(key, value))]);
   return result.rows[0] || null;
@@ -122,40 +129,88 @@ const PREFIX: Record<string, string> = {
   risk: "RSK", issue: "ISS", cutover: "CUT", go_live: "GLV", closure: "ENC",
 };
 
-export async function previewTrail(projectId: string, modules: string[], scopeItemKeys: string[]) {
+type TrailScopeItem = { id: string; key: string; module?: string };
+
+function occurrenceKey(templateId: string, module: string, scopeItemIds: string[]) {
+  return `${templateId}|${module}|${[...scopeItemIds].sort().join(",")}`;
+}
+
+export function applicableOccurrences(template: any, projectId: string, modules: string[], scopeItems: TrailScopeItem[]) {
+  if (!template.active) return [];
+  if (template.projectIds?.length && !template.projectIds.includes(projectId)) return [];
+  const allowedModules = new Set((template.modules || []).map((value: string) => value.toUpperCase()));
+  const allowedScopes = new Set(template.scopeItemKeys || []);
+
+  if (allowedScopes.size) {
+    return scopeItems
+      .filter(item => allowedScopes.has(item.key))
+      .filter(item => !allowedModules.size || allowedModules.has(String(item.module || "").toUpperCase()))
+      .map(item => ({
+        key: occurrenceKey(template.id, item.module || "", [item.id]),
+        template,
+        module: item.module || "",
+        scopeItemIds: [item.id],
+      }));
+  }
+  if (allowedModules.size) {
+    return [...new Set(modules.filter(module => allowedModules.has(module.toUpperCase())))]
+      .map(module => ({
+        key: occurrenceKey(template.id, module, []),
+        template,
+        module,
+        scopeItemIds: [] as string[],
+      }));
+  }
+  return [{
+    key: occurrenceKey(template.id, "", []),
+    template,
+    module: "",
+    scopeItemIds: [] as string[],
+  }];
+}
+
+export async function previewTrail(projectId: string, modules: string[], scopeItems: TrailScopeItem[]) {
   const templates = await listTemplates();
-  const applicable = templates.filter((template: any) => {
-    if (!template.active) return false;
-    const projectOk = !template.projectIds?.length || template.projectIds.includes(projectId);
-    const moduleOk = !template.modules?.length || template.modules.some((module: string) => modules.includes(module));
-    const scopeOk = !template.scopeItemKeys?.length || template.scopeItemKeys.some((key: string) => scopeItemKeys.includes(key));
-    return projectOk && moduleOk && scopeOk;
-  });
+  const occurrences = templates.flatMap((template: any) =>
+    applicableOccurrences(template, projectId, modules, scopeItems));
   const existing = await listItems(projectId);
-  const existingByTemplate = new Map(existing.map((item: any) => [item.templateId, item]));
+  const existingByOccurrence = new Map(existing.map((item: any) => [
+    item.occurrenceKey || occurrenceKey(item.templateId, item.module || "", item.scopeItemIds || []),
+    item,
+  ]));
+  const items = occurrences.map((occurrence: any) => {
+    const current: any = existingByOccurrence.get(occurrence.key) || null;
+    const state = !current ? "new"
+      : current.customized ? "customized"
+      : current.templateVersion < occurrence.template.version ? "update"
+      : "current";
+    return { ...occurrence, existing: current, state };
+  });
   return {
-    items: applicable.map((template: any) => ({ template, existing: existingByTemplate.get(template.id) || null })),
-    added: applicable.filter((template: any) => !existingByTemplate.has(template.id)).length,
-    updated: applicable.filter((template: any) => {
-      const item: any = existingByTemplate.get(template.id);
-      return item && !item.customized && item.templateVersion < template.version;
-    }).length,
+    items,
+    added: items.filter((item: any) => item.state === "new").length,
+    updated: items.filter((item: any) => item.state === "update").length,
     preserved: existing.filter((item: any) => item.customized).length,
-    outOfScope: existing.filter((item: any) => item.templateId && !applicable.some((template: any) => template.id === item.templateId)).length,
+    outOfScope: existing.filter((item: any) =>
+      item.templateId && !occurrences.some((occurrence: any) =>
+        occurrence.key === occurrenceKey(item.templateId, item.module || "", item.scopeItemIds || []))).length,
   };
 }
 
-export async function applyTrail(projectId: string, modules: string[], scopeItems: Array<{ id: string; key: string; module?: string }>, projectStartDate = "") {
+export async function applyTrail(projectId: string, modules: string[], scopeItems: TrailScopeItem[], projectStartDate = "", selectedKeys?: string[]) {
   const pool = getPgPool();
-  const preview = await previewTrail(projectId, modules, scopeItems.map(item => item.key));
+  const preview = await previewTrail(projectId, modules, scopeItems);
+  const selected = selectedKeys ? new Set(selectedKeys) : null;
+  const selectedItems = (preview.items as any[]).filter(entry =>
+    (!selected || selected.has(entry.key)) && ["new", "update"].includes(entry.state));
   if (!pool) return { added: preview.added, updated: preview.updated, preserved: preview.preserved, outOfScope: preview.outOfScope };
   const client = await pool.connect();
   let added = 0; let updated = 0;
   try {
     await client.query("BEGIN");
-    for (const entry of preview.items as any[]) {
+    for (const entry of selectedItems) {
       const template = entry.template;
-      const matchingScopeIds = scopeItems.filter(item => !template.scopeItemKeys?.length || template.scopeItemKeys.includes(item.key)).map(item => item.id);
+      const matchingScopeIds = entry.scopeItemIds;
       if (!entry.existing) {
         const sequenceResult = await client.query(`SELECT nextval('"delivery_card_global_seq"')::bigint AS value`);
         const sequenceNumber = Number(sequenceResult.rows[0].value);
@@ -166,22 +221,22 @@ export async function applyTrail(projectId: string, modules: string[], scopeItem
           return date.toISOString().slice(0, 10);
         })() : "";
         await client.query(
-          `INSERT INTO "delivery_items" ("id","code","sequenceNumber","projectId","templateId","templateVersion","type","title","description","phase","stage","module","scopeItemIds","required","sortOrder","ownerRole","dueDate","status","evidenceRequirements","approvalPolicy","payload")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,'not_started',$18::jsonb,$19::jsonb,$20::jsonb)`,
-          [`di_${nanoid(20)}`, code, sequenceNumber, projectId, template.id, template.version, template.type, template.title, template.description || "", template.phase, template.stage, template.modules?.[0] || "", JSON.stringify(matchingScopeIds), template.required, template.sortOrder, template.ownerRole, dueDate, JSON.stringify(template.evidenceRequirements || []), JSON.stringify(template.approvalPolicy || {}), JSON.stringify(template.payload || {})]
+          `INSERT INTO "delivery_items" ("id","code","sequenceNumber","projectId","templateId","occurrenceKey","templateVersion","type","title","description","phase","stage","module","scopeItemIds","required","sortOrder","ownerRole","dueDate","status","evidenceRequirements","approvalPolicy","payload")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,'not_started',$19::jsonb,$20::jsonb,$21::jsonb)`,
+          [`di_${nanoid(20)}`, code, sequenceNumber, projectId, template.id, entry.key, template.version, template.type, template.title, template.description || "", template.phase, template.stage, entry.module || "", JSON.stringify(matchingScopeIds), template.required, template.sortOrder, template.ownerRole, dueDate, JSON.stringify(template.evidenceRequirements || []), JSON.stringify(template.approvalPolicy || {}), JSON.stringify({ ...(template.payload || {}), instructions: template.instructions || "", completionCriteria: template.completionCriteria || "" })]
         );
         added++;
       } else if (!entry.existing.customized && entry.existing.templateVersion < template.version) {
         await client.query(
           `UPDATE "delivery_items" SET "templateVersion"=$2,"title"=$3,"description"=$4,"phase"=$5,"stage"=$6,"scopeItemIds"=$7::jsonb,"required"=$8,"sortOrder"=$9,"ownerRole"=$10,"evidenceRequirements"=$11::jsonb,"approvalPolicy"=$12::jsonb,"payload"=$13::jsonb,"updatedAt"=now() WHERE "id"=$1`,
-          [entry.existing.id, template.version, template.title, template.description || "", template.phase, template.stage, JSON.stringify(matchingScopeIds), template.required, template.sortOrder, template.ownerRole, JSON.stringify(template.evidenceRequirements || []), JSON.stringify(template.approvalPolicy || {}), JSON.stringify(template.payload || {})]
+          [entry.existing.id, template.version, template.title, template.description || "", template.phase, template.stage, JSON.stringify(matchingScopeIds), template.required, template.sortOrder, template.ownerRole, JSON.stringify(template.evidenceRequirements || []), JSON.stringify(template.approvalPolicy || {}), JSON.stringify({ ...(template.payload || {}), instructions: template.instructions || "", completionCriteria: template.completionCriteria || "" })]
         );
         updated++;
       }
     }
     const projectItems = await client.query('SELECT "id","templateId" FROM "delivery_items" WHERE "projectId"=$1 AND "archivedAt" IS NULL', [projectId]);
     const itemByTemplate = new Map(projectItems.rows.map((item: any) => [item.templateId, item.id]));
-    for (const entry of preview.items as any[]) {
+    for (const entry of selectedItems) {
       const itemId = itemByTemplate.get(entry.template.id);
       if (!itemId) continue;
       const dependencyItemIds = (entry.template.dependencyTemplateIds || []).map((templateId: string) => itemByTemplate.get(templateId)).filter(Boolean);
@@ -227,6 +282,35 @@ export async function createRaid(projectId: string, input: any) {
     reviewDate: input.reviewDate || "", escalated: false, acceptedReason: "", materializedIssueId: "",
   });
   return { ...item, ...input, severity: (input.probability || 1) * (input.impact || 1) };
+}
+
+export async function updateRaid(id: string, patch: Record<string, unknown>) {
+  const pool = getPgPool();
+  if (!pool) return { id, ...patch };
+  const itemFields = new Set(["title", "description", "phase", "module", "scopeItemIds", "required", "responsibleId", "dueDate", "status", "evidences", "approvalPolicy"]);
+  const raidFields = new Set(["kind", "category", "cause", "consequence", "probability", "impact", "strategy", "responsePlan", "workaround", "rootCause", "sponsorId", "nextAction", "reviewDate"]);
+  const itemPatch = Object.fromEntries(Object.entries(patch).filter(([key, value]) => itemFields.has(key) && value !== undefined));
+  if (Object.keys(itemPatch).length) await updateItem(id, itemPatch);
+
+  const entries = Object.entries(patch).filter(([key, value]) => raidFields.has(key) && value !== undefined);
+  if (entries.length) {
+    const sets = entries.map(([key], index) => `"${key}"=$${index + 2}`);
+    const values = entries.map(([, value]) => value);
+    if (patch.probability !== undefined || patch.impact !== undefined) {
+      sets.push(`"severity"=COALESCE($${values.length + 2}, "probability")*COALESCE($${values.length + 3}, "impact")`);
+      values.push(patch.probability ?? null, patch.impact ?? null);
+    }
+    await pool.query(`UPDATE "delivery_raid_items" SET ${sets.join(",")} WHERE "deliveryItemId"=$1`, [id, ...values]);
+  }
+  const result = await pool.query(`SELECT i.*,r.* FROM "delivery_items" i JOIN "delivery_raid_items" r ON r."deliveryItemId"=i."id" WHERE i."id"=$1`, [id]);
+  return result.rows[0] || null;
+}
+
+export async function archiveRaid(id: string) {
+  const pool = getPgPool();
+  if (!pool) return { id };
+  const result = await pool.query(`UPDATE "delivery_items" SET "archivedAt"=now(),"updatedAt"=now() WHERE "id"=$1 AND "archivedAt" IS NULL RETURNING *`, [id]);
+  return result.rows[0] || null;
 }
 
 const ARCHIVABLE_TABLES = [

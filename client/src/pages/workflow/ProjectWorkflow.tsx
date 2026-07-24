@@ -6,6 +6,8 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useWorkflowProject } from "./useWorkflowProject";
@@ -49,6 +51,8 @@ export default function ProjectWorkflow() {
   const { projectId, withProject, rememberProject } = useWorkflowProject();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [selectedOccurrences, setSelectedOccurrences] = useState<string[]>([]);
   const { data: projects = [] } = trpc.projects.list.useQuery();
   const utils = trpc.useUtils();
   const hasSelectedProject = projects.some((project: any) => project.id === projectId);
@@ -75,6 +79,7 @@ export default function ProjectWorkflow() {
   );
   const applyTrail = trpc.workflow.delivery.trail.applyModels.useMutation({
     onSuccess: async result => {
+      setModelsOpen(false);
       toast.success(`Trilha atualizada: ${result.added} adicionados, ${result.updated} atualizados e ${result.preserved} personalizados preservados.`);
       await Promise.all([
         utils.workflow.delivery.trail.invalidate(),
@@ -152,6 +157,12 @@ export default function ProjectWorkflow() {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
+  useEffect(() => {
+    if (!modelsOpen) return;
+    setSelectedOccurrences((trailPreview?.items || [])
+      .filter((item: any) => ["new", "update"].includes(item.state))
+      .map((item: any) => item.key));
+  }, [modelsOpen, trailPreview]);
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -188,7 +199,7 @@ export default function ProjectWorkflow() {
               </div>
             </div>
             <Button
-              onClick={() => applyTrail.mutate({ projectId })}
+              onClick={() => setModelsOpen(true)}
               disabled={applyTrail.isPending || previewingTrail || (!trailPreview?.added && !trailPreview?.updated)}
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${applyTrail.isPending ? "animate-spin" : ""}`} />
@@ -197,6 +208,49 @@ export default function ProjectWorkflow() {
           </CardContent>
         </Card>
       )}
+      <Dialog open={modelsOpen} onOpenChange={setModelsOpen}>
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Selecionar padrões para aplicar</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+            <div>
+              <p className="font-medium">{selectedOccurrences.length} ocorrência(s) selecionada(s)</p>
+              <p className="text-xs text-muted-foreground">Cada módulo e scope item gera sua própria ocorrência.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => {
+              const candidates = (trailPreview?.items || []).filter((item: any) => ["new", "update"].includes(item.state)).map((item: any) => item.key);
+              setSelectedOccurrences(selectedOccurrences.length === candidates.length ? [] : candidates);
+            }}>{selectedOccurrences.length ? "Limpar seleção" : "Selecionar tudo"}</Button>
+          </div>
+          <div className="space-y-2">
+            {(trailPreview?.items || []).map((item: any) => {
+              const selectable = ["new", "update"].includes(item.state);
+              const checked = selectedOccurrences.includes(item.key);
+              return <label key={item.key} className={`flex items-start gap-3 rounded-md border p-3 ${selectable ? "cursor-pointer" : "opacity-65"}`}>
+                <Checkbox disabled={!selectable} checked={checked} onCheckedChange={() => setSelectedOccurrences(current => checked ? current.filter(key => key !== item.key) : [...current, item.key])} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{item.template.title}</span>
+                    <Badge variant="outline">{item.template.type}</Badge>
+                    {item.module && <Badge variant="secondary">{item.module}</Badge>}
+                    <Badge variant={item.state === "new" ? "default" : "outline"}>
+                      {item.state === "new" ? "Novo" : item.state === "update" ? "Atualização" : item.state === "customized" ? "Personalizado — preservado" : "Já atualizado"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.template.phase} · {item.template.stage}{item.scopeItemIds?.length ? " · Por scope item" : item.module ? " · Por módulo" : " · Geral"}</p>
+                </div>
+              </label>;
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModelsOpen(false)}>Cancelar</Button>
+            <Button disabled={!selectedOccurrences.length || applyTrail.isPending} onClick={() => applyTrail.mutate({ projectId, occurrenceKeys: selectedOccurrences })}>
+              {applyTrail.isPending ? "Aplicando..." : `Aplicar ${selectedOccurrences.length} selecionado(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {(legacyPreview?.total || 0) > 0 && (
         <Card className="border-amber-300 bg-amber-50/60 dark:bg-amber-950/20">
           <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">

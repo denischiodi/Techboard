@@ -236,7 +236,17 @@ function DashboardLayoutContent({
     { enabled: !!user?.email }
   );
 
-  const userPermissions = appUser?.permissions || (user as any)?.permissions || DEFAULT_PERMISSIONS.viewer;
+  const basePermissions = appUser?.permissions || (user as any)?.permissions || DEFAULT_PERMISSIONS.viewer;
+  const userPermissions = appUser?.role === "technical_lead"
+    ? {
+        ...basePermissions,
+        products: { ...basePermissions.products, admin: true },
+        actions: {
+          ...basePermissions.actions,
+          "admin.standards": { view: true, create: true, modify: true },
+        },
+      }
+    : basePermissions;
   const notificationsQuery = trpc.activities.notifications.useQuery(undefined, {
     enabled: Boolean(appUser?.permissions.activities),
     refetchInterval: 60_000,

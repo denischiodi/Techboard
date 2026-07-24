@@ -16,6 +16,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 
 import { useWorkflowProject } from "./useWorkflowProject";
+import { GeneratedModelItems } from "@/components/GeneratedModelItems";
 
 export default function BDCQPage() {
   const [, setLocation] = useLocation();
@@ -227,6 +228,7 @@ export default function BDCQPage() {
 
   return (
     <div className="space-y-4 p-3 sm:p-6">
+      <GeneratedModelItems projectId={PROJECT_ID} types={["bdcq"]} title="Perguntas padrão aplicadas" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">BDCQ</h1>
