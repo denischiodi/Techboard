@@ -2433,7 +2433,7 @@ function FilterMenu({
           </Badge>
         )}
       </summary>
-      <div className="absolute left-0 z-50 mt-1 max-h-72 min-w-56 overflow-y-auto rounded-md border bg-popover p-2 text-popover-foreground shadow-lg">
+      <div className="absolute right-0 z-50 mt-1 max-h-72 min-w-56 overflow-y-auto rounded-md border bg-popover p-2 text-popover-foreground shadow-lg">
         {options.length === 0 ? (
           <p className="p-2 text-xs text-muted-foreground">
             Sem opções disponíveis.
