@@ -44,6 +44,23 @@ const bdcqStandardsEditorProcedure = protectedProcedure.use(
   }
 );
 
+const bdcqProjectMetadataInput = {
+  questionOriginal: z.string().trim().max(5000).optional(),
+  sapId: z.string().trim().max(64).optional(),
+  level: z.string().trim().max(16).optional(),
+  process: z.string().trim().max(256).optional(),
+  sscuiReference: z.string().trim().max(10000).optional(),
+  area: z.string().trim().max(256).optional(),
+  topic: z.string().trim().max(256).optional(),
+  topicDefinition: z.string().trim().max(20000).optional(),
+  solution: z.string().trim().max(10000).optional(),
+  source: z.string().trim().max(32).optional(),
+  sourceFile: z.string().trim().max(512).optional(),
+  sourceRelease: z.string().trim().max(64).optional(),
+  required: z.boolean().optional(),
+  active: z.number().int().min(0).max(1).optional(),
+};
+
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
     scopeItems: data.scopeItems.length,
@@ -914,6 +931,67 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
   return { id, title, content: streamed.content, version, cached: false };
 }
 
+function effectiveBdcqTemplates(customTemplates: any[]) {
+  const customById = new Map(
+    customTemplates.map((template: any) => [template.id, template])
+  );
+  const builtInIds = new Set(BDCQ_TEMPLATES.map(template => template.id));
+  return [
+    ...BDCQ_TEMPLATES.map(template => ({
+      ...template,
+      ...(customById.get(template.id) || {}),
+    })),
+    ...customTemplates.filter((template: any) => !builtInIds.has(template.id)),
+  ].filter((template: any) => template.active !== 0);
+}
+
+const projectBdcqMetadata = (template: any) => ({
+  questionOriginal: template.questionOriginal || "",
+  sapId: template.sapId || "",
+  level: template.level || "L3",
+  process: template.process || "",
+  sscuiReference: template.sscuiReference || "",
+  area: template.area || "",
+  topic: template.topic || "",
+  topicDefinition: template.topicDefinition || "",
+  solution: template.solution || "",
+  source: template.source || "Standard SAP",
+  sourceFile: template.sourceFile || "",
+  sourceRelease: template.sourceRelease || "",
+  active: template.active === 0 ? 0 : 1,
+  metadataInitialized: 1,
+});
+
+async function backfillBdcqProjectMetadata(projectId: string) {
+  const [questions, customTemplates] = await Promise.all([
+    wdb.listBdcqQuestions(projectId),
+    wdb.listBdcqTemplateLibrary(),
+  ]);
+  const byId = new Map(
+    effectiveBdcqTemplates(customTemplates).map((template: any) => [
+      template.id,
+      template,
+    ])
+  );
+  let updated = 0;
+  for (const question of questions as any[]) {
+    if (
+      question.metadataInitialized === 1 ||
+      !question.templateId ||
+      !byId.has(question.templateId)
+    )
+      continue;
+    await wdb.updateBdcqQuestion(question.id, {
+      ...projectBdcqMetadata(byId.get(question.templateId)),
+      required: Boolean(
+        byId.get(question.templateId)?.required ?? question.required
+      ),
+    });
+    updated++;
+  }
+  return updated;
+}
+
 export async function ensureBdcqTemplates(
   projectId: string,
   modules?: string[]
@@ -934,17 +1012,7 @@ export async function ensureBdcqTemplates(
           normalizeModule(String(item.module || "Geral"))
         )
       );
-  const customById = new Map(
-    customTemplates.map((template: any) => [template.id, template])
-  );
-  const builtInIds = new Set(BDCQ_TEMPLATES.map(template => template.id));
-  const effectiveTemplates = [
-    ...BDCQ_TEMPLATES.map(template => ({
-      ...template,
-      ...(customById.get(template.id) || {}),
-    })),
-    ...customTemplates.filter((template: any) => !builtInIds.has(template.id)),
-  ].filter((template: any) => template.active !== 0);
+  const effectiveTemplates = effectiveBdcqTemplates(customTemplates);
   const templates: Array<{
     id?: string;
     module: string;
@@ -952,6 +1020,7 @@ export async function ensureBdcqTemplates(
     question: string;
     required?: boolean;
     scopeItemIds?: string[];
+    metadata: ReturnType<typeof projectBdcqMetadata>;
   }> = [];
 
   for (const template of effectiveTemplates) {
@@ -986,6 +1055,7 @@ export async function ensureBdcqTemplates(
             question: template.question,
             required: Boolean(template.required),
             scopeItemIds: matchedScope.map((item: any) => item.id),
+            metadata: projectBdcqMetadata(template),
           });
       } else {
         const scopeByModule = new Map<string, string[]>();
@@ -1004,6 +1074,7 @@ export async function ensureBdcqTemplates(
             question: template.question,
             required: Boolean(template.required),
             scopeItemIds,
+            metadata: projectBdcqMetadata(template),
           });
       }
       continue;
@@ -1020,6 +1091,7 @@ export async function ensureBdcqTemplates(
         question: template.question,
         required: Boolean(template.required),
         scopeItemIds: [],
+        metadata: projectBdcqMetadata(template),
       });
   }
 
@@ -1068,6 +1140,7 @@ export async function ensureBdcqTemplates(
       templateId: template.id || "",
       required: Boolean(template.required),
       scopeItemIds: template.scopeItemIds || [],
+      ...template.metadata,
       isDefault: 1,
       sortOrder: existing.length + added,
     });
@@ -2421,6 +2494,7 @@ export const workflowRouter = router({
       list: workflowProjectProcedure(false, "viewProject")
         .input(z.object({ projectId: z.string(), ...paginationInput }))
         .query(async ({ ctx, input }) => {
+          await backfillBdcqProjectMetadata(input.projectId);
           const rows = await wdb.listBdcqQuestions(input.projectId, input);
           const visible = await visibleBdcqQuestionIds(
             ctx.appUser,
@@ -2430,6 +2504,133 @@ export const workflowRouter = router({
           return visible
             ? rows.filter((item: any) => visible.has(item.id))
             : rows;
+        }),
+      search: workflowProjectProcedure(false, "viewProject")
+        .input(
+          z.object({
+            projectId: z.string(),
+            offset: z.number().int().min(0).default(0),
+            limit: z.number().int().min(1).max(200).default(50),
+            search: z.string().trim().max(256).optional(),
+            modules: z.array(z.string()).max(50).default([]),
+            scopeItemIds: z.array(z.string()).max(200).default([]),
+            levels: z.array(z.string()).max(10).default([]),
+            areas: z.array(z.string()).max(100).default([]),
+            topics: z.array(z.string()).max(100).default([]),
+            sources: z.array(z.string()).max(50).default([]),
+            statuses: z
+              .array(z.enum(["pending", "answered", "inactive"]))
+              .max(3)
+              .default([]),
+            consultantResourceIds: z.array(z.string()).max(200).default([]),
+            keyUserIds: z.array(z.string()).max(200).default([]),
+          })
+        )
+        .query(async ({ ctx, input }) => {
+          await backfillBdcqProjectMetadata(input.projectId);
+          const [rows, answers, scopeItems] = await Promise.all([
+            wdb.listBdcqQuestions(input.projectId),
+            wdb.listBdcqAnswers(input.projectId),
+            wdb.listScopeItems(input.projectId),
+          ]);
+          const scopeItemSearch = new Map(
+            scopeItems.map((item: any) => [
+              item.id,
+              [item.code, item.name, item.module].filter(Boolean).join(" "),
+            ])
+          );
+          const visible = await visibleBdcqQuestionIds(
+            ctx.appUser,
+            input.projectId,
+            rows
+          );
+          const visibleRows = visible
+            ? rows.filter((item: any) => visible.has(item.id))
+            : rows;
+          const answeredIds = new Set(
+            answers
+              .filter((answer: any) => String(answer.answer || "").trim())
+              .map((answer: any) => answer.questionId)
+          );
+          const normalize = (value: unknown) =>
+            String(value || "")
+              .trim()
+              .toLocaleLowerCase("pt-BR");
+          const term = normalize(input.search);
+          const matches = (selected: string[], value: unknown) =>
+            !selected.length ||
+            selected.some(item => normalize(item) === normalize(value));
+          const filtered = visibleRows.filter((question: any) => {
+            const status =
+              question.active === 0
+                ? "inactive"
+                : answeredIds.has(question.id)
+                  ? "answered"
+                  : "pending";
+            if (!input.statuses.length && status === "inactive") return false;
+            if (input.statuses.length && !input.statuses.includes(status))
+              return false;
+            if (!matches(input.modules, question.module)) return false;
+            if (!matches(input.levels, question.level)) return false;
+            if (!matches(input.areas, question.area)) return false;
+            if (!matches(input.topics, question.topic)) return false;
+            if (!matches(input.sources, question.source)) return false;
+            if (
+              !matches(
+                input.consultantResourceIds,
+                question.consultantResourceId
+              )
+            )
+              return false;
+            if (!matches(input.keyUserIds, question.keyUserId)) return false;
+            if (
+              input.scopeItemIds.length &&
+              !input.scopeItemIds.some(id =>
+                (question.scopeItemIds || []).includes(id)
+              )
+            )
+              return false;
+            if (!term) return true;
+            return [
+              question.question,
+              question.questionOriginal,
+              question.sapId,
+              question.module,
+              question.category,
+              question.process,
+              question.area,
+              question.topic,
+              question.sscuiReference,
+              question.source,
+              ...(question.scopeItemIds || []),
+              ...(question.scopeItemIds || []).map(
+                (id: string) => scopeItemSearch.get(id) || ""
+              ),
+            ]
+              .map(normalize)
+              .some(value => value.includes(term));
+          });
+          const unique = (key: string) =>
+            [
+              ...new Set(
+                visibleRows
+                  .map((item: any) => String(item[key] || "").trim())
+                  .filter(Boolean)
+              ),
+            ].sort((a, b) => a.localeCompare(b, "pt-BR"));
+          return {
+            items: filtered.slice(input.offset, input.offset + input.limit),
+            total: filtered.length,
+            answered: filtered.filter((item: any) => answeredIds.has(item.id))
+              .length,
+            facets: {
+              modules: unique("module"),
+              levels: unique("level"),
+              areas: unique("area"),
+              topics: unique("topic"),
+              sources: unique("source"),
+            },
+          };
         }),
       create: workflowProjectProcedure(true)
         .input(
@@ -2443,6 +2644,7 @@ export const workflowRouter = router({
             keyUserId: z.string().max(64).optional(),
             isDefault: z.number().optional(),
             sortOrder: z.number().optional(),
+            ...bdcqProjectMetadataInput,
           })
         )
         .mutation(async ({ ctx, input }) => {
@@ -2496,6 +2698,21 @@ export const workflowRouter = router({
             scopeItemIds: input.scopeItemIds || [],
             consultantResourceId: input.consultantResourceId || "",
             keyUserId: input.keyUserId || "",
+            questionOriginal: input.questionOriginal || "",
+            sapId: input.sapId || "",
+            level: input.level || "L3",
+            process: input.process || "",
+            sscuiReference: input.sscuiReference || "",
+            area: input.area || "",
+            topic: input.topic || "",
+            topicDefinition: input.topicDefinition || "",
+            solution: input.solution || "",
+            source: input.source || "manual",
+            sourceFile: input.sourceFile || "",
+            sourceRelease: input.sourceRelease || "",
+            required: Boolean(input.required),
+            active: input.active ?? 1,
+            metadataInitialized: 1,
             isDefault: input.isDefault ?? 0,
             sortOrder: input.sortOrder ?? 0,
           });
@@ -2512,6 +2729,7 @@ export const workflowRouter = router({
               consultantResourceId: z.string().max(64).optional(),
               keyUserId: z.string().max(64).optional(),
               sortOrder: z.number().optional(),
+              ...bdcqProjectMetadataInput,
             }),
           })
         )
@@ -2558,7 +2776,10 @@ export const workflowRouter = router({
                 message: "Key user não pertence ao projeto",
               });
           }
-          return wdb.updateBdcqQuestion(input.id, input.data);
+          return wdb.updateBdcqQuestion(input.id, {
+            ...input.data,
+            metadataInitialized: 1,
+          });
         }),
       delete: workflowEntityProcedure("bdcq_questions", true)
         .input(z.object({ id: z.string() }))
@@ -2588,6 +2809,7 @@ export const workflowRouter = router({
                   consultantResourceId: z.string().optional(),
                   keyUserId: z.string().optional(),
                   scopeItemIds: z.array(z.string()).max(200).optional(),
+                  ...bdcqProjectMetadataInput,
                 })
               )
               .min(1)
@@ -2652,6 +2874,21 @@ export const workflowRouter = router({
                 consultantResourceId: question.consultantResourceId || "",
                 keyUserId: question.keyUserId || "",
                 scopeItemIds: question.scopeItemIds || [],
+                questionOriginal: question.questionOriginal || "",
+                sapId: question.sapId || "",
+                level: question.level || "L3",
+                process: question.process || "",
+                sscuiReference: question.sscuiReference || "",
+                area: question.area || "",
+                topic: question.topic || "",
+                topicDefinition: question.topicDefinition || "",
+                solution: question.solution || "",
+                source: question.source || current.source || "manual",
+                sourceFile: question.sourceFile || "",
+                sourceRelease: question.sourceRelease || "",
+                required: Boolean(question.required),
+                active: question.active ?? 1,
+                metadataInitialized: 1,
               });
               updated++;
               continue;
@@ -2665,6 +2902,21 @@ export const workflowRouter = router({
               consultantResourceId: question.consultantResourceId || "",
               keyUserId: question.keyUserId || "",
               scopeItemIds: question.scopeItemIds || [],
+              questionOriginal: question.questionOriginal || "",
+              sapId: question.sapId || "",
+              level: question.level || "L3",
+              process: question.process || "",
+              sscuiReference: question.sscuiReference || "",
+              area: question.area || "",
+              topic: question.topic || "",
+              topicDefinition: question.topicDefinition || "",
+              solution: question.solution || "",
+              source: question.source || "manual",
+              sourceFile: question.sourceFile || "",
+              sourceRelease: question.sourceRelease || "",
+              required: Boolean(question.required),
+              active: question.active ?? 1,
+              metadataInitialized: 1,
               isDefault: 0,
               sortOrder: existing.length + added,
             });

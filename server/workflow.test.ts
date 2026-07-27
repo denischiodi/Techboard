@@ -333,6 +333,18 @@ describe("workflow router module structure", () => {
       {
         ...standard,
         question: "Pergunta Standard SAP ajustada pelo líder",
+        questionOriginal: "Original question",
+        sapId: "SAP-TEST",
+        level: "L2",
+        process: "Compras",
+        sscuiReference: "SSCUI-100",
+        area: "Suprimentos",
+        topic: "Aprovação",
+        topicDefinition: "Definição ajustada",
+        solution: "Solução ajustada",
+        source: "Standard SAP",
+        sourceFile: "BDCQ.xlsx",
+        sourceRelease: "2508",
         active: 1,
       } as any,
     ]);
@@ -349,6 +361,19 @@ describe("workflow router module structure", () => {
     expect(calls[0]).toEqual(
       expect.objectContaining({
         question: "Pergunta Standard SAP ajustada pelo líder",
+        questionOriginal: "Original question",
+        sapId: "SAP-TEST",
+        level: "L2",
+        process: "Compras",
+        sscuiReference: "SSCUI-100",
+        area: "Suprimentos",
+        topic: "Aprovação",
+        topicDefinition: "Definição ajustada",
+        solution: "Solução ajustada",
+        source: "Standard SAP",
+        sourceFile: "BDCQ.xlsx",
+        sourceRelease: "2508",
+        metadataInitialized: 1,
         scopeItemIds: ["scope-standard"],
       })
     );
