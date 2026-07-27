@@ -38,7 +38,7 @@ export default function WorkshopsPage() {
   const [selectedWs, setSelectedWs] = useState<any>(null);
   const [workshopToDelete, setWorkshopToDelete] = useState<any>(null);
   const [showAgenda, setShowAgenda] = useState(false);
-  const [agendaSuggestion, setAgendaSuggestion] = useState("");
+  const [suggestionSummary, setSuggestionSummary] = useState<any>(null);
   const [view, setView] = useState<"cards" | "timeline">("timeline");
   const [form, setForm] = useState(emptyWorkshopForm);
   const [templateForm, setTemplateForm] = useState(emptyTemplateForm);
@@ -64,8 +64,13 @@ export default function WorkshopsPage() {
     onError: error => toast.error(error.message || "Não foi possível excluir o workshop"),
   });
   const suggestAgenda = trpc.workflow.workshops.suggestAgenda.useMutation({
-    onSuccess: (data: any) => { setAgendaSuggestion(data.suggestion); setShowAgenda(true); },
-    onError: () => toast.error("Erro ao gerar sugestão"),
+    onSuccess: (data: any) => {
+      refetch();
+      setSuggestionSummary(data);
+      setShowAgenda(true);
+      toast.success(`${data.created} workshop(s) criado(s) como rascunho`);
+    },
+    onError: error => toast.error(error.message || "Erro ao sugerir workshops"),
   });
   const uploadPresentation = trpc.workflow.workshops.uploadPresentation.useMutation({ onError: error => toast.error(error.message) });
   const createTemplate = trpc.workflow.workshops.templates.create.useMutation({ onSuccess: () => { refetchTemplates(); setTemplateForm(emptyTemplateForm); toast.success("Workshop padrão criado"); }, onError: error => toast.error(error.message) });
@@ -100,7 +105,7 @@ export default function WorkshopsPage() {
         </div>
         <div className="flex flex-col gap-2 min-[420px]:flex-row sm:flex-wrap sm:justify-end">
           <Button variant="outline" onClick={() => suggestAgenda.mutate({ projectId: PROJECT_ID })} disabled={suggestAgenda.isPending}>
-            <Lightbulb className="h-4 w-4 mr-2" />{suggestAgenda.isPending ? "Gerando..." : "Sugerir Agenda (IA)"}
+            <Lightbulb className="h-4 w-4 mr-2" />{suggestAgenda.isPending ? "Analisando escopo..." : "Sugerir Workshops (IA)"}
           </Button>
           <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Novo Workshop</Button>
         </div>
@@ -113,7 +118,7 @@ export default function WorkshopsPage() {
           {sortedWorkshops.map((ws: any) => <div key={ws.id} role="button" tabIndex={0} className="relative mb-5 block w-full cursor-pointer rounded-lg border bg-background p-4 text-left transition-shadow hover:shadow-md" onClick={() => setSelectedWs(ws)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedWs(ws); } }}>
             <span className="absolute -left-[2.05rem] top-5 h-3 w-3 rounded-full border-2 border-background bg-primary" />
             <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3>{ws.objective && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ws.objective}</p>}</div><div className="flex flex-wrap items-center gap-2">{(ws.modules?.length ? ws.modules : ws.module ? [ws.module] : []).map((module: string) => <Badge key={module} variant="secondary">{module}</Badge>)}{isTechTemplateWorkshop(ws) && <Badge>Configurações do Tech · v{ws.templateVersion || 1}</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge>{canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={event => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}</div></div>
-            <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">{ws.duration && <span>{ws.duration}</span>}<span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.participants?.length || 0} participantes</span></div>
+            <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">{ws.duration && <span>{ws.duration}</span>}{ws.responsible && <span className="flex items-center gap-1"><UserCheck className="h-3.5 w-3.5" />Consultor: {ws.responsible}</span>}<span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.participants?.length || 0} participantes</span></div>
           </div>)}
         </div>}
       </CardContent></Card> : <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -205,9 +210,19 @@ export default function WorkshopsPage() {
       </Dialog>
 
       <Dialog open={showAgenda} onOpenChange={setShowAgenda}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Sugestão de Agenda (IA)</DialogTitle></DialogHeader>
-          <div className="prose prose-sm dark:prose-invert whitespace-pre-wrap">{agendaSuggestion}</div>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Workshops sugeridos pela IA</DialogTitle></DialogHeader>
+          {suggestionSummary && <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Os workshops foram salvos como rascunho. Revise cada um e altere o status para Planejado quando estiver aprovado.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Padrões aplicados</p><p className="text-2xl font-semibold">{suggestionSummary.appliedTemplates}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rascunhos criados</p><p className="text-2xl font-semibold">{suggestionSummary.created}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Scope items analisados</p><p className="text-2xl font-semibold">{suggestionSummary.totalScopeItems}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Aprendizados considerados</p><p className="text-2xl font-semibold">{suggestionSummary.learnedPatternsUsed}</p></div>
+            </div>
+            {suggestionSummary.skipped > 0 && <p className="text-sm text-muted-foreground">{suggestionSummary.skipped} sugestão(ões) já existentes foram ignoradas para evitar duplicidade.</p>}
+          </div>}
+          <DialogFooter><Button onClick={() => setShowAgenda(false)}>Ver rascunhos</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -261,10 +276,11 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><CardTitle>{ws.title}</CardTitle>{ws.participants?.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Participantes: {ws.participants.join(", ")}</p>}</div>
-          <div className="flex items-center gap-2"><Select value={ws.status || "Planejado"} onValueChange={status => updateWorkshop.mutate({ id: ws.id, data: { status: status as "Planejado" | "Agendado" | "Realizado" | "Concluído" | "Cancelado" } })}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Planejado">Planejado</SelectItem><SelectItem value="Agendado">Agendado</SelectItem><SelectItem value="Realizado">Realizado</SelectItem><SelectItem value="Concluído">Concluído</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select><Button variant="ghost" onClick={onClose}>Fechar</Button></div>
+          <div className="flex items-center gap-2"><Select value={ws.status || "Planejado"} onValueChange={status => updateWorkshop.mutate({ id: ws.id, data: { status: status as "Rascunho" | "Planejado" | "Agendado" | "Realizado" | "Concluído" | "Cancelado" } })}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Rascunho">Rascunho</SelectItem><SelectItem value="Planejado">Planejado</SelectItem><SelectItem value="Agendado">Agendado</SelectItem><SelectItem value="Realizado">Realizado</SelectItem><SelectItem value="Concluído">Concluído</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select><Button variant="ghost" onClick={onClose}>Fechar</Button></div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {ws.responsible && <div className="flex items-center gap-2 rounded-lg border bg-muted/20 p-3 text-sm"><UserCheck className="h-4 w-4 text-primary" /><span><strong>Consultor responsável:</strong> {ws.responsible}</span></div>}
         <div className="grid gap-4 rounded-lg border p-4 md:grid-cols-2">
           <div><p className="text-xs font-medium uppercase text-muted-foreground">Objetivo</p><p className="mt-1 whitespace-pre-wrap text-sm">{ws.objective || "Não informado"}</p></div>
           <div><p className="text-xs font-medium uppercase text-muted-foreground">O que será apresentado</p><p className="mt-1 whitespace-pre-wrap text-sm">{ws.content || "Não informado"}</p></div>

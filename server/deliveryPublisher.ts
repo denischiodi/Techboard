@@ -624,3 +624,17 @@ export async function confirmBlocked(projectId: string, templateIds: string[]) {
     preserved: total.preserved + item.preserved,
   }), { created: 0, updated: 0, preserved: 0 });
 }
+
+export async function applyPublishedWorkshopTemplates(projectId: string) {
+  const templates = (await deliveryStore.listTemplates({ type: "workshop" }))
+    .filter((template: any) => template.active && !template.archivedAt);
+  const summaries = [];
+  for (const template of templates)
+    summaries.push(await publishTemplate(template, { confirmedProjectId: projectId }));
+  return summaries.reduce((total, item) => ({
+    created: total.created + item.created,
+    updated: total.updated + item.updated,
+    preserved: total.preserved + item.preserved,
+    failed: total.failed + item.failed,
+  }), { created: 0, updated: 0, preserved: 0, failed: 0 });
+}

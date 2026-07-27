@@ -30,6 +30,7 @@ import * as approvalStore from "../approvalStore";
 import { deliveryMasterRouter } from "./deliveryMaster";
 import { sapLibraryRouter } from "./sapLibrary";
 import { getKnowledgeContext } from "../sapLibraryStore";
+import * as deliveryPublisher from "../deliveryPublisher";
 
 const bdcqStandardsEditorProcedure = protectedProcedure.use(
   async ({ ctx, next }) => {
@@ -372,6 +373,48 @@ async function getWorkflowAiConfig(key: WorkflowPromptKey) {
   };
 }
 
+async function recordWorkshopLearning(
+  workshop: any,
+  decision: "confirmed" | "edited" | "discarded",
+  createdBy: string
+) {
+  if (!workshop) return;
+  const scopeItems = await wdb.listScopeItems(workshop.projectId);
+  const selected = new Set(workshop.scopeItemIds || []);
+  const learningKey =
+    workshop.learningKey ||
+    createHash("sha256")
+      .update(
+        `${workshop.projectId}|${workshop.module || ""}|${[
+          ...selected,
+        ].sort().join(",")}|${workshop.title || ""}`
+      )
+      .digest("hex")
+      .slice(0, 40);
+  await wdb.saveWorkshopLearningPattern({
+    id: `wlp_${nanoid(20)}`,
+    projectId: workshop.projectId,
+    workshopId: workshop.id,
+    learningKey,
+    module: workshop.module || "",
+    scopeItemCodes: scopeItems
+      .filter((item: any) => selected.has(item.id))
+      .map((item: any) => item.code || item.name)
+      .filter(Boolean),
+    title: workshop.title,
+    objective: workshop.objective || "",
+    content: workshop.content || "",
+    duration: workshop.duration || "",
+    agenda: workshop.agenda || [],
+    expectedOutcomes: workshop.expectedOutcomes || [],
+    prerequisites: workshop.prerequisites || [],
+    requiredRoles: workshop.requiredRoles || [],
+    decision,
+    confidence: decision === "discarded" ? 10 : decision === "edited" ? 80 : 70,
+    createdBy,
+  });
+}
+
 const workshopFileSchema = z.object({
   name: z.string().trim().min(1).max(255),
   url: z.string().trim().min(1).max(2048),
@@ -701,6 +744,7 @@ async function assertCanExecuteTestCase(appUser: any, testCase: any) {
 const gapStatusSchema = z.enum(["Aberto", "Em Análise", "Resolvido", "Aceito"]);
 const gapImpactSchema = z.enum(["Alto", "Médio", "Baixo"]);
 const workshopStatusSchema = z.enum([
+  "Rascunho",
   "Planejado",
   "Agendado",
   "Realizado",
@@ -3526,6 +3570,8 @@ export const workflowRouter = router({
           scheduledDate: z.string().optional(),
           duration: z.string().optional(),
           participants: z.array(z.string()).optional(),
+          consultantResourceId: z.string().max(64).optional(),
+          responsible: z.string().max(255).optional(),
           agenda: z.array(z.string()).optional(),
           expectedOutcomes: z.array(z.string()).max(100).optional(),
           prerequisites: z.array(z.string()).max(100).optional(),
@@ -3555,6 +3601,8 @@ export const workflowRouter = router({
           scheduledDate: input.scheduledDate || "",
           duration: input.duration || "",
           participants: input.participants || [],
+          consultantResourceId: input.consultantResourceId || "",
+          responsible: input.responsible || "",
           agenda: input.agenda || [],
           expectedOutcomes: input.expectedOutcomes || [],
           prerequisites: input.prerequisites || [],
@@ -3580,6 +3628,8 @@ export const workflowRouter = router({
             scheduledDate: z.string().optional(),
             duration: z.string().optional(),
             participants: z.array(z.string()).optional(),
+            consultantResourceId: z.string().max(64).optional(),
+            responsible: z.string().max(255).optional(),
             agenda: z.array(z.string()).optional(),
             expectedOutcomes: z.array(z.string()).max(100).optional(),
             prerequisites: z.array(z.string()).max(100).optional(),
@@ -3590,7 +3640,8 @@ export const workflowRouter = router({
           }),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const current: any = await wdb.getWorkshopById(input.id);
         if (input.data.scopeItemIds?.length) {
           const projectId = await wdb.getWorkflowEntityProjectId(
             "workshops",
@@ -3607,7 +3658,28 @@ export const workflowRouter = router({
             projectId
           );
         }
-        return wdb.updateWorkshop(input.id, input.data);
+        await wdb.updateWorkshop(input.id, input.data);
+        const updated: any = { ...current, ...input.data };
+        if (
+          ["manual", "ai_suggestion"].includes(current?.source) &&
+          input.data.status &&
+          input.data.status !== "Rascunho"
+        ) {
+          const editedFields = [
+            "title", "module", "modules", "scopeItemIds", "objective", "content",
+            "duration", "participants", "agenda", "expectedOutcomes",
+            "prerequisites", "requiredRoles", "consultantResourceId", "responsible",
+          ];
+          const edited = editedFields.some(
+            key => input.data[key as keyof typeof input.data] !== undefined
+          );
+          await recordWorkshopLearning(
+            updated,
+            edited ? "edited" : "confirmed",
+            ctx.appUser.id
+          );
+        }
+        return updated;
       }),
     delete: workflowEntityProcedure("workshops", true)
       .input(z.object({ id: z.string() }))
@@ -3622,6 +3694,8 @@ export const workflowRouter = router({
             message:
               "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
           });
+        if (workshop?.source === "ai_suggestion")
+          await recordWorkshopLearning(workshop, "discarded", ctx.appUser.id);
         return wdb.deleteWorkshop(input.id);
       }),
     uploadPresentation: workflowProjectProcedure(true)
@@ -3662,62 +3736,249 @@ export const workflowRouter = router({
       }),
     suggestAgenda: workflowProjectProcedure(true)
       .input(z.object({ projectId: z.string() }))
-      .mutation(async ({ input }) => {
-        const scopeItemsList = await wdb.listScopeItems(input.projectId);
-        const questions = await wdb.listBdcqQuestions(input.projectId);
-        const answers = await wdb.listBdcqAnswers(input.projectId);
-        const requirements = await wdb.listClientRequirements(input.projectId);
-        const currentWorkshops = await wdb.listWorkshops(input.projectId);
-        const answeredIds = new Set(answers.map((a: any) => a.questionId));
-        const pendingQuestions = questions.filter(
-          (q: any) => !answeredIds.has(q.id)
+      .mutation(async ({ ctx, input }) => {
+        const centralApplied =
+          await deliveryPublisher.applyPublishedWorkshopTemplates(input.projectId);
+        const legacyApplied = await applyWorkshopTemplates(input.projectId);
+        const [
+          project,
+          scopeItemsList,
+          questions,
+          answers,
+          requirements,
+          currentWorkshops,
+          resources,
+          allocations,
+          keyUsers,
+        ] = await Promise.all([
+          plannerStore.getProjectById(input.projectId),
+          wdb.listScopeItems(input.projectId),
+          wdb.listBdcqQuestions(input.projectId),
+          wdb.listBdcqAnswers(input.projectId),
+          wdb.listClientRequirements(input.projectId),
+          wdb.listWorkshops(input.projectId),
+          plannerStore.listResources(),
+          plannerStore.listAllocations(),
+          wdb.listProjectKeyUsers(input.projectId),
+        ]);
+        if (!project)
+          throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
+        if (!scopeItemsList.length)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Selecione os scope items do projeto antes de sugerir workshops",
+          });
+        const projectModules = [
+          ...new Set(scopeItemsList.map((item: any) => item.module).filter(Boolean)),
+        ] as string[];
+        const learnedPatterns = await wdb.listWorkshopLearningPatterns(projectModules);
+        const answeredIds = new Set(answers.map((answer: any) => answer.questionId));
+        const pendingQuestions = questions.filter((question: any) => !answeredIds.has(question.id));
+        const coveredScopeIds = new Set(
+          currentWorkshops.flatMap((workshop: any) => workshop.scopeItemIds || [])
         );
-        const prompt = `Você é um consultor SAP especialista em workshops de implementação S/4HANA.
-Com base nos scope items e perguntas BDCQ pendentes abaixo, sugira uma agenda de workshops organizada por tema/módulo.
+        const uncoveredScopes = scopeItemsList.filter(
+          (item: any) => !coveredScopeIds.has(item.id)
+        );
+        const prompt = `Planeje workshops SAP S/4HANA Cloud Public Edition e retorne SOMENTE um array JSON.
 
-Scope Items (${scopeItemsList.length} total):
-${scopeItemsList
-  .slice(0, 20)
-  .map((s: any) => `- ${s.name} (${s.module})`)
-  .join("\n")}
+Regras:
+- Os padrões oficiais já foram aplicados e têm prioridade. Não repita workshops existentes.
+- Cubra todos os scope items ainda descobertos, agrupando itens relacionados quando fizer sentido.
+- Considere também workshops transversais ainda ausentes: Navegação/Fiori, SAP Cloud ALM, governança, integrações, extensibilidade, migração, testes e cutover.
+- Por módulo, considere visão geral, dados mestre, processo ponta a ponta, exceções, aprovações, relatórios e requisitos legais.
+- Não invente conteúdo específico do cliente. Use somente os dados abaixo.
+- Não proponha datas. Preencha a duração.
 
-Perguntas BDCQ Pendentes (${pendingQuestions.length} total):
-${pendingQuestions
-  .slice(0, 20)
-  .map((q: any) => `- [${q.module}/${q.category}] ${q.question}`)
-  .join("\n")}
+Todos os scope items do projeto (${scopeItemsList.length}):
+${scopeItemsList.map((item: any) => `- ${item.code || item.id} | ${item.module || "Geral"} | ${item.name}`).join("\n")}
 
-Requisitos identificados (${requirements.length} total):
-${requirements
-  .slice(0, 20)
-  .map(
-    (item: any) =>
-      `- [${item.module || "Geral"}] ${item.title}: ${item.description}`
-  )
-  .join("\n")}
+Scope items ainda sem workshop (${uncoveredScopes.length}):
+${uncoveredScopes.map((item: any) => `- ${item.code || item.id} | ${item.module || "Geral"} | ${item.name}`).join("\n")}
 
-Workshops já cadastrados (${currentWorkshops.length} total — não repetir):
-${currentWorkshops
-  .slice(0, 30)
-  .map(
-    (item: any) =>
-      `- ${item.title} (${(item.modules || [item.module]).filter(Boolean).join(", ") || "Geral"})`
-  )
-  .join("\n")}
+Workshops já existentes:
+${currentWorkshops.map((item: any) => `- ${item.title} | ${item.module || "Geral"} | ${(item.scopeItemIds || []).join(",")}`).join("\n")}
 
-Retorne a sugestão em formato markdown com workshops sugeridos, scope items cobertos, duração estimada, temas a apresentar, resultados esperados e funções de usuários que devem participar.`;
+BDCQ pendente:
+${pendingQuestions.slice(0, 100).map((item: any) => `- ${item.module || "Geral"} | ${item.category || ""} | ${item.question}`).join("\n")}
+
+Requisitos identificados:
+${requirements.slice(0, 100).map((item: any) => `- ${item.module || "Geral"} | ${item.title}: ${item.description}`).join("\n")}
+
+Aprendizados aprovados de projetos anteriores (use como referência, sem copiar dados de cliente):
+${learnedPatterns.slice(0, 80).map((item: any) => `- ${item.module || "Geral"} | ${item.title} | scopes ${(item.scopeItemCodes || []).join(",")} | duração ${item.duration || "a definir"} | confiança ${item.confidence}`).join("\n")}
+
+Formato obrigatório de cada objeto:
+{"title":"...","module":"... ou Geral","scopeItemCodes":["códigos existentes"],"objective":"...","content":"...","duration":"ex.: 2h","agenda":["..."],"expectedOutcomes":["..."],"prerequisites":["..."],"requiredRoles":["..."],"reason":"por que é necessário"}
+
+Retorne no máximo 100 workshops e somente JSON válido.`;
         const ai = await getWorkflowAiConfig("agenda_suggestion");
-        const result = await invokeWorkflowLLM({
-          model: ai.model,
-          messages: [
-            { role: "system", content: ai.systemPrompt },
-            { role: "user", content: prompt },
-          ],
-        });
+        const suggestionSchema = z.array(z.object({
+          title: z.string().trim().min(1).max(512),
+          module: z.string().trim().max(128).default("Geral"),
+          scopeItemCodes: z.array(z.string().trim().min(1).max(128)).max(100).default([]),
+          objective: z.string().trim().max(10000).default(""),
+          content: z.string().trim().max(20000).default(""),
+          duration: z.string().trim().max(64).default(""),
+          agenda: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
+          expectedOutcomes: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
+          prerequisites: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
+          requiredRoles: z.array(z.string().trim().min(1).max(255)).max(100).default([]),
+          reason: z.string().trim().max(4000).default(""),
+        })).max(100);
+        let suggestions: z.infer<typeof suggestionSchema> | null = null;
+        let lastOutput = "";
+        for (let attempt = 0; attempt < 2 && !suggestions; attempt++) {
+          const result = await invokeWorkflowLLM({
+            model: ai.model,
+            messages: [
+              { role: "system", content: ai.systemPrompt },
+              {
+                role: "user",
+                content: prompt + (attempt
+                  ? `\n\nA resposta anterior não era JSON válido. Corrija e devolva somente o array:\n${lastOutput.slice(0, 3000)}`
+                  : ""),
+              },
+            ],
+          });
+          lastOutput =
+            typeof result.choices?.[0]?.message?.content === "string"
+              ? result.choices[0].message.content
+              : "";
+          try {
+            const match = lastOutput.match(/\[[\s\S]*\]/);
+            suggestions = match ? suggestionSchema.parse(JSON.parse(match[0])) : null;
+          } catch {
+            suggestions = null;
+          }
+        }
+        if (!suggestions)
+          throw new TRPCError({
+            code: "BAD_GATEWAY",
+            message: "A IA não retornou workshops estruturados após nova tentativa",
+          });
+
+        const normalize = (value: unknown) =>
+          String(value || "").trim().toLocaleUpperCase("pt-BR");
+        const scopeByCode = new Map<string, any>();
+        for (const item of scopeItemsList)
+          for (const key of [item.id, item.code, item.name])
+            if (key) scopeByCode.set(normalize(key), item);
+        const resourceById = new Map(resources.map((resource: any) => [resource.id, resource]));
+        const projectAllocations = allocations.filter(
+          (allocation: any) => allocation.projectId === input.projectId
+        );
+        const existingKeys = new Set(
+          currentWorkshops.map((workshop: any) => workshop.learningKey).filter(Boolean)
+        );
+        const existingTitles = new Set(
+          currentWorkshops.map((workshop: any) =>
+            `${normalize(workshop.module)}|${normalize(workshop.title)}`
+          )
+        );
+        const created: any[] = [];
+        let skipped = 0;
+        for (const suggestion of suggestions) {
+          const matchedScopes = [
+            ...new Map(
+              suggestion.scopeItemCodes
+                .map(code => scopeByCode.get(normalize(code)))
+                .filter(Boolean)
+                .map((item: any) => [item.id, item])
+            ).values(),
+          ] as any[];
+          const module =
+            suggestion.module && normalize(suggestion.module) !== "GERAL"
+              ? suggestion.module
+              : matchedScopes[0]?.module || "";
+          const titleKey = `${normalize(module)}|${normalize(suggestion.title)}`;
+          const learningKey = createHash("sha256")
+            .update(`${input.projectId}|${normalize(module)}|${matchedScopes.map(item => item.id).sort().join(",")}|${normalize(suggestion.title)}`)
+            .digest("hex")
+            .slice(0, 40);
+          if (existingKeys.has(learningKey) || existingTitles.has(titleKey)) {
+            skipped++;
+            continue;
+          }
+          const matchingAllocations = projectAllocations.filter(
+            (allocation: any) =>
+              !module || normalize(allocation.front) === normalize(module)
+          );
+          const candidates = matchingAllocations
+            .map((allocation: any) => {
+              const resource: any = resourceById.get(allocation.resourceId);
+              if (!resource || resource.status !== "Ativo") return null;
+              const busyHours = allocations
+                .filter((item: any) => item.resourceId === resource.id)
+                .reduce((sum: number, item: any) => sum + Number(item.hoursPerDay || 0), 0);
+              return {
+                resource,
+                availability: Number(resource.dailyCapacity || 8) - busyHours,
+              };
+            })
+            .filter(Boolean)
+            .sort((a: any, b: any) => b.availability - a.availability);
+          const consultant = candidates[0]?.resource;
+          const participantNames = new Set(
+            matchingAllocations
+              .map((allocation: any) => (resourceById.get(allocation.resourceId) as any)?.name)
+              .filter(Boolean)
+          );
+          const moduleQuestionKeyUserIds = new Set(
+            questions
+              .filter((question: any) => !module || normalize(question.module) === normalize(module))
+              .map((question: any) => question.keyUserId)
+              .filter(Boolean)
+          );
+          for (const keyUser of keyUsers as any[])
+            if (
+              keyUser.active &&
+              (!moduleQuestionKeyUserIds.size || moduleQuestionKeyUserIds.has(keyUser.id))
+            )
+              participantNames.add(keyUser.name);
+          const row: any = await wdb.createWorkshop({
+            id: `ws_${nanoid(20)}`,
+            projectId: input.projectId,
+            title: suggestion.title,
+            module,
+            modules: module ? [module] : [],
+            scopeItemIds: matchedScopes.map(item => item.id),
+            objective: suggestion.objective,
+            content: suggestion.content,
+            scheduledDate: "",
+            duration: suggestion.duration,
+            participants: [...participantNames],
+            consultantResourceId: consultant?.id || "",
+            responsible: consultant?.name || "",
+            agenda: suggestion.agenda,
+            expectedOutcomes: suggestion.expectedOutcomes,
+            prerequisites: suggestion.prerequisites,
+            requiredRoles: suggestion.requiredRoles,
+            presentationFiles: [],
+            templateId: "",
+            templateVersion: 0,
+            occurrenceKey: "",
+            learningKey,
+            source: "ai_suggestion",
+            status: "Rascunho",
+            notes: suggestion.reason
+              ? `Justificativa da IA: ${suggestion.reason}`
+              : "Workshop sugerido pela IA para cobrir o escopo do projeto.",
+          });
+          existingKeys.add(learningKey);
+          existingTitles.add(titleKey);
+          created.push(row);
+        }
         return {
-          suggestion:
-            (result.choices?.[0]?.message?.content as string) ||
-            "Não foi possível gerar sugestão.",
+          appliedTemplates: centralApplied.created + legacyApplied.added,
+          updatedTemplates: centralApplied.updated,
+          created: created.length,
+          skipped,
+          totalScopeItems: scopeItemsList.length,
+          previouslyCovered: coveredScopeIds.size,
+          workshops: created,
+          learnedPatternsUsed: learnedPatterns.length,
+          generatedBy: ctx.appUser.id,
         };
       }),
     transcripts: router({

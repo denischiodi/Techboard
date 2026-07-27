@@ -19,6 +19,7 @@ import {
   workflowWorkshopTemplates as workshopTemplateLibrary,
   workflowTestCases,
   workflowTestSteps,
+  workshopLearningPatterns,
 } from "../../drizzle/schema";
 
 const identifierPattern = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -723,6 +724,9 @@ export async function updateWorkshop(
       "scheduledDate",
       "duration",
       "participants",
+      "consultantResourceId",
+      "responsible",
+      "learningKey",
       "agenda",
       "expectedOutcomes",
       "prerequisites",
@@ -747,6 +751,68 @@ export async function updateWorkshop(
 }
 export async function deleteWorkshop(id: string) {
   return deleteRow("workshops", id);
+}
+
+export async function listWorkshopLearningPatterns(modules: string[] = []) {
+  const pool = getPgPool();
+  if (!pool) return [] as Array<typeof workshopLearningPatterns.$inferSelect>;
+  const result = modules.length
+    ? await pool.query(
+        `SELECT * FROM "workshop_learning_patterns"
+         WHERE "decision" IN ('confirmed','edited') AND ("module" = ANY($1) OR "module" = '')
+         ORDER BY "confidence" DESC,"usageCount" DESC,"updatedAt" DESC LIMIT 200`,
+        [modules]
+      )
+    : await pool.query(
+        `SELECT * FROM "workshop_learning_patterns"
+         WHERE "decision" IN ('confirmed','edited')
+         ORDER BY "confidence" DESC,"usageCount" DESC,"updatedAt" DESC LIMIT 200`
+      );
+  return result.rows;
+}
+
+export async function saveWorkshopLearningPattern(input: {
+  id: string;
+  projectId: string;
+  workshopId: string;
+  learningKey: string;
+  module: string;
+  scopeItemCodes: string[];
+  title: string;
+  objective: string;
+  content: string;
+  duration: string;
+  agenda: string[];
+  expectedOutcomes: string[];
+  prerequisites: string[];
+  requiredRoles: string[];
+  decision: "confirmed" | "edited" | "discarded";
+  confidence: number;
+  createdBy: string;
+}) {
+  const pool = getPgPool();
+  if (!pool) return input;
+  const result = await pool.query(
+    `INSERT INTO "workshop_learning_patterns"
+      ("id","projectId","workshopId","learningKey","module","scopeItemCodes","title","objective","content","duration","agenda","expectedOutcomes","prerequisites","requiredRoles","decision","confidence","createdBy")
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb,$15,$16,$17)
+     ON CONFLICT ("workshopId") WHERE "workshopId" <> '' DO UPDATE SET
+      "learningKey"=EXCLUDED."learningKey","module"=EXCLUDED."module","scopeItemCodes"=EXCLUDED."scopeItemCodes",
+      "title"=EXCLUDED."title","objective"=EXCLUDED."objective","content"=EXCLUDED."content",
+      "duration"=EXCLUDED."duration","agenda"=EXCLUDED."agenda","expectedOutcomes"=EXCLUDED."expectedOutcomes",
+      "prerequisites"=EXCLUDED."prerequisites","requiredRoles"=EXCLUDED."requiredRoles",
+      "decision"=EXCLUDED."decision","confidence"=GREATEST("workshop_learning_patterns"."confidence",EXCLUDED."confidence"),
+      "usageCount"="workshop_learning_patterns"."usageCount"+1,"updatedAt"=now()
+     RETURNING *`,
+    [
+      input.id, input.projectId, input.workshopId, input.learningKey, input.module,
+      JSON.stringify(input.scopeItemCodes), input.title, input.objective, input.content,
+      input.duration, JSON.stringify(input.agenda), JSON.stringify(input.expectedOutcomes),
+      JSON.stringify(input.prerequisites), JSON.stringify(input.requiredRoles),
+      input.decision, input.confidence, input.createdBy,
+    ]
+  );
+  return result.rows[0];
 }
 
 export async function listWorkshopTemplates() {
