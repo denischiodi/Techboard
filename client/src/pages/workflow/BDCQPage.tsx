@@ -1209,7 +1209,7 @@ export default function BDCQPage() {
           if (!open) setForm(emptyQuestionForm());
         }}
       >
-        <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-[1500px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {form.id ? "Editar pergunta BDCQ" : "Nova pergunta BDCQ"}
