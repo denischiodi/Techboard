@@ -12,7 +12,7 @@ function ignored(message: string) {
 }
 
 export const test = base.extend<{ appPage: Page }>({
-  appPage: async ({ page }, use, testInfo) => {
+  appPage: async ({ page }, provide, testInfo) => {
     const pageErrors: string[] = [];
     const consoleErrors: string[] = [];
     const serverErrors: string[] = [];
@@ -28,7 +28,7 @@ export const test = base.extend<{ appPage: Page }>({
         serverErrors.push(`${response.status()} ${url}`);
     });
 
-    await use(page);
+    await provide(page);
 
     if (pageErrors.length || consoleErrors.length || serverErrors.length) {
       await attachDiagnostics(testInfo, { pageErrors, consoleErrors, serverErrors });
