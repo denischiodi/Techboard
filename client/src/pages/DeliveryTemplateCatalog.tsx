@@ -78,12 +78,6 @@ const ownerRoles = [
   { value: "key_user", label: "Key User" },
   { value: "approver", label: "Aprovador" },
 ];
-const approvalModes = [
-  { value: "none", label: "Sem aprovação" },
-  { value: "any", label: "Qualquer aprovador" },
-  { value: "all", label: "Todos os aprovadores" },
-  { value: "minimum", label: "Quórum mínimo" },
-] as const;
 const defaultStages: Record<DeliveryType, string> = {
   activity: "preparation",
   bdcq: "bdcq",
@@ -464,18 +458,15 @@ export default function DeliveryTemplateCatalog({
       projectIds: form.projectIds,
       required: form.required,
       sortOrder: form.sortOrder,
-      dependencyTemplateIds: form.dependencyTemplateIds,
+      dependencyTemplateIds: [],
       ownerRole: form.ownerRole,
       dueOffsetDays: form.dueOffsetDays,
-      evidenceRequirements: form.evidenceText
-        .split("\n")
-        .map(item => item.trim())
-        .filter(Boolean),
+      evidenceRequirements: [],
       approvalPolicy: {
-        mode: form.approvalMode,
-        minimumApprovals: form.minimumApprovals,
+        mode: "none" as const,
+        minimumApprovals: 1,
       },
-      completionCriteria: form.completionCriteria,
+      completionCriteria: "",
       payload: form.type === "workshop" ? {
         objective: form.workshopObjective,
         content: form.workshopContent,
@@ -659,21 +650,6 @@ export default function DeliveryTemplateCatalog({
                   <Badge variant="outline">{template.publicationProjectCount || 0} projeto(s) publicado(s)</Badge>
                   {template.blockedPublicationCount > 0 && <Badge className="bg-amber-100 text-amber-900">{template.blockedPublicationCount} pendente(s)</Badge>}
                   {template.lastPublicationStatus && <Badge variant="secondary">Publicação: {template.lastPublicationStatus === "completed" ? "Concluída" : template.lastPublicationStatus === "completed_with_warnings" ? "Com alertas" : template.lastPublicationStatus === "failed" ? "Falhou" : template.lastPublicationStatus === "processing" ? "Processando" : "Aguardando"}</Badge>}
-                  {template.approvalPolicy?.mode !== "none" && (
-                    <Badge className="bg-amber-100 text-amber-900">
-                      Aprovação:{" "}
-                      {
-                        approvalModes.find(
-                          mode => mode.value === template.approvalPolicy.mode
-                        )?.label
-                      }
-                    </Badge>
-                  )}
-                  {template.evidenceRequirements?.length > 0 && (
-                    <Badge className="bg-emerald-100 text-emerald-900">
-                      {template.evidenceRequirements.length} evidência(s)
-                    </Badge>
-                  )}
                 </div>
               </div>
               {!template.archivedAt && (
@@ -1147,100 +1123,6 @@ export default function DeliveryTemplateCatalog({
               )}
             </section>
 
-            <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-              <div>
-                <Label>Evidências obrigatórias (uma por linha)</Label>
-                <Textarea
-                  rows={4}
-                  value={form.evidenceText}
-                  onChange={event =>
-                    setForm(current => ({
-                      ...current,
-                      evidenceText: event.target.value,
-                    }))
-                  }
-                  placeholder={
-                    "Captura de tela\nDocumento aprovado\nLog de execução"
-                  }
-                />
-              </div>
-              <div>
-                <Label>Critério de conclusão</Label>
-                <Textarea
-                  rows={4}
-                  value={form.completionCriteria}
-                  onChange={event =>
-                    setForm(current => ({
-                      ...current,
-                      completionCriteria: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <FieldSelect
-                label="Política de aprovação"
-                value={form.approvalMode}
-                values={[...approvalModes]}
-                onChange={approvalMode =>
-                  setForm(current => ({
-                    ...current,
-                    approvalMode: approvalMode as TemplateForm["approvalMode"],
-                  }))
-                }
-              />
-              {form.approvalMode === "minimum" && (
-                <div>
-                  <Label>Quantidade mínima</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={form.minimumApprovals}
-                    onChange={event =>
-                      setForm(current => ({
-                        ...current,
-                        minimumApprovals: Math.max(
-                          1,
-                          Number(event.target.value)
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-              )}
-            </section>
-
-            <section>
-              <Label>Dependências de outros modelos</Label>
-              <div className="mt-2 grid max-h-48 gap-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-2">
-                {(templates as any[])
-                  .filter(item => item.id !== form.id && !item.archivedAt)
-                  .map(item => (
-                    <label
-                      key={item.id}
-                      className="flex cursor-pointer items-start gap-2 rounded p-1.5 text-sm hover:bg-muted"
-                    >
-                      <Checkbox
-                        className="mt-0.5"
-                        checked={form.dependencyTemplateIds.includes(item.id)}
-                        onCheckedChange={() =>
-                          setForm(current => ({
-                            ...current,
-                            dependencyTemplateIds: toggle(
-                              current.dependencyTemplateIds,
-                              item.id
-                            ),
-                          }))
-                        }
-                      />
-                      <span>
-                        <strong>{typeLabels[item.type as DeliveryType]}</strong>
-                        <br />
-                        {item.title}
-                      </span>
-                    </label>
-                  ))}
-              </div>
-            </section>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditorOpen(false)}>
