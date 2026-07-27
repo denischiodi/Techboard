@@ -369,6 +369,7 @@ export default function BDCQPage() {
         .filter((item: any) => item.active)
         .map((item: any) => item.value),
       ...scopeItems.map((item: any) => item.module).filter(Boolean),
+      ...(questionResult?.facets.modules || []),
     ]),
   ].sort();
   const projectAllocationMap = new Map(
@@ -1250,6 +1251,9 @@ export default function BDCQPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Sem módulo</SelectItem>
+                    {form.module && !moduleOptions.includes(form.module) && (
+                      <SelectItem value={form.module}>{form.module}</SelectItem>
+                    )}
                     {moduleOptions.map(module => (
                       <SelectItem key={module} value={module}>
                         {module}
