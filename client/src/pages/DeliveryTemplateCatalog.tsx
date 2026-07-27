@@ -277,6 +277,13 @@ export default function DeliveryTemplateCatalog({
       toast.error("O arquivo deve ter no máximo 50 MB");
       return;
     }
+    let fileBuffer: ArrayBuffer;
+    try {
+      fileBuffer = await file.arrayBuffer();
+    } catch {
+      toast.error("Não foi possível ler o arquivo. Aguarde o download do OneDrive/iCloud e selecione-o novamente.");
+      return;
+    }
     setAttachmentProgress(1);
     try {
       const target = await prepareAttachment.mutateAsync({
@@ -287,8 +294,7 @@ export default function DeliveryTemplateCatalog({
       const totalParts = Math.ceil(file.size / chunkSize);
       for (let part = 0; part < totalParts; part++) {
         if (target.localUpload) {
-          const chunk = file.slice(part * chunkSize, Math.min(file.size, (part + 1) * chunkSize));
-          const bytes = new Uint8Array(await chunk.arrayBuffer());
+          const bytes = new Uint8Array(fileBuffer.slice(part * chunkSize, Math.min(file.size, (part + 1) * chunkSize)));
           let binary = "";
           for (let offset = 0; offset < bytes.length; offset += 32_768)
             binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
@@ -306,7 +312,7 @@ export default function DeliveryTemplateCatalog({
           const response = await fetch(target.uploadUrl, {
             method: "PUT",
             headers: { "Content-Type": file.type || "application/octet-stream" },
-            body: file,
+            body: new Blob([fileBuffer], { type: file.type || "application/octet-stream" }),
           });
           if (!response.ok)
             throw new Error(`Falha no envio do arquivo (${response.status})`);
@@ -819,9 +825,10 @@ export default function DeliveryTemplateCatalog({
                       type="file"
                       accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx"
                       disabled={attachmentProgress > 0}
-                      onChange={event => {
-                        void attachFile(event.target.files?.[0]);
-                        event.currentTarget.value = "";
+                      onChange={async event => {
+                        const input = event.currentTarget;
+                        await attachFile(input.files?.[0]);
+                        input.value = "";
                       }}
                     />
                   </label>
