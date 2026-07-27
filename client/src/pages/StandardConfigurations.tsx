@@ -105,18 +105,42 @@ const emptyActivity = (): ActivityForm => ({
 type BdcqForm = {
   id: string;
   question: string;
+  questionOriginal: string;
   category: string;
   modules: string[];
   scopeItemKeys: string[];
+  sapId: string;
+  level: string;
+  process: string;
+  sscuiReference: string;
+  area: string;
+  topic: string;
+  topicDefinition: string;
+  solution: string;
+  source: string;
+  sourceFile: string;
+  sourceRelease: string;
   required: boolean;
   active: number;
 };
 const emptyBdcq = (): BdcqForm => ({
   id: "",
   question: "",
+  questionOriginal: "",
   category: "",
   modules: [],
   scopeItemKeys: [],
+  sapId: "",
+  level: "L3",
+  process: "",
+  sscuiReference: "",
+  area: "",
+  topic: "",
+  topicDefinition: "",
+  solution: "",
+  source: "Personalizado",
+  sourceFile: "",
+  sourceRelease: "",
   required: true,
   active: 1,
 });
@@ -144,6 +168,8 @@ export default function StandardConfigurations() {
     { enabled: Boolean(user?.email) }
   );
   const isAdmin = appUser?.role === "admin";
+  const canEditBdcq =
+    appUser?.role === "admin" || appUser?.role === "technical_lead";
   const utils = trpc.useUtils();
   const { data: activityTemplates = [] } =
     trpc.activities.templates.list.useQuery(undefined, { enabled: isAdmin });
@@ -353,9 +379,23 @@ export default function StandardConfigurations() {
         ? {
             id: template.id,
             question: template.question,
+            questionOriginal: template.questionOriginal || "",
             category: template.category || "",
             modules: template.modules || [],
             scopeItemKeys: template.scopeItemKeys || [],
+            sapId: template.sapId || "",
+            level: template.level || "L3",
+            process: template.process || "",
+            sscuiReference: template.sscuiReference || "",
+            area: template.area || "",
+            topic: template.topic || "",
+            topicDefinition: template.topicDefinition || "",
+            solution: template.solution || "",
+            source:
+              template.source ||
+              (template.builtIn ? "Standard SAP" : "Personalizado"),
+            sourceFile: template.sourceFile || "",
+            sourceRelease: template.sourceRelease || "",
             required: Boolean(template.required),
             active: template.active ?? 1,
           }
@@ -366,9 +406,21 @@ export default function StandardConfigurations() {
   const saveBdcq = () => {
     const data = {
       question: bdcqForm.question,
+      questionOriginal: bdcqForm.questionOriginal,
       category: bdcqForm.category,
       modules: bdcqForm.modules,
       scopeItemKeys: bdcqForm.scopeItemKeys,
+      sapId: bdcqForm.sapId,
+      level: bdcqForm.level,
+      process: bdcqForm.process,
+      sscuiReference: bdcqForm.sscuiReference,
+      area: bdcqForm.area,
+      topic: bdcqForm.topic,
+      topicDefinition: bdcqForm.topicDefinition,
+      solution: bdcqForm.solution,
+      source: bdcqForm.source,
+      sourceFile: bdcqForm.sourceFile,
+      sourceRelease: bdcqForm.sourceRelease,
       required: bdcqForm.required,
       active: bdcqForm.active,
     };
@@ -514,14 +566,17 @@ export default function StandardConfigurations() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Configurações do Tech</h1>
         <p className="text-sm text-muted-foreground">
           Modelos globais que orientam a execução completa dos projetos.
         </p>
       </div>
-      <Tabs defaultValue="central-bdcq" className="space-y-3">
+      <Tabs
+        defaultValue="central-bdcq"
+        className="min-w-0 max-w-full space-y-3"
+      >
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-4">
           <TabsTrigger
             className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight"
@@ -694,7 +749,10 @@ export default function StandardConfigurations() {
             )}
           </div>
         </TabsContent>
-        <TabsContent value="central-bdcq" className="space-y-4">
+        <TabsContent
+          value="central-bdcq"
+          className="min-w-0 max-w-full space-y-4 overflow-hidden"
+        >
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
             <span className="font-semibold">Biblioteca Standard SAP.</span> As
             perguntas oficiais preservam SAP ID, Level, módulo, scope item e
@@ -718,43 +776,45 @@ export default function StandardConfigurations() {
               <Download className="mr-2 h-4 w-4" />
               Exportar BDCQ
             </Button>
-            <Button variant="outline" asChild disabled={importBdcq.isPending}>
-              <label className="cursor-pointer">
-                <Upload className="mr-2 h-4 w-4" />
-                {importBdcq.isPending ? "Importando..." : "Importar BDCQ"}
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                  onChange={event => {
-                    void importBdcqLayout(event.target.files?.[0]);
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </label>
-            </Button>
-            <Button onClick={() => openBdcq()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Nova pergunta
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" asChild disabled={importBdcq.isPending}>
+                <label className="cursor-pointer">
+                  <Upload className="mr-2 h-4 w-4" />
+                  {importBdcq.isPending ? "Importando..." : "Importar BDCQ"}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={event => {
+                      void importBdcqLayout(event.target.files?.[0]);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </Button>
+            )}
+            {isAdmin && (
+              <Button onClick={() => openBdcq()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nova pergunta
+              </Button>
+            )}
           </div>
-          <div className="overflow-hidden rounded-lg border">
-            <div className="overflow-x-auto">
-              <Table>
+          <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border">
+            <div className="w-full max-w-full overflow-x-auto">
+              <Table className="min-w-[1500px] table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[380px]">
+                    <TableHead className="w-[480px]">
                       Pergunta em português
                     </TableHead>
-                    <TableHead>Módulo</TableHead>
-                    <TableHead>SAP ID</TableHead>
-                    <TableHead>Level</TableHead>
-                    <TableHead className="min-w-[180px]">
-                      Área / tópico
-                    </TableHead>
-                    <TableHead className="min-w-[180px]">Scope items</TableHead>
-                    <TableHead>Origem</TableHead>
-                    <TableHead className="w-20"></TableHead>
+                    <TableHead className="w-[120px]">Módulo</TableHead>
+                    <TableHead className="w-[120px]">SAP ID</TableHead>
+                    <TableHead className="w-[80px]">Level</TableHead>
+                    <TableHead className="w-[230px]">Área / tópico</TableHead>
+                    <TableHead className="w-[220px]">Scope items</TableHead>
+                    <TableHead className="w-[150px]">Origem</TableHead>
+                    <TableHead className="w-[80px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -763,8 +823,10 @@ export default function StandardConfigurations() {
                       key={template.id}
                       className={template.active === 0 ? "opacity-60" : ""}
                     >
-                      <TableCell>
-                        <p className="font-medium">{template.question}</p>
+                      <TableCell className="whitespace-normal align-top">
+                        <p className="line-clamp-4 break-words font-medium">
+                          {template.question}
+                        </p>
                         {template.questionOriginal &&
                           template.questionOriginal !== template.question && (
                             <details className="mt-1 text-xs text-muted-foreground">
@@ -777,7 +839,7 @@ export default function StandardConfigurations() {
                             </details>
                           )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal align-top">
                         {(template.modules || []).map((module: string) => (
                           <Badge
                             key={module}
@@ -788,10 +850,10 @@ export default function StandardConfigurations() {
                           </Badge>
                         ))}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="break-words align-top font-mono text-xs">
                         {template.sapId || "—"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <Badge
                           variant={
                             template.level === "L2" ? "default" : "secondary"
@@ -800,7 +862,7 @@ export default function StandardConfigurations() {
                           {template.level || "—"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="whitespace-normal align-top text-sm">
                         <p>{template.area || "—"}</p>
                         {template.topic && (
                           <p className="text-xs text-muted-foreground">
@@ -808,12 +870,12 @@ export default function StandardConfigurations() {
                           </p>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="whitespace-normal break-words align-top text-xs">
                         {(template.scopeItemKeys || []).length
                           ? template.scopeItemKeys.join(", ")
                           : "Geral do módulo"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal align-top">
                         <Badge
                           className={
                             template.source === "Standard SAP"
@@ -834,7 +896,7 @@ export default function StandardConfigurations() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {!template.builtIn && (
+                        {canEditBdcq && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1233,13 +1295,167 @@ export default function StandardConfigurations() {
               />
             </div>
             <div>
-              <Label>Categoria</Label>
-              <Input
-                value={bdcqForm.category}
+              <Label>Pergunta original</Label>
+              <Textarea
+                rows={3}
+                value={bdcqForm.questionOriginal}
                 onChange={event =>
                   setBdcqForm(form => ({
                     ...form,
-                    category: event.target.value,
+                    questionOriginal: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Categoria</Label>
+                <Input
+                  value={bdcqForm.category}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      category: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Processo</Label>
+                <Input
+                  value={bdcqForm.process}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      process: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>SAP ID</Label>
+                <Input
+                  value={bdcqForm.sapId}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      sapId: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Level</Label>
+                <Select
+                  value={bdcqForm.level}
+                  onValueChange={level =>
+                    setBdcqForm(form => ({ ...form, level }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="L2">L2</SelectItem>
+                    <SelectItem value="L3">L3</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Área</Label>
+                <Input
+                  value={bdcqForm.area}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      area: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Tópico</Label>
+                <Input
+                  value={bdcqForm.topic}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      topic: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Origem</Label>
+                <Input
+                  value={bdcqForm.source}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      source: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Release da fonte</Label>
+                <Input
+                  value={bdcqForm.sourceRelease}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      sourceRelease: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Arquivo de origem</Label>
+                <Input
+                  value={bdcqForm.sourceFile}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      sourceFile: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Referência SSCUI</Label>
+                <Input
+                  value={bdcqForm.sscuiReference}
+                  onChange={event =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      sscuiReference: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Definição do tópico</Label>
+              <Textarea
+                rows={3}
+                value={bdcqForm.topicDefinition}
+                onChange={event =>
+                  setBdcqForm(form => ({
+                    ...form,
+                    topicDefinition: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Solução</Label>
+              <Textarea
+                rows={3}
+                value={bdcqForm.solution}
+                onChange={event =>
+                  setBdcqForm(form => ({
+                    ...form,
+                    solution: event.target.value,
                   }))
                 }
               />

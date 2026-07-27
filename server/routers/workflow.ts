@@ -31,6 +31,19 @@ import { deliveryMasterRouter } from "./deliveryMaster";
 import { sapLibraryRouter } from "./sapLibrary";
 import { getKnowledgeContext } from "../sapLibraryStore";
 
+const bdcqStandardsEditorProcedure = protectedProcedure.use(
+  async ({ ctx, next }) => {
+    if (!["admin", "technical_lead"].includes(ctx.appUser.role)) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "Somente administradores e líderes técnicos podem alterar perguntas BDCQ padrão",
+      });
+    }
+    return next({ ctx });
+  }
+);
+
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
     scopeItems: data.scopeItems.length,
@@ -2050,14 +2063,21 @@ export const workflowRouter = router({
     templates: router({
       list: protectedProcedure.query(async () => {
         const custom = await wdb.listBdcqTemplateLibrary();
+        const customById = new Map(
+          custom.map(template => [template.id, template])
+        );
+        const builtInIds = new Set(BDCQ_TEMPLATES.map(template => template.id));
         const builtIn = BDCQ_TEMPLATES.map(template => ({
           ...template,
+          ...(customById.get(template.id) || {}),
           createdBy: "Sistema",
           builtIn: true,
         }));
         return [
           ...builtIn,
-          ...custom.map(template => ({ ...template, builtIn: false })),
+          ...custom
+            .filter(template => !builtInIds.has(template.id))
+            .map(template => ({ ...template, builtIn: false })),
         ];
       }),
       options: protectedProcedure.query(async () => {
@@ -2094,6 +2114,7 @@ export const workflowRouter = router({
         .input(
           z.object({
             question: z.string().trim().min(1).max(5000),
+            questionOriginal: z.string().trim().max(5000).default(""),
             category: z.string().trim().max(256).optional(),
             modules: z
               .array(z.string().trim().min(1).max(128))
@@ -2127,7 +2148,7 @@ export const workflowRouter = router({
             createdBy: ctx.appUser.name || ctx.appUser.email,
           })
         ),
-      update: adminProcedure
+      update: bdcqStandardsEditorProcedure
         .input(
           z.object({
             id: z.string().min(1),
@@ -2158,7 +2179,21 @@ export const workflowRouter = router({
             }),
           })
         )
-        .mutation(({ input }) => wdb.updateBdcqTemplate(input.id, input.data)),
+        .mutation(async ({ ctx, input }) => {
+          const builtIn = BDCQ_TEMPLATES.find(item => item.id === input.id);
+          if (builtIn) {
+            const custom = await wdb.listBdcqTemplateLibrary();
+            if (!custom.some(item => item.id === input.id)) {
+              return wdb.createBdcqTemplate({
+                ...builtIn,
+                ...input.data,
+                id: input.id,
+                createdBy: ctx.appUser.name || ctx.appUser.email,
+              });
+            }
+          }
+          return wdb.updateBdcqTemplate(input.id, input.data);
+        }),
       importLayout: adminProcedure
         .input(
           z.object({
