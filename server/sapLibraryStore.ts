@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { getPgPool } from "./db";
-import { localStoragePath, storageGetSignedUrl, storagePut } from "./storage";
+import {
+  localStoragePath,
+  storageDeleteLocal,
+  storageGetSignedUrl,
+  storagePut,
+} from "./storage";
 
 export async function listReleases() {
   const pool = getPgPool();
@@ -10,6 +15,21 @@ export async function listReleases() {
     'SELECT * FROM "sap_content_releases" ORDER BY "createdAt" DESC'
   );
   return result.rows;
+}
+
+export async function deleteFailedRelease(id: string) {
+  const pool = getPgPool();
+  if (!pool) return { deleted: false };
+  const result = await pool.query(
+    `DELETE FROM "sap_content_releases"
+     WHERE "id"=$1 AND "status"='failed'
+     RETURNING "storageKey"`,
+    [id]
+  );
+  if (!result.rows[0])
+    throw new Error("Somente releases com falha podem ser excluídas");
+  await storageDeleteLocal(result.rows[0].storageKey);
+  return { deleted: true };
 }
 
 export async function listScopes(input: {

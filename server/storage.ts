@@ -4,7 +4,7 @@
 
 import { ENV } from "./_core/env";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { appendFile, mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -26,7 +26,12 @@ function normalizeKey(relKey: string): string {
 }
 
 function localStorageRoot() {
-  return resolve(process.env.LOCAL_STORAGE_DIR || join(tmpdir(), "techboard-storage"));
+  const configuredRoot =
+    process.env.LOCAL_STORAGE_DIR ||
+    (process.env.RAILWAY_VOLUME_MOUNT_PATH
+      ? join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "techboard-storage")
+      : "");
+  return resolve(configuredRoot || join(tmpdir(), "techboard-storage"));
 }
 
 export function localStoragePath(relKey: string): string {
@@ -93,6 +98,8 @@ export async function storagePutLocalChunk(input: {
   signature: string;
   part: number;
   totalParts: number;
+  offset: number;
+  totalSize: number;
   data: Buffer;
 }) {
   if (!verifyLocalUploadToken(input.key, input.expires, input.signature))
@@ -103,9 +110,31 @@ export async function storagePutLocalChunk(input: {
   const uploadingPath = `${path}.uploading`;
   await mkdir(dirname(path), { recursive: true });
   if (input.part === 0) await unlink(uploadingPath).catch(() => undefined);
+  const currentSize = await stat(uploadingPath).then(file => file.size).catch(() => 0);
+  if (currentSize !== input.offset)
+    throw new Error(`Parte fora de ordem: esperado offset ${currentSize}, recebido ${input.offset}`);
   await appendFile(uploadingPath, input.data);
-  if (input.part === input.totalParts - 1) await rename(uploadingPath, path);
+  if (input.part === input.totalParts - 1) {
+    const completedSize = (await stat(uploadingPath)).size;
+    if (completedSize !== input.totalSize)
+      throw new Error(`Upload incompleto: esperado ${input.totalSize} bytes, recebido ${completedSize}`);
+    await rename(uploadingPath, path);
+  }
   return { complete: input.part === input.totalParts - 1 };
+}
+
+export async function storageValidateUpload(relKey: string, expectedSize: number) {
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) return;
+  const file = await stat(localStoragePath(relKey)).catch(() => null);
+  if (!file) throw new Error("ZIP não encontrado após o envio");
+  if (file.size !== expectedSize)
+    throw new Error(`ZIP incompleto: esperado ${expectedSize} bytes, recebido ${file.size}`);
+}
+
+export async function storageDeleteLocal(relKey: string) {
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) return;
+  await unlink(localStoragePath(relKey)).catch(() => undefined);
+  await unlink(`${localStoragePath(relKey)}.uploading`).catch(() => undefined);
 }
 
 export async function storagePut(

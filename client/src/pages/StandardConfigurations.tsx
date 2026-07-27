@@ -49,6 +49,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -1913,6 +1914,16 @@ function SapScopeLibrary() {
     },
     onError: error => toast.error(error.message),
   });
+  const deleteFailed = trpc.workflow.sapLibrary.deleteFailed.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.workflow.sapLibrary.releases.invalidate(),
+        utils.workflow.sapLibrary.scopes.invalidate(),
+      ]);
+      toast.success("Release com falha excluída");
+    },
+    onError: error => toast.error(error.message),
+  });
   const uploadZip = async (file?: File) => {
     if (!file) return;
     if (!/\.zip$/i.test(file.name))
@@ -1944,24 +1955,24 @@ function SapScopeLibrary() {
             signature: target.localUpload.signature,
             part,
             totalParts,
+            offset: part * chunkSize,
+            totalSize: file.size,
             dataBase64: btoa(binary),
           });
         } else {
-          const separator = target.uploadUrl.includes("?") ? "&" : "?";
-          const response = await fetch(
-            `${target.uploadUrl}${separator}part=${part}&totalParts=${totalParts}`,
-            {
-              method: "PUT",
-              headers: { "Content-Type": "application/octet-stream" },
-              body: chunk,
-            }
-          );
+          const response = await fetch(target.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": file.type || "application/zip" },
+            body: file,
+          });
           if (!response.ok) {
             const detail = await response.text().catch(() => "");
             throw new Error(
-              `Falha no envio da parte ${part + 1}/${totalParts} (${response.status})${detail ? `: ${detail}` : ""}`
+              `Falha no envio do ZIP (${response.status})${detail ? `: ${detail}` : ""}`
             );
           }
+          setUploadProgress(100);
+          break;
         }
         setUploadProgress(Math.round(((part + 1) / totalParts) * 100));
       }
@@ -2073,13 +2084,31 @@ function SapScopeLibrary() {
                   </Button>
                 )}
                 {release.status === "failed" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => retry.mutate({ id: release.id })}
-                  >
-                    Reprocessar
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => retry.mutate({ id: release.id })}
+                    >
+                      Reprocessar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={deleteFailed.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Excluir a release ${release.releaseCode} que falhou?`
+                          )
+                        )
+                          deleteFailed.mutate({ id: release.id });
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Excluir
+                    </Button>
+                  </>
                 )}
               </div>
             </CardContent>

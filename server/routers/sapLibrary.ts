@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
-import { storagePresignPut, storagePutLocalChunk } from "../storage";
+import { storagePresignPut, storagePutLocalChunk, storageValidateUpload } from "../storage";
 import * as library from "../sapLibraryStore";
 
 export const sapLibraryRouter = router({
@@ -33,6 +33,8 @@ export const sapLibraryRouter = router({
       signature: z.string().regex(/^[a-f0-9]{64}$/),
       part: z.number().int().min(0),
       totalParts: z.number().int().min(1).max(2000),
+      offset: z.number().int().min(0).max(2 * 1024 * 1024 * 1024),
+      totalSize: z.number().int().positive().max(2 * 1024 * 1024 * 1024),
       dataBase64: z.string().min(1).max(6_000_000),
     }))
     .mutation(({ input }) => storagePutLocalChunk({
@@ -41,6 +43,8 @@ export const sapLibraryRouter = router({
       signature: input.signature,
       part: input.part,
       totalParts: input.totalParts,
+      offset: input.offset,
+      totalSize: input.totalSize,
       data: Buffer.from(input.dataBase64, "base64"),
     })),
   registerUpload: adminProcedure
@@ -52,13 +56,14 @@ export const sapLibraryRouter = router({
       sizeBytes: z.number().int().positive().max(2 * 1024 * 1024 * 1024),
       checksum: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
     }))
-    .mutation(({ ctx, input }) =>
-      library.registerRelease({
+    .mutation(async ({ ctx, input }) => {
+      await storageValidateUpload(input.storageKey, input.sizeBytes);
+      return library.registerRelease({
         ...input,
         checksum: input.checksum || createHash("sha256").update(`${input.storageKey}:${input.sizeBytes}`).digest("hex"),
         uploadedBy: ctx.appUser.id,
-      })
-    ),
+      });
+    }),
   activate: adminProcedure
     .input(z.object({ id: z.string().min(1) }))
     .mutation(({ ctx, input }) => library.activateRelease(input.id, ctx.appUser.id)),
@@ -68,4 +73,7 @@ export const sapLibraryRouter = router({
       void library.processRelease(input.id);
       return { started: true };
     }),
+  deleteFailed: adminProcedure
+    .input(z.object({ id: z.string().min(1) }))
+    .mutation(({ input }) => library.deleteFailedRelease(input.id)),
 });
