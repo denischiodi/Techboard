@@ -924,15 +924,27 @@ export async function ensureBdcqTemplates(
     wdb.listBdcqTemplateLibrary(),
   ]);
   const normalize = (value: string) => value.trim().toLocaleLowerCase("pt-BR");
-  const existingQuestions = new Set(
-    existing.map(
-      (question: any) =>
-        `${normalize(question.module || "Geral")}:${normalize(question.question)}`
-    )
+  const normalizeModule = (value: string) =>
+    value.trim().toLocaleUpperCase("pt-BR");
+  const activeScopeItems = scopeItems.filter((item: any) => item.active !== 0);
+  const requestedModules = modules?.length
+    ? new Set(modules.map(normalizeModule))
+    : new Set(
+        activeScopeItems.map((item: any) =>
+          normalizeModule(String(item.module || "Geral"))
+        )
+      );
+  const customById = new Map(
+    customTemplates.map((template: any) => [template.id, template])
   );
-  const moduleSet = modules?.length
-    ? new Set(modules.map(module => module.trim().toUpperCase()))
-    : null;
+  const builtInIds = new Set(BDCQ_TEMPLATES.map(template => template.id));
+  const effectiveTemplates = [
+    ...BDCQ_TEMPLATES.map(template => ({
+      ...template,
+      ...(customById.get(template.id) || {}),
+    })),
+    ...customTemplates.filter((template: any) => !builtInIds.has(template.id)),
+  ].filter((template: any) => template.active !== 0);
   const templates: Array<{
     id?: string;
     module: string;
@@ -940,72 +952,117 @@ export async function ensureBdcqTemplates(
     question: string;
     required?: boolean;
     scopeItemIds?: string[];
-  }> = BDCQ_TEMPLATES.flatMap(template =>
-    template.modules
-      .filter(module => !moduleSet || moduleSet.has(module))
-      .map(module => ({
-        id: template.id,
-        module,
-        category: template.category,
-        question: template.question,
-        required: template.required,
-        scopeItemIds: scopeItems
-          .filter(
-            (item: any) =>
-              String(item.module || "").toUpperCase() === module &&
-              template.scopeItemKeys.some(
-                key =>
-                  normalize(key) === normalize(item.code || item.name || "")
-              )
-          )
-          .map((item: any) => item.id),
-      }))
-  );
-  for (const template of customTemplates.filter(
-    (item: any) => item.active !== 0
-  )) {
-    const templateModules = (template.modules || []).map((module: string) =>
-      module.trim().toUpperCase()
+  }> = [];
+
+  for (const template of effectiveTemplates) {
+    const templateModules: string[] = [
+      ...new Set<string>(
+        (template.modules || [])
+          .map((module: string) => normalizeModule(module))
+          .filter(Boolean)
+      ),
+    ];
+    const scopeKeys = new Set(
+      (template.scopeItemKeys || [])
+        .flatMap((key: string) => key.split(/[;,]/))
+        .map((key: string) => normalize(key))
+        .filter(Boolean)
     );
-    const keys = new Set(
-      (template.scopeItemKeys || []).map((key: string) => normalize(key))
-    );
-    const matchedScope = scopeItems.filter((item: any) =>
-      keys.has(normalize(item.code || item.name))
-    );
-    const relevantModules = new Set<string>();
-    templateModules.forEach((module: string) => {
-      if (!moduleSet || moduleSet.has(module)) relevantModules.add(module);
-    });
-    matchedScope.forEach((item: any) => {
-      const module = String(item.module || "Geral").toUpperCase();
-      if (!moduleSet || moduleSet.has(module)) relevantModules.add(module);
-    });
-    if (!templateModules.length && !keys.size) relevantModules.add("Geral");
-    for (const module of relevantModules)
+
+    if (scopeKeys.size) {
+      const matchedScope = activeScopeItems.filter((item: any) => {
+        const code = normalize(String(item.code || ""));
+        const name = normalize(String(item.name || ""));
+        return scopeKeys.has(code) || scopeKeys.has(name);
+      });
+      if (!matchedScope.length) continue;
+
+      if (templateModules.length) {
+        for (const module of templateModules)
+          templates.push({
+            id: template.id,
+            module,
+            category: template.category || "",
+            question: template.question,
+            required: Boolean(template.required),
+            scopeItemIds: matchedScope.map((item: any) => item.id),
+          });
+      } else {
+        const scopeByModule = new Map<string, string[]>();
+        for (const item of matchedScope) {
+          const module = normalizeModule(String(item.module || "Geral"));
+          scopeByModule.set(module, [
+            ...(scopeByModule.get(module) || []),
+            item.id,
+          ]);
+        }
+        for (const [module, scopeItemIds] of scopeByModule)
+          templates.push({
+            id: template.id,
+            module,
+            category: template.category || "",
+            question: template.question,
+            required: Boolean(template.required),
+            scopeItemIds,
+          });
+      }
+      continue;
+    }
+
+    const applicableModules = templateModules.length
+      ? templateModules.filter(module => requestedModules.has(module))
+      : ["GERAL"];
+    for (const module of applicableModules)
       templates.push({
         id: template.id,
         module,
         category: template.category || "",
         question: template.question,
         required: Boolean(template.required),
-        scopeItemIds: matchedScope
-          .filter(
-            (item: any) =>
-              String(item.module || "Geral").toUpperCase() === module ||
-              !templateModules.length
-          )
-          .map((item: any) => item.id),
+        scopeItemIds: [],
       });
   }
+
   let added = 0;
+  let updated = 0;
   for (const template of templates) {
-    const key = `${normalize(template.module)}:${normalize(template.question)}`;
-    if (existingQuestions.has(key)) continue;
+    const module = normalizeModule(template.module || "Geral");
+    const existingQuestion = existing.find(
+      (question: any) =>
+        (template.id &&
+          question.templateId === template.id &&
+          normalizeModule(question.module || "Geral") === module) ||
+        (normalizeModule(question.module || "Geral") === module &&
+          normalize(question.question) === normalize(template.question))
+    );
+    if (existingQuestion) {
+      const currentScopeIds = existingQuestion.scopeItemIds || [];
+      const mergedScopeIds = [
+        ...new Set([...currentScopeIds, ...(template.scopeItemIds || [])]),
+      ];
+      const canUpdateAutomatic =
+        existingQuestion.isDefault === 1 ||
+        Boolean(existingQuestion.templateId);
+      if (
+        canUpdateAutomatic &&
+        (mergedScopeIds.length !== currentScopeIds.length ||
+          (!existingQuestion.templateId && template.id))
+      ) {
+        await wdb.updateBdcqQuestion(existingQuestion.id, {
+          templateId: template.id || existingQuestion.templateId || "",
+          scopeItemIds: mergedScopeIds,
+        });
+        existingQuestion.templateId =
+          template.id || existingQuestion.templateId || "";
+        existingQuestion.scopeItemIds = mergedScopeIds;
+        updated++;
+      }
+      continue;
+    }
     await wdb.createBdcqQuestion({
       id: nanoid(),
       projectId,
-      module: template.module,
+      module,
       category: template.category,
       question: template.question,
       templateId: template.id || "",
@@ -1014,10 +1071,17 @@ export async function ensureBdcqTemplates(
       isDefault: 1,
       sortOrder: existing.length + added,
     });
-    existingQuestions.add(key);
+    existing.push({
+      id: template.id || `${module}:${normalize(template.question)}`,
+      module,
+      question: template.question,
+      templateId: template.id || "",
+      scopeItemIds: template.scopeItemIds || [],
+      isDefault: 1,
+    } as any);
     added++;
   }
-  return added;
+  return { added, updated };
 }
 
 export async function applyConfigurationTemplates(projectId: string) {
@@ -2036,8 +2100,38 @@ export const workflowRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        const currentScopeItems = await wdb.listScopeItems(input.projectId);
+        const scopeKey = (item: {
+          module?: string;
+          code?: string;
+          name?: string;
+        }) =>
+          [
+            String(item.module || "")
+              .trim()
+              .toLocaleUpperCase("pt-BR"),
+            String(item.code || item.name || "")
+              .trim()
+              .toLocaleLowerCase("pt-BR"),
+          ].join("|");
+        const currentByKey = new Map(
+          currentScopeItems.map((item: any) => [scopeKey(item), item])
+        );
         const results = [];
         for (const item of input.items) {
+          const current = currentByKey.get(scopeKey(item));
+          if (current) {
+            await wdb.updateScopeItem(current.id, {
+              module: item.module,
+              name: item.name,
+              code: item.code || "",
+              processArea: item.processArea || "",
+              description: item.description,
+              active: item.active ?? 1,
+            });
+            results.push({ ...current, ...item, id: current.id });
+            continue;
+          }
           const id = nanoid();
           await wdb.createScopeItem({
             id,
@@ -2050,11 +2144,16 @@ export const workflowRouter = router({
             active: item.active ?? 1,
           });
           results.push({ id, ...item });
+          currentByKey.set(scopeKey(item), { id, ...item });
         }
-        await ensureBdcqTemplates(input.projectId, [
+        const bdcqSync = await ensureBdcqTemplates(input.projectId, [
           ...new Set(input.items.map(item => item.module)),
         ]);
-        return results;
+        return {
+          items: results,
+          bdcqAdded: bdcqSync.added,
+          bdcqUpdated: bdcqSync.updated,
+        };
       }),
   }),
 
@@ -2245,9 +2344,9 @@ export const workflowRouter = router({
             modules: z.array(z.string()).optional(),
           })
         )
-        .mutation(async ({ input }) => ({
-          added: await ensureBdcqTemplates(input.projectId, input.modules),
-        })),
+        .mutation(({ input }) =>
+          ensureBdcqTemplates(input.projectId, input.modules)
+        ),
     }),
     keyUsers: router({
       list: workflowProjectProcedure(false, "viewProject")
@@ -2575,9 +2674,7 @@ export const workflowRouter = router({
         }),
       seedDefaults: workflowProjectProcedure(true)
         .input(z.object({ projectId: z.string() }))
-        .mutation(async ({ input }) => {
-          return { added: await ensureBdcqTemplates(input.projectId) };
-        }),
+        .mutation(({ input }) => ensureBdcqTemplates(input.projectId)),
     }),
     answers: router({
       list: workflowProjectProcedure(false, "viewProject")
