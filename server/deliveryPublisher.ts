@@ -114,14 +114,14 @@ async function saveMaterialization(input: {
   if (!pool) return;
   await pool.query(
     `INSERT INTO "delivery_materializations"
-      ("id","templateId","templateVersion","projectId","occurrenceKey","targetType","targetId","state","reason","publishedAt","confirmedAt")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $8='current' THEN now() ELSE NULL END,CASE WHEN $10 THEN now() ELSE NULL END)
+     ("id","templateId","templateVersion","projectId","occurrenceKey","targetType","targetId","state","reason","publishedAt","confirmedAt")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::varchar,$9,CASE WHEN $8::varchar='current' THEN now() ELSE NULL END,CASE WHEN $10::boolean THEN now() ELSE NULL END)
      ON CONFLICT ("templateId","projectId","occurrenceKey") DO UPDATE SET
       "templateVersion"=EXCLUDED."templateVersion","targetType"=EXCLUDED."targetType",
       "targetId"=CASE WHEN EXCLUDED."targetId"<>'' THEN EXCLUDED."targetId" ELSE "delivery_materializations"."targetId" END,
       "state"=EXCLUDED."state","reason"=EXCLUDED."reason",
       "publishedAt"=CASE WHEN EXCLUDED."state"='current' THEN now() ELSE "delivery_materializations"."publishedAt" END,
-      "confirmedAt"=CASE WHEN $10 THEN now() ELSE "delivery_materializations"."confirmedAt" END,"updatedAt"=now()`,
+      "confirmedAt"=CASE WHEN $10::boolean THEN now() ELSE "delivery_materializations"."confirmedAt" END,"updatedAt"=now()`,
     [`dm_${nanoid(20)}`, input.templateId, input.templateVersion, input.projectId,
       input.occurrenceKey, input.targetType, input.targetId || "", input.state,
       input.reason || "", input.confirmed || false],
