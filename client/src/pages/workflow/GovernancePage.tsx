@@ -20,12 +20,14 @@ const TYPES: Array<{ value: ApprovalEntityType; label: string }> = [
   { value: "cutover", label: "Cutover e decisão go/no-go" }, { value: "closure", label: "Encerramento do projeto" },
 ];
 type PolicyDraft = { enabled: boolean; quorum: ApprovalQuorum; minimumApprovals: number; approverMembershipIds: string[] };
+const EMPTY_POLICIES: any[] = [];
+const EMPTY_MEMBERS: any[] = [];
 
 export default function GovernancePage() {
   const { projectId } = useWorkflowProject();
   const utils = trpc.useUtils();
-  const { data: policies = [] } = trpc.approvals.policies.useQuery({ projectId });
-  const { data: members = [] } = trpc.approvals.members.useQuery({ projectId });
+  const { data: policies = EMPTY_POLICIES } = trpc.approvals.policies.useQuery({ projectId });
+  const { data: members = EMPTY_MEMBERS } = trpc.approvals.members.useQuery({ projectId });
   const { data: readiness } = trpc.approvals.governanceReadiness.useQuery({ projectId });
   const refreshGovernance = async () => {
     await Promise.all([
