@@ -4,7 +4,8 @@
 
 import { ENV } from "./_core/env";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
 function getForgeConfig() {
@@ -25,7 +26,7 @@ function normalizeKey(relKey: string): string {
 }
 
 function localStorageRoot() {
-  return resolve(process.env.LOCAL_STORAGE_DIR || "/data/techboard-storage");
+  return resolve(process.env.LOCAL_STORAGE_DIR || join(tmpdir(), "techboard-storage"));
 }
 
 export function localStoragePath(relKey: string): string {
@@ -59,7 +60,7 @@ function appendHashSuffix(relKey: string): string {
 
 export async function storagePresignPut(
   relKey: string,
-): Promise<{ key: string; uploadUrl: string; url: string }> {
+): Promise<{ key: string; uploadUrl: string; url: string; localUpload?: { expires: number; signature: string } }> {
   const key = appendHashSuffix(normalizeKey(relKey));
   if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
     const expires = Date.now() + 4 * 60 * 60_000;
@@ -68,6 +69,7 @@ export async function storagePresignPut(
       key,
       uploadUrl: `/api/local-storage-upload?key=${encodeURIComponent(key)}&expires=${expires}&signature=${signature}`,
       url: `/manus-storage/${key}`,
+      localUpload: { expires, signature },
     };
   }
   const { forgeUrl, forgeKey } = getForgeConfig();
@@ -83,6 +85,27 @@ export async function storagePresignPut(
   const { url: uploadUrl } = (await response.json()) as { url: string };
   if (!uploadUrl) throw new Error("Forge returned empty presign URL");
   return { key, uploadUrl, url: `/manus-storage/${key}` };
+}
+
+export async function storagePutLocalChunk(input: {
+  key: string;
+  expires: number;
+  signature: string;
+  part: number;
+  totalParts: number;
+  data: Buffer;
+}) {
+  if (!verifyLocalUploadToken(input.key, input.expires, input.signature))
+    throw new Error("Autorização do upload expirada; selecione o ZIP novamente");
+  if (input.data.length > 4 * 1024 * 1024)
+    throw new Error("Parte do upload acima de 4 MB");
+  const path = localStoragePath(input.key);
+  const uploadingPath = `${path}.uploading`;
+  await mkdir(dirname(path), { recursive: true });
+  if (input.part === 0) await unlink(uploadingPath).catch(() => undefined);
+  await appendFile(uploadingPath, input.data);
+  if (input.part === input.totalParts - 1) await rename(uploadingPath, path);
+  return { complete: input.part === input.totalParts - 1 };
 }
 
 export async function storagePut(
