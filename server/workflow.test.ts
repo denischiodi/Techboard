@@ -16,10 +16,13 @@ vi.mock("./routers/workflowDb", () => ({
   deleteBdcqTemplate: vi.fn().mockResolvedValue(undefined),
   deleteBdcqQuestion: vi.fn().mockResolvedValue(undefined),
   listBdcqAnswers: vi.fn().mockResolvedValue([]),
+  listBdcqAnswersForQuestions: vi.fn().mockResolvedValue([]),
   createBdcqAnswer: vi.fn().mockResolvedValue({ id: "a-1" }),
   getBdcqAnswerByQuestion: vi.fn().mockResolvedValue(null),
+  getBdcqAnswerById: vi.fn().mockResolvedValue(null),
   updateBdcqAnswerWithHistory: vi.fn().mockResolvedValue({ id: "a-1" }),
   listBdcqAnswerHistory: vi.fn().mockResolvedValue([]),
+  listProjectKeyUsers: vi.fn().mockResolvedValue([]),
   listWorkshops: vi.fn().mockResolvedValue([]),
   createWorkshop: vi.fn().mockResolvedValue({ id: "w-1" }),
   updateWorkshop: vi.fn().mockResolvedValue(undefined),
@@ -434,6 +437,300 @@ describe("workflow router module structure", () => {
       templateId: "template-sync",
       scopeItemIds: ["scope-old", "scope-new"],
     });
+  });
+
+  it("exports every filtered BDCQ question with human references and answers", async () => {
+    const db = await import("./routers/workflowDb");
+    const plannerStore = await import("./plannerStore");
+    vi.spyOn(plannerStore, "getAppUserByEmail").mockResolvedValue({
+      id: "app-user-1",
+      email: "admin@example.com",
+      role: "admin",
+      active: true,
+    } as any);
+    vi.mocked(db.listBdcqQuestions).mockResolvedValue([
+      {
+        id: "q-mm",
+        projectId: "project-1",
+        question: "Pergunta MM",
+        module: "MM",
+        level: "L2",
+        active: 1,
+        metadataInitialized: 1,
+        scopeItemIds: ["scope-j45"],
+        consultantResourceId: "resource-1",
+        keyUserId: "key-user-1",
+      } as any,
+      {
+        id: "q-sd",
+        projectId: "project-1",
+        question: "Pergunta SD",
+        module: "SD",
+        level: "L3",
+        active: 1,
+        metadataInitialized: 1,
+        scopeItemIds: [],
+      } as any,
+    ]);
+    vi.mocked(db.listBdcqAnswers).mockResolvedValue([
+      {
+        id: "answer-1",
+        questionId: "q-mm",
+        projectId: "project-1",
+        answer: "Resposta do cliente",
+        answeredBy: "Cliente",
+      } as any,
+    ]);
+    vi.mocked(db.listScopeItems).mockResolvedValue([
+      {
+        id: "scope-j45",
+        projectId: "project-1",
+        code: "J45",
+        name: "Compras",
+        module: "MM",
+      } as any,
+    ]);
+    vi.mocked(db.listProjectKeyUsers).mockResolvedValue([
+      {
+        id: "key-user-1",
+        projectId: "project-1",
+        name: "Key User",
+        email: "key.user@example.com",
+      } as any,
+    ]);
+    vi.spyOn(plannerStore, "listResources").mockResolvedValue([
+      {
+        id: "resource-1",
+        name: "Consultor MM",
+        email: "consultor@example.com",
+      } as any,
+    ]);
+    vi.spyOn(plannerStore, "listAllocations").mockResolvedValue([
+      {
+        projectId: "project-1",
+        resourceId: "resource-1",
+      } as any,
+    ]);
+    const { workflowRouter } = await import("./routers/workflow");
+    const caller = workflowRouter.createCaller({
+      user: {
+        id: 1,
+        openId: "test-user",
+        name: "Admin",
+        email: "admin@example.com",
+      },
+      appUser: {
+        id: "app-user-1",
+        email: "admin@example.com",
+        role: "admin",
+      },
+    } as any);
+
+    const exported = await caller.bdcq.questions.exportFiltered({
+      projectId: "project-1",
+      modules: ["MM"],
+    });
+
+    expect(exported.items).toHaveLength(1);
+    expect(exported.items[0]).toEqual(
+      expect.objectContaining({
+        technicalKey: "q-mm",
+        answer: "Resposta do cliente",
+        consultantEmail: "consultor@example.com",
+        keyUserEmail: "key.user@example.com",
+        scopeItems: [
+          expect.objectContaining({
+            code: "J45",
+          }),
+        ],
+      })
+    );
+    expect(exported.references.consultants).toEqual([
+      expect.objectContaining({ email: "consultor@example.com" }),
+    ]);
+  });
+
+  it("updates BDCQ metadata and answer using SAP ID and human references", async () => {
+    const db = await import("./routers/workflowDb");
+    const plannerStore = await import("./plannerStore");
+    vi.spyOn(plannerStore, "getAppUserByEmail").mockResolvedValue({
+      id: "app-user-1",
+      email: "admin@example.com",
+      role: "admin",
+      active: true,
+    } as any);
+    vi.mocked(db.listBdcqQuestions).mockResolvedValue([
+      {
+        id: "q-existing",
+        projectId: "project-1",
+        sapId: "102128",
+        question: "Pergunta existente",
+        module: "SCM",
+        category: "Categoria atual",
+        active: 1,
+        scopeItemIds: [],
+        consultantResourceId: "",
+        keyUserId: "",
+      } as any,
+    ]);
+    vi.mocked(db.listBdcqAnswers).mockResolvedValue([]);
+    vi.mocked(db.listScopeItems).mockResolvedValue([
+      {
+        id: "scope-j45",
+        projectId: "project-1",
+        code: "J45",
+        name: "Compras",
+        module: "MM",
+      } as any,
+    ]);
+    vi.mocked(db.listProjectKeyUsers).mockResolvedValue([
+      {
+        id: "key-user-1",
+        projectId: "project-1",
+        name: "Key User",
+        email: "key.user@example.com",
+      } as any,
+    ]);
+    vi.spyOn(plannerStore, "listResources").mockResolvedValue([
+      {
+        id: "resource-1",
+        name: "Consultor",
+        email: "consultor@example.com",
+      } as any,
+    ]);
+    vi.spyOn(plannerStore, "listAllocations").mockResolvedValue([
+      {
+        projectId: "project-1",
+        resourceId: "resource-1",
+      } as any,
+    ]);
+    const update = vi.mocked(db.updateBdcqQuestion);
+    const createAnswer = vi.mocked(db.createBdcqAnswer);
+    update.mockClear();
+    createAnswer.mockClear();
+    const { workflowRouter } = await import("./routers/workflow");
+    const caller = workflowRouter.createCaller({
+      user: {
+        id: 1,
+        openId: "test-user",
+        name: "Admin",
+        email: "admin@example.com",
+      },
+      appUser: {
+        id: "app-user-1",
+        email: "admin@example.com",
+        role: "admin",
+      },
+    } as any);
+
+    const result = await caller.bdcq.questions.bulkCreate({
+      projectId: "project-1",
+      questions: [
+        {
+          rowNumber: 2,
+          sapId: "102128",
+          question: "Pergunta atualizada",
+          module: "",
+          category: "",
+          consultantEmail: "consultor@example.com",
+          keyUserEmail: "key.user@example.com",
+          scopeItemRefs: ["J45"],
+          answer: "Nova resposta",
+          answeredBy: "Cliente",
+        },
+      ],
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        added: 0,
+        updated: 1,
+        answersUpdated: 1,
+        warningCount: 0,
+      })
+    );
+    expect(update).toHaveBeenCalledWith(
+      "q-existing",
+      expect.objectContaining({
+        question: "Pergunta atualizada",
+        module: "SCM",
+        category: "Categoria atual",
+        consultantResourceId: "resource-1",
+        keyUserId: "key-user-1",
+        scopeItemIds: ["scope-j45"],
+      })
+    );
+    expect(createAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        questionId: "q-existing",
+        answer: "Nova resposta",
+      })
+    );
+  });
+
+  it("does not overwrite an approved BDCQ answer during spreadsheet import", async () => {
+    const db = await import("./routers/workflowDb");
+    const plannerStore = await import("./plannerStore");
+    const approvalStore = await import("./approvalStore");
+    vi.spyOn(plannerStore, "getAppUserByEmail").mockResolvedValue({
+      id: "app-user-1",
+      email: "admin@example.com",
+      role: "admin",
+      active: true,
+    } as any);
+    vi.spyOn(plannerStore, "listResources").mockResolvedValue([]);
+    vi.spyOn(plannerStore, "listAllocations").mockResolvedValue([]);
+    vi.mocked(db.listBdcqQuestions).mockResolvedValue([
+      {
+        id: "q-approved",
+        projectId: "project-1",
+        sapId: "",
+        question: "Pergunta aprovada",
+        module: "FI",
+        active: 1,
+      } as any,
+    ]);
+    vi.mocked(db.listBdcqAnswers).mockResolvedValue([
+      {
+        id: "answer-approved",
+        questionId: "q-approved",
+        projectId: "project-1",
+        answer: "Resposta aprovada",
+        answeredBy: "Cliente",
+      } as any,
+    ]);
+    vi.mocked(db.listScopeItems).mockResolvedValue([]);
+    vi.mocked(db.listProjectKeyUsers).mockResolvedValue([]);
+    vi.spyOn(approvalStore, "assertEntityEditable").mockRejectedValueOnce(
+      new Error("Conteúdo aprovado e bloqueado")
+    );
+    const updateAnswer = vi.mocked(db.updateBdcqAnswerWithHistory);
+    updateAnswer.mockClear();
+    const { workflowRouter } = await import("./routers/workflow");
+    const caller = workflowRouter.createCaller({
+      user: {
+        id: 1,
+        openId: "test-user",
+        name: "Admin",
+        email: "admin@example.com",
+      },
+    } as any);
+
+    const result = await caller.bdcq.questions.bulkCreate({
+      projectId: "project-1",
+      questions: [
+        {
+          technicalKey: "q-approved",
+          question: "Pergunta aprovada",
+          answer: "Tentativa de alteração",
+        },
+      ],
+    });
+
+    expect(result.answersUpdated).toBe(0);
+    expect(result.answersIgnored).toBe(1);
+    expect(result.warningCount).toBe(1);
+    expect(updateAnswer).not.toHaveBeenCalled();
   });
 
   it("applies an admin configuration model to its project scope item", async () => {

@@ -174,6 +174,7 @@ export default function BDCQPage() {
   >("idle");
   const [savedAnswerId, setSavedAnswerId] = useState("");
   const [showHistory, setShowHistory] = useState<any>(null);
+  const [importResult, setImportResult] = useState<any>(null);
   const [approvalComment, setApprovalComment] = useState("");
   const [openedDeepLink, setOpenedDeepLink] = useState(false);
   const lastSaved = useRef("");
@@ -215,8 +216,12 @@ export default function BDCQPage() {
   const { data: allocations = [] } = trpc.allocations.list.useQuery(undefined, {
     enabled: canManageBdcq,
   });
-  const exportQuestions = trpc.workflow.bdcq.questions.list.useQuery(
-    { projectId: PROJECT_ID, offset: 0, limit: 500 },
+  const exportQuestions = trpc.workflow.bdcq.questions.exportFiltered.useQuery(
+    {
+      projectId: PROJECT_ID,
+      search: search || undefined,
+      ...filters,
+    },
     { enabled: false }
   );
   const { data: keyUsers = [], refetch: refetchKeyUsers } =
@@ -315,8 +320,11 @@ export default function BDCQPage() {
   });
   const bulkCreate = trpc.workflow.bdcq.questions.bulkCreate.useMutation({
     onSuccess: data => {
-      refetchQ();
-      toast.success(`${data.added} criadas e ${data.updated} atualizadas`);
+      Promise.all([refetchQ(), refetchA()]);
+      setImportResult(data);
+      toast.success(
+        `${data.added} perguntas criadas · ${data.updated} atualizadas · ${data.answersUpdated} respostas atualizadas · ${data.warningCount} avisos`
+      );
     },
     onError: error =>
       toast.error(error.message || "Erro ao importar perguntas"),
@@ -644,8 +652,22 @@ export default function BDCQPage() {
         );
         return String(entry?.[1] || "").trim();
       };
+      const optionalBoolean = (
+        row: Record<string, unknown>,
+        names: string[]
+      ) => {
+        const raw = valueFrom(row, names);
+        if (!raw) return undefined;
+        return ["sim", "yes", "true", "1"].includes(normalize(raw));
+      };
       const parsed = rows
-        .map(row => ({
+        .map((row, index) => ({
+          rowNumber: index + 2,
+          technicalKey: valueFrom(row, [
+            "chave tecnica",
+            "chave bdcq",
+            "__chave bdcq",
+          ]),
           id: valueFrom(row, ["id", "identificador", "codigo"]),
           question: valueFrom(row, [
             "pergunta",
@@ -657,8 +679,7 @@ export default function BDCQPage() {
             "pergunta original",
             "question original",
           ]),
-          module:
-            valueFrom(row, ["modulo", "module", "frente", "lob"]) || "Geral",
+          module: valueFrom(row, ["modulo", "module", "frente", "lob"]),
           category: valueFrom(row, [
             "categoria",
             "category",
@@ -666,7 +687,7 @@ export default function BDCQPage() {
             "processo",
           ]),
           sapId: valueFrom(row, ["sap id", "id sap"]),
-          level: valueFrom(row, ["level", "nivel"]) || "L3",
+          level: valueFrom(row, ["level", "nivel"]),
           process: valueFrom(row, ["processo", "process"]),
           sscuiReference: valueFrom(row, ["referencia sscui", "sscui"]),
           area: valueFrom(row, ["area"]),
@@ -676,7 +697,7 @@ export default function BDCQPage() {
             "topic definition",
           ]),
           solution: valueFrom(row, ["solucao", "solution"]),
-          source: valueFrom(row, ["origem", "fonte", "source"]) || "manual",
+          source: valueFrom(row, ["origem", "fonte", "source"]),
           sourceFile: valueFrom(row, [
             "arquivo de origem",
             "arquivo fonte",
@@ -687,29 +708,57 @@ export default function BDCQPage() {
             "release fonte",
             "source release",
           ]),
-          required: ["sim", "yes", "true", "1"].includes(
-            normalize(valueFrom(row, ["obrigatoria", "required"]))
-          ),
-          active: ["nao", "no", "false", "0"].includes(
-            normalize(valueFrom(row, ["ativa", "active"]))
-          )
-            ? 0
-            : 1,
+          required: optionalBoolean(row, ["obrigatoria", "required"]),
+          active: (() => {
+            const value = optionalBoolean(row, ["ativa", "active"]);
+            return value === undefined ? undefined : value ? 1 : 0;
+          })(),
+          consultantEmail: valueFrom(row, [
+            "email consultor",
+            "e-mail consultor",
+            "consultor email",
+          ]),
           consultantResourceId: valueFrom(row, [
             "id consultor",
             "consultor id",
             "consultant id",
           ]),
+          keyUserEmail: valueFrom(row, [
+            "email key user",
+            "e-mail key user",
+            "key user email",
+          ]),
           keyUserId: valueFrom(row, ["id key user", "key user id"]),
+          scopeItemRefs: valueFrom(row, [
+            "scope items",
+            "scope item",
+            "codigos scope items",
+          ])
+            .split(/[;,]/)
+            .map(value => value.trim())
+            .filter(Boolean),
           scopeItemIds: valueFrom(row, ["ids scope items", "scope item ids"])
             .split(/[;,]/)
             .map(value => value.trim())
             .filter(Boolean),
+          answer: valueFrom(row, ["resposta", "answer"]),
+          answeredBy: valueFrom(row, [
+            "respondido por",
+            "answered by",
+            "responsavel pela resposta",
+          ]),
         }))
-        .filter(row => row.question);
+        .filter(
+          row =>
+            row.question ||
+            row.technicalKey ||
+            row.id ||
+            row.sapId ||
+            row.answer
+        );
       if (!parsed.length) {
         toast.error(
-          "Nenhuma pergunta encontrada. Use colunas Pergunta, Módulo e Categoria."
+          "Nenhuma pergunta encontrada. Use a aba BDCQ e mantenha os cabeçalhos do modelo."
         );
         return;
       }
@@ -726,16 +775,16 @@ export default function BDCQPage() {
   const downloadExcelModel = async () => {
     try {
       const result = await exportQuestions.refetch();
-      const registered = result.data || [];
+      const registered = result.data?.items || [];
       const rows = registered.length
         ? registered.map((question: any) => ({
-            ID: question.id,
+            "__Chave BDCQ": question.technicalKey,
             Pergunta: question.question,
             "Pergunta original": question.questionOriginal || "",
-            Módulo: question.module,
-            Categoria: question.category || "",
             "SAP ID": question.sapId || "",
+            Módulo: question.module,
             Level: question.level || "L3",
+            Categoria: question.category || "",
             Processo: question.process || "",
             "Referência SSCUI": question.sscuiReference || "",
             Área: question.area || "",
@@ -747,23 +796,26 @@ export default function BDCQPage() {
             "Release da fonte": question.sourceRelease || "",
             Obrigatória: question.required ? "Sim" : "Não",
             Ativa: question.active === 0 ? "Não" : "Sim",
-            "ID consultor": question.consultantResourceId || "",
-            "Consultor responsável":
-              resourceMap.get(question.consultantResourceId)?.name || "",
-            "ID key user": question.keyUserId || "",
-            "Key user responsável":
-              keyUserMap.get(question.keyUserId)?.name || "",
-            "IDs scope items": (question.scopeItemIds || []).join(";"),
+            "Scope items": (question.scopeItems || [])
+              .map((item: any) => item.code || item.name)
+              .filter(Boolean)
+              .join("; "),
+            "E-mail consultor": question.consultantEmail || "",
+            "Consultor responsável": question.consultantName || "",
+            "E-mail key user": question.keyUserEmail || "",
+            "Key user responsável": question.keyUserName || "",
+            Resposta: question.answer || "",
+            "Respondido por": question.answeredBy || "",
           }))
         : [
             {
-              ID: "",
+              "__Chave BDCQ": "",
               Pergunta: "",
               "Pergunta original": "",
-              Módulo: "",
-              Categoria: "",
               "SAP ID": "",
+              Módulo: "",
               Level: "L3",
+              Categoria: "",
               Processo: "",
               "Referência SSCUI": "",
               Área: "",
@@ -775,21 +827,71 @@ export default function BDCQPage() {
               "Release da fonte": "",
               Obrigatória: "Não",
               Ativa: "Sim",
-              "ID consultor": "",
+              "Scope items": "",
+              "E-mail consultor": "",
               "Consultor responsável": "",
-              "ID key user": "",
+              "E-mail key user": "",
               "Key user responsável": "",
-              "IDs scope items": "",
+              Resposta: "",
+              "Respondido por": "",
             },
           ];
       const XLSX = await import("xlsx");
       const sheet = XLSX.utils.json_to_sheet(rows);
       sheet["!cols"] = [
-        24, 60, 60, 16, 24, 14, 10, 24, 36, 24, 24, 60, 40, 18, 42, 16, 12, 10,
-        24, 30, 24, 30, 36,
-      ].map(wch => ({ wch }));
+        24, 60, 60, 14, 16, 10, 24, 24, 36, 24, 24, 60, 40, 18, 42, 16, 12, 10,
+        36, 32, 30, 32, 30, 60, 30,
+      ].map((wch, index) => ({ wch, hidden: index === 0 }));
+      sheet["!autofilter"] = { ref: sheet["!ref"] || "A1:Y1" };
+
+      const references = result.data?.references;
+      const referenceRows: Array<Array<string>> = [
+        ["INSTRUÇÕES"],
+        [
+          "A exportação respeita os filtros da tela. Não exclua a coluna técnica oculta.",
+        ],
+        [
+          "Separe vários scope items com ponto e vírgula, por exemplo: 1EG; J45; BMC.",
+        ],
+        [
+          "Consultor e key user são localizados pelo e-mail. Resposta vazia preserva a atual.",
+        ],
+        [
+          "Campos textuais vazios preservam o valor atual; responsável ou scope items vazios removem os vínculos.",
+        ],
+        [],
+        ["SCOPE ITEMS", "Código", "Nome", "Módulo"],
+        ...(references?.scopeItems || []).map((item: any) => [
+          "",
+          item.code,
+          item.name,
+          item.module,
+        ]),
+        [],
+        ["CONSULTORES", "Nome", "E-mail"],
+        ...(references?.consultants || []).map((item: any) => [
+          "",
+          item.name,
+          item.email,
+        ]),
+        [],
+        ["KEY USERS", "Nome", "E-mail"],
+        ...(references?.keyUsers || []).map((item: any) => [
+          "",
+          item.name,
+          item.email,
+        ]),
+      ];
+      const referenceSheet = XLSX.utils.aoa_to_sheet(referenceRows);
+      referenceSheet["!cols"] = [
+        { wch: 18 },
+        { wch: 34 },
+        { wch: 42 },
+        { wch: 18 },
+      ];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, sheet, "BDCQ");
+      XLSX.utils.book_append_sheet(workbook, referenceSheet, "Referências");
       XLSX.writeFile(workbook, `modelo-bdcq-${PROJECT_ID}.xlsx`);
     } catch (error) {
       toast.error(
@@ -2384,6 +2486,57 @@ export default function BDCQPage() {
             >
               Concluir
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(importResult)}
+        onOpenChange={open => {
+          if (!open) setImportResult(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Resultado da importação BDCQ</DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-4">
+              <div className="grid gap-2 sm:grid-cols-4">
+                {[
+                  ["Perguntas criadas", importResult.added],
+                  ["Perguntas atualizadas", importResult.updated],
+                  ["Respostas atualizadas", importResult.answersUpdated],
+                  ["Avisos", importResult.warningCount],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-md border p-3">
+                    <p className="text-2xl font-semibold">{value}</p>
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                  </div>
+                ))}
+              </div>
+              {importResult.warnings?.length ? (
+                <div className="space-y-2">
+                  <h3 className="font-medium">Detalhes dos avisos</h3>
+                  {importResult.warnings.map((warning: any, index: number) => (
+                    <div
+                      key={`${warning.row}-${index}`}
+                      className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900"
+                    >
+                      <span className="font-medium">Linha {warning.row}:</span>{" "}
+                      {warning.message}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  Arquivo processado sem avisos.
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setImportResult(null)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

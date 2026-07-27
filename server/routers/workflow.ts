@@ -61,6 +61,22 @@ const bdcqProjectMetadataInput = {
   active: z.number().int().min(0).max(1).optional(),
 };
 
+const bdcqProjectFilterInput = {
+  search: z.string().trim().max(256).optional(),
+  modules: z.array(z.string()).max(50).default([]),
+  scopeItemIds: z.array(z.string()).max(200).default([]),
+  levels: z.array(z.string()).max(10).default([]),
+  areas: z.array(z.string()).max(100).default([]),
+  topics: z.array(z.string()).max(100).default([]),
+  sources: z.array(z.string()).max(50).default([]),
+  statuses: z
+    .array(z.enum(["pending", "answered", "inactive"]))
+    .max(3)
+    .default([]),
+  consultantResourceIds: z.array(z.string()).max(200).default([]),
+  keyUserIds: z.array(z.string()).max(200).default([]),
+};
+
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
     scopeItems: data.scopeItems.length,
@@ -1291,6 +1307,98 @@ async function safeWorkflowNotification(
   }
 }
 
+async function loadFilteredProjectBdcq(
+  appUser: any,
+  projectId: string,
+  filters: any
+) {
+  await backfillBdcqProjectMetadata(projectId);
+  const [rows, answers, scopeItems] = await Promise.all([
+    wdb.listBdcqQuestions(projectId),
+    wdb.listBdcqAnswers(projectId),
+    wdb.listScopeItems(projectId),
+  ]);
+  const scopeItemSearch = new Map(
+    scopeItems.map((item: any) => [
+      item.id,
+      [item.code, item.name, item.module].filter(Boolean).join(" "),
+    ])
+  );
+  const visible = await visibleBdcqQuestionIds(appUser, projectId, rows);
+  const visibleRows = visible
+    ? rows.filter((item: any) => visible.has(item.id))
+    : rows;
+  const answerByQuestionId = new Map(
+    answers.map((answer: any) => [answer.questionId, answer])
+  );
+  const answeredIds = new Set(
+    answers
+      .filter((answer: any) => String(answer.answer || "").trim())
+      .map((answer: any) => answer.questionId)
+  );
+  const normalize = (value: unknown) =>
+    String(value || "")
+      .trim()
+      .toLocaleLowerCase("pt-BR");
+  const term = normalize(filters.search);
+  const matches = (selected: string[], value: unknown) =>
+    !selected.length ||
+    selected.some(item => normalize(item) === normalize(value));
+  const filtered = visibleRows.filter((question: any) => {
+    const status =
+      question.active === 0
+        ? "inactive"
+        : answeredIds.has(question.id)
+          ? "answered"
+          : "pending";
+    if (!filters.statuses.length && status === "inactive") return false;
+    if (filters.statuses.length && !filters.statuses.includes(status))
+      return false;
+    if (!matches(filters.modules, question.module)) return false;
+    if (!matches(filters.levels, question.level)) return false;
+    if (!matches(filters.areas, question.area)) return false;
+    if (!matches(filters.topics, question.topic)) return false;
+    if (!matches(filters.sources, question.source)) return false;
+    if (!matches(filters.consultantResourceIds, question.consultantResourceId))
+      return false;
+    if (!matches(filters.keyUserIds, question.keyUserId)) return false;
+    if (
+      filters.scopeItemIds.length &&
+      !filters.scopeItemIds.some((id: string) =>
+        (question.scopeItemIds || []).includes(id)
+      )
+    )
+      return false;
+    if (!term) return true;
+    return [
+      question.question,
+      question.questionOriginal,
+      question.sapId,
+      question.module,
+      question.category,
+      question.process,
+      question.area,
+      question.topic,
+      question.sscuiReference,
+      question.source,
+      ...(question.scopeItemIds || []),
+      ...(question.scopeItemIds || []).map(
+        (id: string) => scopeItemSearch.get(id) || ""
+      ),
+    ]
+      .map(normalize)
+      .some(value => value.includes(term));
+  });
+  return {
+    filtered,
+    visibleRows,
+    answers,
+    answerByQuestionId,
+    answeredIds,
+    scopeItems,
+  };
+}
+
 async function notifyIfBdcqModuleCompleted(
   projectId: string,
   questionId: string
@@ -2511,105 +2619,12 @@ export const workflowRouter = router({
             projectId: z.string(),
             offset: z.number().int().min(0).default(0),
             limit: z.number().int().min(1).max(200).default(50),
-            search: z.string().trim().max(256).optional(),
-            modules: z.array(z.string()).max(50).default([]),
-            scopeItemIds: z.array(z.string()).max(200).default([]),
-            levels: z.array(z.string()).max(10).default([]),
-            areas: z.array(z.string()).max(100).default([]),
-            topics: z.array(z.string()).max(100).default([]),
-            sources: z.array(z.string()).max(50).default([]),
-            statuses: z
-              .array(z.enum(["pending", "answered", "inactive"]))
-              .max(3)
-              .default([]),
-            consultantResourceIds: z.array(z.string()).max(200).default([]),
-            keyUserIds: z.array(z.string()).max(200).default([]),
+            ...bdcqProjectFilterInput,
           })
         )
         .query(async ({ ctx, input }) => {
-          await backfillBdcqProjectMetadata(input.projectId);
-          const [rows, answers, scopeItems] = await Promise.all([
-            wdb.listBdcqQuestions(input.projectId),
-            wdb.listBdcqAnswers(input.projectId),
-            wdb.listScopeItems(input.projectId),
-          ]);
-          const scopeItemSearch = new Map(
-            scopeItems.map((item: any) => [
-              item.id,
-              [item.code, item.name, item.module].filter(Boolean).join(" "),
-            ])
-          );
-          const visible = await visibleBdcqQuestionIds(
-            ctx.appUser,
-            input.projectId,
-            rows
-          );
-          const visibleRows = visible
-            ? rows.filter((item: any) => visible.has(item.id))
-            : rows;
-          const answeredIds = new Set(
-            answers
-              .filter((answer: any) => String(answer.answer || "").trim())
-              .map((answer: any) => answer.questionId)
-          );
-          const normalize = (value: unknown) =>
-            String(value || "")
-              .trim()
-              .toLocaleLowerCase("pt-BR");
-          const term = normalize(input.search);
-          const matches = (selected: string[], value: unknown) =>
-            !selected.length ||
-            selected.some(item => normalize(item) === normalize(value));
-          const filtered = visibleRows.filter((question: any) => {
-            const status =
-              question.active === 0
-                ? "inactive"
-                : answeredIds.has(question.id)
-                  ? "answered"
-                  : "pending";
-            if (!input.statuses.length && status === "inactive") return false;
-            if (input.statuses.length && !input.statuses.includes(status))
-              return false;
-            if (!matches(input.modules, question.module)) return false;
-            if (!matches(input.levels, question.level)) return false;
-            if (!matches(input.areas, question.area)) return false;
-            if (!matches(input.topics, question.topic)) return false;
-            if (!matches(input.sources, question.source)) return false;
-            if (
-              !matches(
-                input.consultantResourceIds,
-                question.consultantResourceId
-              )
-            )
-              return false;
-            if (!matches(input.keyUserIds, question.keyUserId)) return false;
-            if (
-              input.scopeItemIds.length &&
-              !input.scopeItemIds.some(id =>
-                (question.scopeItemIds || []).includes(id)
-              )
-            )
-              return false;
-            if (!term) return true;
-            return [
-              question.question,
-              question.questionOriginal,
-              question.sapId,
-              question.module,
-              question.category,
-              question.process,
-              question.area,
-              question.topic,
-              question.sscuiReference,
-              question.source,
-              ...(question.scopeItemIds || []),
-              ...(question.scopeItemIds || []).map(
-                (id: string) => scopeItemSearch.get(id) || ""
-              ),
-            ]
-              .map(normalize)
-              .some(value => value.includes(term));
-          });
+          const { filtered, visibleRows, answeredIds } =
+            await loadFilteredProjectBdcq(ctx.appUser, input.projectId, input);
           const unique = (key: string) =>
             [
               ...new Set(
@@ -2629,6 +2644,85 @@ export const workflowRouter = router({
               areas: unique("area"),
               topics: unique("topic"),
               sources: unique("source"),
+            },
+          };
+        }),
+      exportFiltered: workflowProjectProcedure(false, "viewProject")
+        .input(
+          z.object({
+            projectId: z.string(),
+            ...bdcqProjectFilterInput,
+          })
+        )
+        .query(async ({ ctx, input }) => {
+          const [
+            { filtered, answerByQuestionId, scopeItems },
+            resources,
+            allocations,
+            keyUsers,
+          ] = await Promise.all([
+            loadFilteredProjectBdcq(ctx.appUser, input.projectId, input),
+            plannerStore.listResources(),
+            plannerStore.listAllocations(),
+            wdb.listProjectKeyUsers(input.projectId),
+          ]);
+          const allocatedIds = new Set(
+            allocations
+              .filter((item: any) => item.projectId === input.projectId)
+              .map((item: any) => item.resourceId)
+          );
+          const projectResources = resources.filter((item: any) =>
+            allocatedIds.has(item.id)
+          );
+          const resourceById = new Map(
+            projectResources.map((item: any) => [item.id, item])
+          );
+          const keyUserById = new Map(
+            keyUsers.map((item: any) => [item.id, item])
+          );
+          const scopeById = new Map(
+            scopeItems.map((item: any) => [item.id, item])
+          );
+          return {
+            items: filtered.map((question: any) => {
+              const answer: any = answerByQuestionId.get(question.id);
+              const consultant: any = resourceById.get(
+                question.consultantResourceId
+              );
+              const keyUser: any = keyUserById.get(question.keyUserId);
+              return {
+                ...question,
+                technicalKey: question.id,
+                scopeItems: (question.scopeItemIds || [])
+                  .map((id: string) => scopeById.get(id))
+                  .filter(Boolean)
+                  .map((item: any) => ({
+                    code: item.code || "",
+                    name: item.name || "",
+                    module: item.module || "",
+                  })),
+                consultantName: consultant?.name || "",
+                consultantEmail: consultant?.email || "",
+                keyUserName: keyUser?.name || "",
+                keyUserEmail: keyUser?.email || "",
+                answer: answer?.answer || "",
+                answeredBy: answer?.answeredBy || "",
+              };
+            }),
+            references: {
+              scopeItems: scopeItems.map((item: any) => ({
+                code: item.code || "",
+                name: item.name || "",
+                module: item.module || "",
+              })),
+              consultants: projectResources.map((item: any) => ({
+                name: item.name || "",
+                email: item.email || "",
+              })),
+              keyUsers: keyUsers.map((item: any) => ({
+                name: item.name || "",
+                email: item.email || "",
+              })),
             },
           };
         }),
@@ -2803,12 +2897,19 @@ export const workflowRouter = router({
               .array(
                 z.object({
                   id: z.string().optional(),
-                  module: z.string().min(1),
+                  technicalKey: z.string().optional(),
+                  rowNumber: z.number().int().positive().optional(),
+                  module: z.string().optional(),
                   category: z.string().optional(),
-                  question: z.string().min(1),
+                  question: z.string().optional(),
                   consultantResourceId: z.string().optional(),
+                  consultantEmail: z.string().optional(),
                   keyUserId: z.string().optional(),
+                  keyUserEmail: z.string().optional(),
                   scopeItemIds: z.array(z.string()).max(200).optional(),
+                  scopeItemRefs: z.array(z.string()).max(200).optional(),
+                  answer: z.string().optional(),
+                  answeredBy: z.string().optional(),
                   ...bdcqProjectMetadataInput,
                 })
               )
@@ -2816,18 +2917,62 @@ export const workflowRouter = router({
               .max(2000),
           })
         )
-        .mutation(async ({ input }) => {
-          const [existing, allocations, keyUsers, scopeItems] =
-            await Promise.all([
-              wdb.listBdcqQuestions(input.projectId),
-              plannerStore.listAllocations(),
-              wdb.listProjectKeyUsers(input.projectId),
-              wdb.listScopeItems(input.projectId),
-            ]);
-          const keyUserIds = new Set(keyUsers.map((item: any) => item.id));
-          const scopeItemIds = new Set(scopeItems.map((item: any) => item.id));
-          const normalize = (value: string) =>
-            value.trim().toLocaleLowerCase("pt-BR");
+        .mutation(async ({ ctx, input }) => {
+          const [
+            existing,
+            existingAnswers,
+            resources,
+            allocations,
+            keyUsers,
+            scopeItems,
+          ] = await Promise.all([
+            wdb.listBdcqQuestions(input.projectId),
+            wdb.listBdcqAnswers(input.projectId),
+            plannerStore.listResources(),
+            plannerStore.listAllocations(),
+            wdb.listProjectKeyUsers(input.projectId),
+            wdb.listScopeItems(input.projectId),
+          ]);
+          const normalize = (value: unknown) =>
+            String(value || "")
+              .trim()
+              .toLocaleLowerCase("pt-BR");
+          const allocatedIds = new Set(
+            allocations
+              .filter((item: any) => item.projectId === input.projectId)
+              .map((item: any) => item.resourceId)
+          );
+          const resourceById = new Map(
+            resources
+              .filter((item: any) => allocatedIds.has(item.id))
+              .map((item: any) => [item.id, item])
+          );
+          const resourceByEmail = new Map(
+            [...resourceById.values()]
+              .filter((item: any) => normalize(item.email))
+              .map((item: any) => [normalize(item.email), item])
+          );
+          const keyUserById = new Map(
+            keyUsers.map((item: any) => [item.id, item])
+          );
+          const keyUserByEmail = new Map(
+            keyUsers
+              .filter((item: any) => normalize(item.email))
+              .map((item: any) => [normalize(item.email), item])
+          );
+          const scopeById = new Map(
+            scopeItems.map((item: any) => [item.id, item])
+          );
+          const scopeByCode = new Map(
+            scopeItems
+              .filter((item: any) => normalize(item.code))
+              .map((item: any) => [normalize(item.code), item])
+          );
+          const scopeByName = new Map(
+            scopeItems
+              .filter((item: any) => normalize(item.name))
+              .map((item: any) => [normalize(item.name), item])
+          );
           const byId = new Map(
             existing.map((question: any) => [question.id, question])
           );
@@ -2837,92 +2982,250 @@ export const workflowRouter = router({
               question,
             ])
           );
+          const bySapId = new Map<string, any[]>();
+          for (const item of existing) {
+            const key = normalize(item.sapId);
+            if (!key) continue;
+            bySapId.set(key, [...(bySapId.get(key) || []), item]);
+          }
+          const answerByQuestionId = new Map(
+            existingAnswers.map((answer: any) => [answer.questionId, answer])
+          );
           let added = 0;
           let updated = 0;
+          let answersUpdated = 0;
+          let answersIgnored = 0;
+          let warningCount = 0;
+          const warnings: Array<{ row: number; message: string }> = [];
+          const warn = (row: number, message: string) => {
+            warningCount++;
+            if (warnings.length < 500) warnings.push({ row, message });
+          };
           for (const question of input.questions) {
-            const current: any =
-              (question.id && byId.get(question.id)) ||
-              byQuestion.get(normalize(question.question));
-            if (question.consultantResourceId) {
-              if (
-                !allocations.some(
+            const row = question.rowNumber || added + updated + 2;
+            const sapCandidates = question.sapId
+              ? bySapId.get(normalize(question.sapId)) || []
+              : [];
+            let current: any;
+            if (sapCandidates.length === 1) {
+              current = sapCandidates[0];
+            } else if (sapCandidates.length > 1) {
+              const technicalKey = question.technicalKey || question.id;
+              current =
+                sapCandidates.find(item => item.id === technicalKey) ||
+                sapCandidates.find(
                   item =>
-                    item.projectId === input.projectId &&
-                    item.resourceId === question.consultantResourceId
-                )
-              )
-                throw new TRPCError({
-                  code: "BAD_REQUEST",
-                  message: `O consultor da pergunta “${question.question}” não está alocado no projeto`,
-                });
+                    normalize(item.question) === normalize(question.question)
+                );
+              if (!current) {
+                warn(
+                  row,
+                  `SAP ID ${question.sapId} corresponde a mais de uma pergunta; linha não processada`
+                );
+                continue;
+              }
+            } else {
+              const technicalKey = question.technicalKey || question.id;
+              current =
+                (technicalKey && byId.get(technicalKey)) ||
+                (!question.sapId && question.question
+                  ? byQuestion.get(normalize(question.question))
+                  : undefined);
             }
-            if (question.keyUserId && !keyUserIds.has(question.keyUserId))
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: `O Key User da pergunta “${question.question}” não pertence ao projeto`,
-              });
-            if (question.scopeItemIds?.some(id => !scopeItemIds.has(id)))
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: `Um scope item da pergunta “${question.question}” não pertence ao projeto`,
-              });
+
+            let consultantResourceId = "";
+            if (question.consultantEmail?.trim()) {
+              const resource: any = resourceByEmail.get(
+                normalize(question.consultantEmail)
+              );
+              if (resource) consultantResourceId = resource.id;
+              else
+                warn(
+                  row,
+                  `Consultor ${question.consultantEmail} não está alocado no projeto; vínculo removido`
+                );
+            } else if (question.consultantResourceId?.trim()) {
+              if (resourceById.has(question.consultantResourceId))
+                consultantResourceId = question.consultantResourceId;
+              else warn(row, "ID de consultor inválido; vínculo removido");
+            }
+
+            let keyUserId = "";
+            if (question.keyUserEmail?.trim()) {
+              const keyUser: any = keyUserByEmail.get(
+                normalize(question.keyUserEmail)
+              );
+              if (keyUser) keyUserId = keyUser.id;
+              else
+                warn(
+                  row,
+                  `Key user ${question.keyUserEmail} não pertence ao projeto; vínculo removido`
+                );
+            } else if (question.keyUserId?.trim()) {
+              if (keyUserById.has(question.keyUserId))
+                keyUserId = question.keyUserId;
+              else warn(row, "ID de key user inválido; vínculo removido");
+            }
+
+            const scopeRefs =
+              question.scopeItemRefs || question.scopeItemIds || [];
+            const resolvedScopeIds: string[] = [];
+            for (const reference of scopeRefs) {
+              const item: any =
+                scopeById.get(reference) ||
+                scopeByCode.get(normalize(reference)) ||
+                scopeByName.get(normalize(reference));
+              if (item) {
+                if (!resolvedScopeIds.includes(item.id))
+                  resolvedScopeIds.push(item.id);
+              } else {
+                warn(
+                  row,
+                  `Scope item “${reference}” não encontrado; vínculo ignorado`
+                );
+              }
+            }
+
+            const text = (incoming: unknown, previous = "") =>
+              String(incoming || "").trim() || previous || "";
+            let questionId: string;
             if (current) {
               await wdb.updateBdcqQuestion(current.id, {
-                module: question.module,
-                category: question.category || "",
-                question: question.question,
-                consultantResourceId: question.consultantResourceId || "",
-                keyUserId: question.keyUserId || "",
-                scopeItemIds: question.scopeItemIds || [],
-                questionOriginal: question.questionOriginal || "",
-                sapId: question.sapId || "",
-                level: question.level || "L3",
-                process: question.process || "",
-                sscuiReference: question.sscuiReference || "",
-                area: question.area || "",
-                topic: question.topic || "",
-                topicDefinition: question.topicDefinition || "",
-                solution: question.solution || "",
-                source: question.source || current.source || "manual",
-                sourceFile: question.sourceFile || "",
-                sourceRelease: question.sourceRelease || "",
-                required: Boolean(question.required),
-                active: question.active ?? 1,
+                module: text(question.module, current.module),
+                category: text(question.category, current.category),
+                question: text(question.question, current.question),
+                consultantResourceId,
+                keyUserId,
+                scopeItemIds: resolvedScopeIds,
+                questionOriginal: text(
+                  question.questionOriginal,
+                  current.questionOriginal
+                ),
+                sapId: text(question.sapId, current.sapId),
+                level: text(question.level, current.level || "L3"),
+                process: text(question.process, current.process),
+                sscuiReference: text(
+                  question.sscuiReference,
+                  current.sscuiReference
+                ),
+                area: text(question.area, current.area),
+                topic: text(question.topic, current.topic),
+                topicDefinition: text(
+                  question.topicDefinition,
+                  current.topicDefinition
+                ),
+                solution: text(question.solution, current.solution),
+                source: text(question.source, current.source || "manual"),
+                sourceFile: text(question.sourceFile, current.sourceFile),
+                sourceRelease: text(
+                  question.sourceRelease,
+                  current.sourceRelease
+                ),
+                required: question.required ?? Boolean(current.required),
+                active: question.active ?? current.active ?? 1,
                 metadataInitialized: 1,
               });
+              questionId = current.id;
               updated++;
-              continue;
+            } else {
+              if (!question.question?.trim()) {
+                warn(row, "Pergunta vazia; linha não processada");
+                continue;
+              }
+              questionId = nanoid();
+              const created = {
+                id: questionId,
+                projectId: input.projectId,
+                module: text(question.module, "Geral"),
+                category: text(question.category),
+                question: question.question.trim(),
+                consultantResourceId,
+                keyUserId,
+                scopeItemIds: resolvedScopeIds,
+                questionOriginal: text(question.questionOriginal),
+                sapId: text(question.sapId),
+                level: text(question.level, "L3"),
+                process: text(question.process),
+                sscuiReference: text(question.sscuiReference),
+                area: text(question.area),
+                topic: text(question.topic),
+                topicDefinition: text(question.topicDefinition),
+                solution: text(question.solution),
+                source: text(question.source, "manual"),
+                sourceFile: text(question.sourceFile),
+                sourceRelease: text(question.sourceRelease),
+                required: question.required ?? false,
+                active: question.active ?? 1,
+                metadataInitialized: 1,
+                isDefault: 0,
+                sortOrder: existing.length + added,
+              };
+              await wdb.createBdcqQuestion(created);
+              byId.set(questionId, created);
+              byQuestion.set(normalize(created.question), created);
+              if (created.sapId) {
+                const key = normalize(created.sapId);
+                bySapId.set(key, [...(bySapId.get(key) || []), created]);
+              }
+              added++;
             }
-            await wdb.createBdcqQuestion({
-              id: nanoid(),
-              projectId: input.projectId,
-              module: question.module,
-              category: question.category || "",
-              question: question.question,
-              consultantResourceId: question.consultantResourceId || "",
-              keyUserId: question.keyUserId || "",
-              scopeItemIds: question.scopeItemIds || [],
-              questionOriginal: question.questionOriginal || "",
-              sapId: question.sapId || "",
-              level: question.level || "L3",
-              process: question.process || "",
-              sscuiReference: question.sscuiReference || "",
-              area: question.area || "",
-              topic: question.topic || "",
-              topicDefinition: question.topicDefinition || "",
-              solution: question.solution || "",
-              source: question.source || "manual",
-              sourceFile: question.sourceFile || "",
-              sourceRelease: question.sourceRelease || "",
-              required: Boolean(question.required),
-              active: question.active ?? 1,
-              metadataInitialized: 1,
-              isDefault: 0,
-              sortOrder: existing.length + added,
-            });
-            added++;
+
+            if (question.answer?.trim()) {
+              const existingAnswer: any = answerByQuestionId.get(questionId);
+              try {
+                if (existingAnswer) {
+                  await approvalStore.assertEntityEditable(
+                    "bdcq_answer",
+                    existingAnswer.id
+                  );
+                  const changed = await wdb.updateBdcqAnswerWithHistory(
+                    existingAnswer.id,
+                    {
+                      answer: question.answer,
+                      answeredBy:
+                        question.answeredBy?.trim() ||
+                        existingAnswer.answeredBy ||
+                        "",
+                    },
+                    nanoid(),
+                    ctx.user.name || ctx.user.email || "Importação Excel"
+                  );
+                  answerByQuestionId.set(questionId, {
+                    ...existingAnswer,
+                    ...changed,
+                    answer: question.answer,
+                  });
+                } else {
+                  const createdAnswer = await wdb.createBdcqAnswer({
+                    id: nanoid(),
+                    projectId: input.projectId,
+                    questionId,
+                    answer: question.answer,
+                    answeredBy: question.answeredBy?.trim() || "",
+                    attachments: [],
+                  });
+                  answerByQuestionId.set(questionId, createdAnswer);
+                }
+                answersUpdated++;
+              } catch (error) {
+                answersIgnored++;
+                warn(
+                  row,
+                  error instanceof Error
+                    ? `Resposta não alterada: ${error.message}`
+                    : "Resposta bloqueada não foi alterada"
+                );
+              }
+            }
           }
-          return { added, updated, ignored: 0 };
+          return {
+            added,
+            updated,
+            answersUpdated,
+            answersIgnored,
+            warnings,
+            warningCount,
+          };
         }),
       seedDefaults: workflowProjectProcedure(true)
         .input(z.object({ projectId: z.string() }))
