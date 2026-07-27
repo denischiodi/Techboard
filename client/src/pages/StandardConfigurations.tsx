@@ -14,6 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -38,6 +43,7 @@ import {
   Database,
   Download,
   FileArchive,
+  ListFilter,
   Pencil,
   Plus,
   RefreshCw,
@@ -188,6 +194,9 @@ export default function StandardConfigurations() {
   const [bdcqOpen, setBdcqOpen] = useState(false);
   const [bdcqForm, setBdcqForm] = useState<BdcqForm>(emptyBdcq);
   const [bdcqSearch, setBdcqSearch] = useState("");
+  const [bdcqModuleFilters, setBdcqModuleFilters] = useState<string[]>([]);
+  const [bdcqScopeFilters, setBdcqScopeFilters] = useState<string[]>([]);
+  const [bdcqLevelFilters, setBdcqLevelFilters] = useState<string[]>([]);
   const [bdcqPage, setBdcqPage] = useState(0);
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [configurationForm, setConfigurationForm] =
@@ -285,9 +294,15 @@ export default function StandardConfigurations() {
   ]
     .filter(Boolean)
     .sort();
+  const bdcqFilterOptions = useMemo(() => ({
+    modules: [...new Set<string>((bdcqTemplates as any[]).flatMap(template => template.modules || []))].filter(Boolean).sort(),
+    scopes: [...new Set<string>((bdcqTemplates as any[]).flatMap(template => template.scopeItemKeys || []))].filter(Boolean).sort(),
+    levels: [...new Set<string>((bdcqTemplates as any[]).map(template => template.level).filter(Boolean))].sort(),
+  }), [bdcqTemplates]);
   const filteredBdcq = useMemo(
     () =>
-      bdcqTemplates.filter((template: any) =>
+      bdcqTemplates.filter((template: any) => {
+        const matchesText =
         [
           template.question,
           template.questionOriginal,
@@ -302,9 +317,15 @@ export default function StandardConfigurations() {
         ]
           .join(" ")
           .toLocaleLowerCase("pt-BR")
-          .includes(bdcqSearch.toLocaleLowerCase("pt-BR"))
-      ),
-    [bdcqTemplates, bdcqSearch]
+          .includes(bdcqSearch.toLocaleLowerCase("pt-BR"));
+        const modules = template.modules || [];
+        const scopes = template.scopeItemKeys || [];
+        return matchesText
+          && (!bdcqModuleFilters.length || bdcqModuleFilters.some(value => modules.includes(value)))
+          && (!bdcqScopeFilters.length || bdcqScopeFilters.some(value => scopes.includes(value)))
+          && (!bdcqLevelFilters.length || bdcqLevelFilters.includes(template.level));
+      }),
+    [bdcqTemplates, bdcqSearch, bdcqModuleFilters, bdcqScopeFilters, bdcqLevelFilters]
   );
   const BDCQ_PAGE_SIZE = 100;
   const pagedBdcq = filteredBdcq.slice(
@@ -759,8 +780,8 @@ export default function StandardConfigurations() {
             arquivo de origem. L2 é informação preparada pelo cliente; L3 é
             detalhamento conduzido no Fit-to-Standard.
           </div>
-          <div className="flex flex-col gap-2 lg:flex-row">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap">
+            <div className="relative min-w-[280px] flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 className="pl-9"
@@ -772,6 +793,46 @@ export default function StandardConfigurations() {
                 }}
               />
             </div>
+            <MultiValueFilter
+              label="Módulo"
+              options={bdcqFilterOptions.modules}
+              selected={bdcqModuleFilters}
+              onChange={values => {
+                setBdcqModuleFilters(values);
+                setBdcqPage(0);
+              }}
+            />
+            <MultiValueFilter
+              label="Scope item"
+              options={bdcqFilterOptions.scopes}
+              selected={bdcqScopeFilters}
+              onChange={values => {
+                setBdcqScopeFilters(values);
+                setBdcqPage(0);
+              }}
+            />
+            <MultiValueFilter
+              label="Level"
+              options={bdcqFilterOptions.levels}
+              selected={bdcqLevelFilters}
+              onChange={values => {
+                setBdcqLevelFilters(values);
+                setBdcqPage(0);
+              }}
+            />
+            {(bdcqModuleFilters.length > 0 || bdcqScopeFilters.length > 0 || bdcqLevelFilters.length > 0) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setBdcqModuleFilters([]);
+                  setBdcqScopeFilters([]);
+                  setBdcqLevelFilters([]);
+                  setBdcqPage(0);
+                }}
+              >
+                Limpar filtros
+              </Button>
+            )}
             <Button variant="outline" onClick={() => void exportBdcqLayout()}>
               <Download className="mr-2 h-4 w-4" />
               Exportar BDCQ
@@ -2108,6 +2169,90 @@ function SapScopeCard({ scope }: { scope: any }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function MultiValueFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const visibleOptions = options.filter(option =>
+    option.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR"))
+  );
+  const toggleValue = (value: string) =>
+    onChange(
+      selected.includes(value)
+        ? selected.filter(item => item !== value)
+        : [...selected, value]
+    );
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-w-36 justify-start whitespace-nowrap"
+        >
+          <ListFilter className="mr-2 h-4 w-4" />
+          {selected.length === 0
+            ? label
+            : selected.length === 1
+              ? `${label}: ${selected[0]}`
+              : `${label}: ${selected.length} selecionados`}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-3">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <strong className="text-sm">{label}</strong>
+            {selected.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2"
+                onClick={() => onChange([])}
+              >
+                Limpar
+              </Button>
+            )}
+          </div>
+          <Input
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            placeholder={`Buscar ${label.toLocaleLowerCase("pt-BR")}`}
+          />
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {visibleOptions.map(option => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+              >
+                <Checkbox
+                  checked={selected.includes(option)}
+                  onCheckedChange={() => toggleValue(option)}
+                />
+                <span className="min-w-0 flex-1 truncate">{option}</span>
+              </label>
+            ))}
+            {!visibleOptions.length && (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                Nenhuma opção encontrada.
+              </p>
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
