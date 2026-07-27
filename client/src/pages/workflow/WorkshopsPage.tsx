@@ -80,7 +80,7 @@ export default function WorkshopsPage() {
   ) && !absences.some((absence: any) => absence.resourceId === resource.id && form.date && absence.startDate <= form.date && absence.endDate >= form.date));
   const toggleParticipant = (name: string) => setForm(current => ({ ...current, participants: current.participants.includes(name) ? current.participants.filter(item => item !== name) : [...current.participants, name] }));
   const toggle = (items: string[], value: string) => items.includes(value) ? items.filter(item => item !== value) : [...items, value];
-  const isTechTemplateWorkshop = (workshop: any) => Boolean(workshop.templateId) || ["template", "delivery_template"].includes(workshop.source);
+  const isTechTemplateWorkshop = (workshop: any) => Boolean(workshop?.templateId) || ["template", "delivery_template"].includes(workshop?.source);
   const canDeleteWorkshop = (workshop: any) => isAdmin || !isTechTemplateWorkshop(workshop);
   const uploadFile = async (file: File | undefined, target: "workshop" | "template") => {
     if (!file) return;
