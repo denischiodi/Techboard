@@ -3116,6 +3116,39 @@ export const workflowRouter = router({
             `Restaurado por ${ctx.user.name || ctx.user.email || "Usuário"}`
           );
         }),
+      restoreOriginal: workflowEntityProcedure(
+        "bdcq_answers",
+        true,
+        "answerId",
+        "fillAssignedBdcq"
+      )
+        .input(z.object({ answerId: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+          const answer = await wdb.getBdcqAnswerById(input.answerId);
+          if (!answer)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Resposta não encontrada",
+            });
+          await assertCanAnswerBdcq(
+            ctx.appUser,
+            answer.projectId,
+            answer.questionId
+          );
+          await approvalStore.assertEntityEditable(
+            "bdcq_answer",
+            input.answerId
+          );
+          return wdb.updateBdcqAnswerWithHistory(
+            input.answerId,
+            {
+              answer: "",
+              answeredBy: "",
+            },
+            nanoid(),
+            `Retornado ao original por ${ctx.user.name || ctx.user.email || "Usuário"}`
+          );
+        }),
       delete: workflowEntityProcedure("bdcq_answers", true)
         .input(z.object({ id: z.string() }))
         .mutation(async ({ input }) => {

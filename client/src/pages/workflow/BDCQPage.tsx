@@ -296,6 +296,17 @@ export default function BDCQPage() {
       },
       onError: error => toast.error(error.message),
     });
+  const restoreOriginalAnswer =
+    trpc.workflow.bdcq.answers.restoreOriginal.useMutation({
+      onSuccess: async restored => {
+        await Promise.all([refetchA(), refetchAnswerHistory()]);
+        setShowHistory((current: any) =>
+          current?.id === restored.id ? { ...current, ...restored } : current
+        );
+        toast.success("Pergunta restaurada para o estado original, sem resposta");
+      },
+      onError: error => toast.error(error.message),
+    });
   const seedMut = trpc.workflow.bdcq.questions.seedDefaults.useMutation({
     onSuccess: (data: any) => {
       refetchQ();
@@ -2389,6 +2400,37 @@ export default function BDCQPage() {
             <p className="mt-2 text-xs text-muted-foreground">
               Respondido por {showHistory?.answeredBy || "Não informado"}
             </p>
+          </div>
+          <div className="rounded-md border border-dashed p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium">Versão original</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sem resposta — retorna a pergunta para o status Pendente.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  restoreOriginalAnswer.isPending ||
+                  !String(showHistory?.answer || "").trim()
+                }
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Voltar esta pergunta ao estado original, sem resposta?"
+                    )
+                  )
+                    restoreOriginalAnswer.mutate({
+                      answerId: showHistory.id,
+                    });
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Voltar sem resposta
+              </Button>
+            </div>
           </div>
           {answerHistory.length === 0 ? (
             <p className="text-sm text-muted-foreground">

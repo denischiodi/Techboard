@@ -130,4 +130,39 @@ describe("workflow PostgreSQL persistence", () => {
     expect(query.mock.calls[0][1]).toEqual(["history-1", "answer-1"]);
     expect(version).toMatchObject({ id: "history-1", answer: "Anterior" });
   });
+
+  it("archives the current answer when returning BDCQ to unanswered", async () => {
+    const db = await import("./routers/workflowDb");
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "answer-1",
+            questionId: "q-1",
+            projectId: "project-1",
+            answer: "Resposta atual",
+            answeredBy: "Ana",
+            attachments: [],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{ id: "answer-1", answer: "", answeredBy: "" }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const restored = await db.updateBdcqAnswerWithHistory(
+      "answer-1",
+      { answer: "", answeredBy: "" },
+      "history-original",
+      "Retornado ao original por Gestor"
+    );
+    expect(
+      clientQuery.mock.calls.some(call =>
+        String(call[0]).includes('INSERT INTO "bdcq_answer_history"')
+      )
+    ).toBe(true);
+    expect(restored).toMatchObject({ answer: "", answeredBy: "" });
+  });
 });
