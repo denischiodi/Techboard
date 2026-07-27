@@ -7,6 +7,8 @@ import * as store from "../deliveryMasterStore";
 import * as workflowDb from "./workflowDb";
 import * as plannerStore from "../plannerStore";
 import * as publisher from "../deliveryPublisher";
+import { storagePut } from "../storage";
+import { createHash } from "node:crypto";
 
 const typeSchema = z.enum(store.DELIVERY_TYPES);
 const approvalSchema = z.object({
@@ -194,7 +196,7 @@ export const deliveryMasterRouter = router({
         );
         return { ...template, publicationJobId };
       }),
-    archive: protectedProcedure
+    archive: adminProcedure
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const current: any = await store.getTemplate(input.id);
@@ -203,11 +205,79 @@ export const deliveryMasterRouter = router({
             code: "NOT_FOUND",
             message: "Padrão não encontrado",
           });
-        assertTemplateManager(ctx.appUser, current);
         const archived = await store.archiveTemplate(input.id, ctx.appUser.id);
         await publisher.cancelTemplatePublications(input.id);
         return archived;
       }),
+    attachments: router({
+      list: protectedProcedure
+        .input(z.object({ templateId: z.string().min(1) }))
+        .query(({ input }) => store.listTemplateAttachments(input.templateId)),
+      upload: protectedProcedure
+        .input(z.object({
+          templateId: z.string().min(1),
+          fileName: z.string().trim().min(1).max(255),
+          contentType: z.string().max(255).default(""),
+          fileData: z.string().min(1).max(70_000_000),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          let template: any = await store.getTemplate(input.templateId);
+          if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Padrão não encontrado" });
+          assertTemplateManager(ctx.appUser, template);
+          const existing = await store.listTemplateAttachments(input.templateId);
+          if (existing.length >= 20)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Cada padrão aceita no máximo 20 anexos" });
+          const extension = input.fileName.toLowerCase().match(/\.(doc|docx|pdf|ppt|pptx|xls|xlsx)$/)?.[1];
+          if (!extension)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Envie Word, PDF, PowerPoint ou Excel" });
+          const buffer = Buffer.from(input.fileData.replace(/^data:[^;]+;base64,/, ""), "base64");
+          if (!buffer.length || buffer.length > 50 * 1024 * 1024)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo deve ter entre 1 byte e 50 MB" });
+          const signatures: Record<string, (data: Buffer) => boolean> = {
+            pdf: data => data.subarray(0, 5).toString() === "%PDF-",
+            docx: data => data[0] === 0x50 && data[1] === 0x4b,
+            xlsx: data => data[0] === 0x50 && data[1] === 0x4b,
+            pptx: data => data[0] === 0x50 && data[1] === 0x4b,
+            doc: data => data.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1])),
+            xls: data => data.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1])),
+            ppt: data => data.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1])),
+          };
+          if (!signatures[extension]?.(buffer))
+            throw new TRPCError({ code: "BAD_REQUEST", message: "O conteúdo do arquivo não corresponde à extensão informada" });
+          const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+          template = await store.updateTemplate(template.id, {}, ctx.appUser.id);
+          const stored = await storagePut(
+            `delivery-templates/${template.id}/v${template.version}/${nanoid()}-${safeName}`,
+            buffer,
+            input.contentType || "application/octet-stream"
+          );
+          const attachment = await store.createTemplateAttachment({
+            id: `dta_${nanoid(20)}`,
+            templateId: template.id,
+            templateVersion: template.version,
+            fileName: input.fileName,
+            contentType: input.contentType || "application/octet-stream",
+            sizeBytes: buffer.length,
+            checksum: createHash("sha256").update(buffer).digest("hex"),
+            storageKey: stored.key,
+            url: stored.url,
+            uploadedBy: ctx.appUser.id,
+          });
+          await publisher.enqueueTemplatePublication(template, ctx.appUser.id, "template_attachment_added");
+          return attachment;
+        }),
+      remove: protectedProcedure
+        .input(z.object({ templateId: z.string().min(1), id: z.string().min(1) }))
+        .mutation(async ({ ctx, input }) => {
+          const template: any = await store.getTemplate(input.templateId);
+          if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Padrão não encontrado" });
+          assertTemplateManager(ctx.appUser, template);
+          const archived = await store.archiveTemplateAttachment(input.id, input.templateId);
+          const updated: any = await store.updateTemplate(template.id, {}, ctx.appUser.id);
+          await publisher.enqueueTemplatePublication(updated, ctx.appUser.id, "template_attachment_removed");
+          return archived;
+        }),
+    }),
   }),
   publications: router({
     history: protectedProcedure

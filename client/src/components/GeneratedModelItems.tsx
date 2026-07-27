@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Paperclip } from "lucide-react";
 
 const statuses = [
   ["not_started", "Não iniciado"],
@@ -59,6 +60,9 @@ export function GeneratedModelItems({
                 </div>
                 {item.description && <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>}
                 {item.payload?.instructions && <p className="mt-1 text-xs">{item.payload.instructions}</p>}
+                {item.payload?.attachments?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">
+                  {item.payload.attachments.map((file: any) => <a key={`${file.url}-${file.name}`} href={file.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs text-primary hover:underline"><Paperclip className="h-3 w-3" />{file.name}</a>)}
+                </div>}
               </div>
               <Select value={item.status} onValueChange={(status: any) =>
                 update.mutate({ projectId, id: item.id, data: { status } })}>

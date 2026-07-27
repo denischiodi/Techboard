@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Activity, CalendarClock, ClipboardList, Pencil, Plus, RefreshCw, Search, Settings2 } from "lucide-react";
+import { Activity, CalendarClock, ClipboardList, Database, FileArchive, Pencil, Plus, RefreshCw, Search, Settings2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { ActivityPriority, ActivityTemplate, ActivityTemplateOwnerRole, ActivityTemplateRecurrence } from "../../../shared/types";
 import DeliveryTemplateCatalog, { type DeliveryType } from "./DeliveryTemplateCatalog";
@@ -92,25 +92,31 @@ export default function StandardConfigurations() {
 
   return <div className="space-y-6">
     <div><h1 className="text-2xl font-bold">Configurações do Tech</h1><p className="text-sm text-muted-foreground">Modelos globais que orientam a execução completa dos projetos.</p></div>
-    <Tabs defaultValue="central-bdcq" className="space-y-4">
-      <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-        <TabsTrigger value="central-bdcq">BDCQ padrões</TabsTrigger>
-        <TabsTrigger value="central-workshops">Workshops padrões</TabsTrigger>
-        <TabsTrigger value="central-configurations">Configurações padrões</TabsTrigger>
-        <TabsTrigger value="central-gaps">Gaps padrões</TabsTrigger>
-        <TabsTrigger value="central-tests">Testes padrões</TabsTrigger>
-        <TabsTrigger value="central-gp">Trilha do GP</TabsTrigger>
-        <TabsTrigger value="central-other">Demais etapas</TabsTrigger>
-        <TabsTrigger value="publication-history">Histórico</TabsTrigger>
+    <Tabs defaultValue="central-bdcq" className="space-y-3">
+      <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-4">
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-scope">Itens de escopo</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-bdcq">BDCQ padrões</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-workshops">Workshops padrões</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-dcd">DCD padrões</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-configurations">Configurações padrões</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-gaps">Gaps padrões</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-tests">Testes padrões</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-governance">Governança</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="central-gp">Trilha do GP</TabsTrigger>
+        <TabsTrigger className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight" value="publication-history">Histórico</TabsTrigger>
       </TabsList>
+      <TabsContent value="central-scope" className="space-y-4">
+        <SapScopeLibrary />
+      </TabsContent>
       {([
         ["central-bdcq", ["bdcq"], "bdcq"],
         ["central-workshops", ["workshop"], "workshop"],
+        ["central-dcd", ["dcd"], "dcd"],
         ["central-configurations", ["configuration"], "configuration"],
         ["central-gaps", ["gap"], "gap"],
         ["central-tests", ["unit_test", "cycle_1", "cycle_2"], "unit_test"],
+        ["central-governance", ["risk", "issue", "cutover", "go_live", "closure"], "risk"],
         ["central-gp", ["activity"], "activity"],
-        ["central-other", ["dcd", "risk", "issue", "cutover", "go_live", "closure"], "dcd"],
       ] as Array<[string, DeliveryType[], DeliveryType]>).map(([value, allowedTypes, defaultType]) => (
         <TabsContent key={value} value={value} className="space-y-4">
           <DeliveryTemplateCatalog
@@ -186,6 +192,117 @@ function PublicationHistory() {
     })}
     {!jobs.length && <Empty label="Nenhuma publicação registrada." />}
   </div>;
+}
+
+function SapScopeLibrary() {
+  const utils = trpc.useUtils();
+  const [search, setSearch] = useState("");
+  const [releaseCode, setReleaseCode] = useState("2608_BR");
+  const [uploading, setUploading] = useState(false);
+  const { data: releases = [] } = trpc.workflow.sapLibrary.releases.useQuery();
+  const { data: scopes = [], isLoading } = trpc.workflow.sapLibrary.scopes.useQuery({ search, limit: 300 });
+  const prepare = trpc.workflow.sapLibrary.prepareUpload.useMutation();
+  const register = trpc.workflow.sapLibrary.registerUpload.useMutation();
+  const activate = trpc.workflow.sapLibrary.activate.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.workflow.sapLibrary.releases.invalidate(),
+        utils.workflow.sapLibrary.scopes.invalidate(),
+      ]);
+      toast.success("Release SAP ativada");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const retry = trpc.workflow.sapLibrary.retry.useMutation({
+    onSuccess: async () => {
+      await utils.workflow.sapLibrary.releases.invalidate();
+      toast.success("Reprocessamento iniciado");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const uploadZip = async (file?: File) => {
+    if (!file) return;
+    if (!/\.zip$/i.test(file.name)) return toast.error("Selecione um arquivo ZIP");
+    setUploading(true);
+    try {
+      const target = await prepare.mutateAsync({ releaseCode, fileName: file.name });
+      const response = await fetch(target.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/zip" },
+        body: file,
+      });
+      if (!response.ok) throw new Error(`Falha no envio do ZIP (${response.status})`);
+      await register.mutateAsync({
+        releaseCode,
+        country: "BR",
+        fileName: file.name,
+        storageKey: target.key,
+        sizeBytes: file.size,
+      });
+      await utils.workflow.sapLibrary.releases.invalidate();
+      toast.success("ZIP recebido; processamento iniciado");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível enviar o ZIP");
+    } finally {
+      setUploading(false);
+    }
+  };
+  const statusLabel: Record<string, string> = {
+    uploaded: "Recebido", processing: "Processando", ready: "Pronto para ativar",
+    active: "Ativo", archived: "Histórico", failed: "Falhou",
+  };
+  return <div className="space-y-4">
+    <Card className="border-blue-200 bg-blue-50/40">
+      <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_180px_auto] lg:items-end">
+        <div>
+          <div className="flex items-center gap-2 font-semibold text-blue-950"><Database className="h-5 w-5" />Biblioteca SAP Best Practices</div>
+          <p className="mt-1 text-sm text-blue-900/75">Envie o ZIP oficial de uma release. Os códigos e documentos serão catalogados sem adicionar todos os scope items aos projetos.</p>
+        </div>
+        <div><Label>Release</Label><Input value={releaseCode} onChange={event => setReleaseCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))} placeholder="2608_BR" /></div>
+        <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
+          <Upload className="mr-2 h-4 w-4" />{uploading ? "Enviando..." : "Enviar ZIP"}
+          <input type="file" accept=".zip,application/zip" className="hidden" disabled={uploading || !releaseCode} onChange={event => { void uploadZip(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+        </label>
+      </CardContent>
+    </Card>
+    <div className="grid gap-3 lg:grid-cols-2">
+      {(releases as any[]).map(release => <Card key={release.id}><CardContent className="flex items-start justify-between gap-3 p-4">
+        <div><div className="flex flex-wrap items-center gap-2"><FileArchive className="h-4 w-4" /><strong>{release.releaseCode}</strong><Badge variant={release.status === "failed" ? "destructive" : "secondary"}>{statusLabel[release.status] || release.status}</Badge></div>
+        <p className="mt-2 text-xs text-muted-foreground">{release.fileName} · {Math.round(Number(release.sizeBytes) / 1024 / 1024)} MB</p>
+        {release.summary && <p className="mt-1 text-xs text-muted-foreground">{release.summary.scopeItems || 0} scope items · {release.summary.files || 0} documentos</p>}
+        {release.lastError && <p className="mt-1 text-sm text-destructive">{release.lastError}</p>}</div>
+        <div className="flex gap-2">{release.status === "ready" && <Button size="sm" onClick={() => activate.mutate({ id: release.id })}>Ativar</Button>}{release.status === "failed" && <Button size="sm" variant="outline" onClick={() => retry.mutate({ id: release.id })}>Reprocessar</Button>}</div>
+      </CardContent></Card>)}
+      {!releases.length && <Empty label="Nenhuma release SAP importada." />}
+    </div>
+    <div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Buscar código, nome ou resumo do scope item" value={search} onChange={event => setSearch(event.target.value)} /></div>
+    <div className="space-y-2">
+      {(scopes as any[]).map(scope => <SapScopeCard key={scope.id} scope={scope} />)}
+      {!isLoading && !scopes.length && <Empty label="Nenhum scope item disponível na release ativa." />}
+    </div>
+  </div>;
+}
+
+function SapScopeCard({ scope }: { scope: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const { data: assets = [] } = trpc.workflow.sapLibrary.assets.useQuery(
+    { scopeId: scope.id },
+    { enabled: expanded }
+  );
+  return <Card><CardContent className="p-4">
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge>{scope.code}</Badge><strong>{scope.name}</strong>
+      <Badge variant="outline">{scope.primaryLanguage}</Badge>
+      <Badge variant="secondary">{scope.assetCount} arquivo(s)</Badge>
+      {scope.reviewStatus !== "approved" && <Badge className="bg-amber-100 text-amber-900">Revisão necessária</Badge>}
+      {Number(scope.assetCount) > 0 && <Button className="ml-auto" size="sm" variant="outline" onClick={() => setExpanded(value => !value)}>{expanded ? "Ocultar arquivos" : "Ver arquivos"}</Button>}
+    </div>
+    {scope.summary && <p className="mt-2 text-sm text-muted-foreground">{scope.summary}</p>}
+    {expanded && <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      {(assets as any[]).map(asset => <a key={asset.id} href={asset.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-md border p-2 text-sm text-primary hover:bg-muted"><FileArchive className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1 truncate">{asset.fileName}</span><Badge variant="outline">{asset.language || asset.assetType}</Badge></a>)}
+      {!assets.length && <p className="text-sm text-muted-foreground">Carregando arquivos...</p>}
+    </div>}
+  </CardContent></Card>;
 }
 
 function Empty({ label }: { label: string }) { return <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{label}</div>; }

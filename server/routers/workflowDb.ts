@@ -29,6 +29,17 @@ function quoteIdentifier(value: string) {
   return `"${value}"`;
 }
 
+export async function isDeliveryMaterializationTarget(id: string) {
+  const pool = getPgPool();
+  if (!pool) return false;
+  const result = await pool.query(
+    `SELECT 1 FROM "delivery_materializations"
+     WHERE "targetId"=$1 AND "state" IN ('current','customized','blocked') LIMIT 1`,
+    [id]
+  );
+  return Boolean(result.rowCount);
+}
+
 export type WorkflowPagination = { offset?: number; limit?: number };
 
 async function listRows(
@@ -573,6 +584,15 @@ export async function listWorkshops(
   return listRows("workshops", "projectId", projectId, pagination) as Promise<
     Array<typeof workshops.$inferSelect>
   >;
+}
+export async function getWorkshopById(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query(
+    'SELECT * FROM "workshops" WHERE "id"=$1 AND "archivedAt" IS NULL',
+    [id]
+  );
+  return result.rows[0] || null;
 }
 export async function createWorkshop(data: typeof workshops.$inferInsert) {
   return insertRow("workshops", data, [

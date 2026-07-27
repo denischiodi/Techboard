@@ -11,6 +11,10 @@ import { flushActivityEmailOutbox } from "./activityMailer";
 
 const memoryPolicies: ProjectApprovalPolicy[] = [];
 const memoryRounds: ApprovalRound[] = [];
+const memoryGovernanceReadiness = new Map<string, {
+  projectId: string; confirmed: boolean; confirmedByUserId: string; confirmedByName: string;
+  confirmedAt: string; reopenedByUserId: string; reopenedByName: string; reopenedAt: string; updatedAt: string;
+}>();
 
 const entityTables: Record<Exclude<ApprovalEntityType, "activity">, string> = {
   bdcq_answer: "bdcq_answers", dcd: "dcd_documents", gap: "gaps", test_case: "workflow_test_cases",
@@ -48,6 +52,103 @@ export async function listPolicies(projectId: string) {
   if (!db) return memoryPolicies.filter(item => item.projectId === projectId);
   const result = await db.query('SELECT * FROM "project_approval_policies" WHERE "projectId"=$1 ORDER BY "entityType"', [projectId]);
   return result.rows.map(asPolicy);
+}
+
+function asGovernanceReadiness(row: any, projectId: string) {
+  return {
+    projectId,
+    confirmed: Boolean(row?.confirmed),
+    confirmedByUserId: row?.confirmedByUserId || "",
+    confirmedByName: row?.confirmedByName || "",
+    confirmedAt: iso(row?.confirmedAt),
+    reopenedByUserId: row?.reopenedByUserId || "",
+    reopenedByName: row?.reopenedByName || "",
+    reopenedAt: iso(row?.reopenedAt),
+    updatedAt: iso(row?.updatedAt),
+  };
+}
+
+export async function getGovernanceReadiness(projectId: string) {
+  const [policies, memberships] = await Promise.all([
+    listPolicies(projectId),
+    projectAccess.listProjectMemberships(projectId),
+  ]);
+  const eligibleApprovers = memberships.filter(item => item.active && item.capabilities?.approveAssigned);
+  const eligibleIds = new Set(eligibleApprovers.map(item => item.id));
+  const enabledPolicies = policies.filter(item => item.enabled);
+  const invalidPolicies = enabledPolicies.filter(item => {
+    const validApprovers = item.approverMembershipIds.filter(id => eligibleIds.has(id));
+    return validApprovers.length === 0 ||
+      (item.quorum === "minimum" && (item.minimumApprovals < 1 || item.minimumApprovals > validApprovers.length));
+  });
+  const db = getPgPool();
+  let state;
+  if (!db) state = memoryGovernanceReadiness.get(projectId);
+  else {
+    const result = await db.query('SELECT * FROM "project_governance_readiness" WHERE "projectId"=$1', [projectId]);
+    state = result.rows[0];
+  }
+  const persisted = asGovernanceReadiness(state, projectId);
+  const pending: string[] = [];
+  if (invalidPolicies.length) pending.push(`${invalidPolicies.length} política(s) habilitada(s) sem aprovadores ou quórum válido`);
+  const readyToConfirm = invalidPolicies.length === 0;
+  return {
+    ...persisted,
+    confirmationStored: persisted.confirmed,
+    confirmed: persisted.confirmed && readyToConfirm,
+    policiesEvaluated: policies.length,
+    policiesEnabled: enabledPolicies.length,
+    policiesValid: enabledPolicies.length - invalidPolicies.length,
+    approversAvailable: eligibleApprovers.length,
+    pending,
+    readyToConfirm,
+    percent: persisted.confirmed && readyToConfirm ? 100 : policies.length > 0 ? 50 : 0,
+    label: persisted.confirmed && readyToConfirm
+      ? "Preparação concluída"
+      : policies.length > 0
+        ? "Governança pendente de confirmação"
+        : "Governança ainda não configurada",
+  };
+}
+
+export async function setGovernanceConfirmation(projectId: string, user: AppUser, confirmed: boolean) {
+  const readiness = await getGovernanceReadiness(projectId);
+  if (confirmed && !readiness.readyToConfirm) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: readiness.pending[0] || "A governança possui pendências" });
+  }
+  const now = new Date().toISOString();
+  const name = user.name || user.email || "Usuário";
+  const db = getPgPool();
+  if (!db) {
+    const previous = memoryGovernanceReadiness.get(projectId);
+    const next = {
+      projectId, confirmed,
+      confirmedByUserId: confirmed ? user.id : previous?.confirmedByUserId || "",
+      confirmedByName: confirmed ? name : previous?.confirmedByName || "",
+      confirmedAt: confirmed ? now : previous?.confirmedAt || "",
+      reopenedByUserId: confirmed ? previous?.reopenedByUserId || "" : user.id,
+      reopenedByName: confirmed ? previous?.reopenedByName || "" : name,
+      reopenedAt: confirmed ? previous?.reopenedAt || "" : now,
+      updatedAt: now,
+    };
+    memoryGovernanceReadiness.set(projectId, next);
+    return getGovernanceReadiness(projectId);
+  }
+  await db.query(`INSERT INTO "project_governance_readiness"
+    ("projectId","confirmed","confirmedByUserId","confirmedByName","confirmedAt","reopenedByUserId","reopenedByName","reopenedAt","updatedAt")
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
+    ON CONFLICT ("projectId") DO UPDATE SET
+      "confirmed"=EXCLUDED."confirmed",
+      "confirmedByUserId"=CASE WHEN EXCLUDED."confirmed" THEN EXCLUDED."confirmedByUserId" ELSE "project_governance_readiness"."confirmedByUserId" END,
+      "confirmedByName"=CASE WHEN EXCLUDED."confirmed" THEN EXCLUDED."confirmedByName" ELSE "project_governance_readiness"."confirmedByName" END,
+      "confirmedAt"=CASE WHEN EXCLUDED."confirmed" THEN EXCLUDED."confirmedAt" ELSE "project_governance_readiness"."confirmedAt" END,
+      "reopenedByUserId"=CASE WHEN EXCLUDED."confirmed" THEN "project_governance_readiness"."reopenedByUserId" ELSE EXCLUDED."reopenedByUserId" END,
+      "reopenedByName"=CASE WHEN EXCLUDED."confirmed" THEN "project_governance_readiness"."reopenedByName" ELSE EXCLUDED."reopenedByName" END,
+      "reopenedAt"=CASE WHEN EXCLUDED."confirmed" THEN "project_governance_readiness"."reopenedAt" ELSE EXCLUDED."reopenedAt" END,
+      "updatedAt"=now()`,
+    [projectId, confirmed, confirmed ? user.id : "", confirmed ? name : "", confirmed ? now : null,
+      confirmed ? "" : user.id, confirmed ? "" : name, confirmed ? null : now]);
+  return getGovernanceReadiness(projectId);
 }
 
 export async function upsertPolicy(input: Omit<ProjectApprovalPolicy, "id" | "updatedAt">) {

@@ -390,6 +390,18 @@ export const projectApprovalPolicies = mysqlTable("project_approval_policies", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const projectGovernanceReadiness = mysqlTable("project_governance_readiness", {
+  projectId: varchar("projectId", { length: 64 }).primaryKey(),
+  confirmed: mysqlBoolean("confirmed").notNull().default(false),
+  confirmedByUserId: varchar("confirmedByUserId", { length: 64 }).notNull().default(""),
+  confirmedByName: varchar("confirmedByName", { length: 255 }).notNull().default(""),
+  confirmedAt: timestamp("confirmedAt"),
+  reopenedByUserId: varchar("reopenedByUserId", { length: 64 }).notNull().default(""),
+  reopenedByName: varchar("reopenedByName", { length: 255 }).notNull().default(""),
+  reopenedAt: timestamp("reopenedAt"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const approvalRounds = mysqlTable("approval_rounds", {
   id: varchar("id", { length: 64 }).primaryKey(),
   projectId: varchar("projectId", { length: 64 }).notNull(),
@@ -737,6 +749,82 @@ export const deliveryTemplates = mysqlTable("delivery_templates", {
   createdBy: varchar("createdBy", { length: 64 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const deliveryTemplateAttachments = mysqlTable("delivery_template_attachments", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  templateId: varchar("templateId", { length: 64 }).notNull(),
+  templateVersion: int("templateVersion").notNull().default(1),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  contentType: varchar("contentType", { length: 255 }).notNull(),
+  sizeBytes: int("sizeBytes").notNull(),
+  checksum: varchar("checksum", { length: 64 }).notNull(),
+  storageKey: text("storageKey").notNull(),
+  url: text("url").notNull(),
+  uploadedBy: varchar("uploadedBy", { length: 64 }).notNull(),
+  archivedAt: timestamp("archivedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const sapContentReleases = mysqlTable("sap_content_releases", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  releaseCode: varchar("releaseCode", { length: 64 }).notNull().unique(),
+  country: varchar("country", { length: 8 }).notNull().default("BR"),
+  status: varchar("status", { length: 32 }).notNull().default("draft"),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  storageKey: text("storageKey").notNull(),
+  checksum: varchar("checksum", { length: 64 }).notNull().unique(),
+  sizeBytes: int("sizeBytes").notNull(),
+  summary: json("summary").$type<Record<string, unknown>>().default({}),
+  lastError: text("lastError").notNull().default(""),
+  uploadedBy: varchar("uploadedBy", { length: 64 }).notNull(),
+  activatedBy: varchar("activatedBy", { length: 64 }).notNull().default(""),
+  activatedAt: timestamp("activatedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const sapScopeCatalog = mysqlTable("sap_scope_catalog", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  releaseId: varchar("releaseId", { length: 64 }).notNull(),
+  code: varchar("code", { length: 128 }).notNull(),
+  name: varchar("name", { length: 512 }).notNull(),
+  summary: text("summary").notNull().default(""),
+  module: varchar("module", { length: 128 }).notNull().default(""),
+  processArea: varchar("processArea", { length: 256 }).notNull().default(""),
+  primaryLanguage: varchar("primaryLanguage", { length: 16 }).notNull().default("PT_BR"),
+  reviewStatus: varchar("reviewStatus", { length: 32 }).notNull().default("review_required"),
+  searchText: text("searchText").notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const sapScopeAssets = mysqlTable("sap_scope_assets", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  releaseId: varchar("releaseId", { length: 64 }).notNull(),
+  scopeId: varchar("scopeId", { length: 64 }),
+  scopeCode: varchar("scopeCode", { length: 128 }).notNull().default(""),
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  assetType: varchar("assetType", { length: 32 }).notNull(),
+  language: varchar("language", { length: 16 }).notNull().default(""),
+  contentType: varchar("contentType", { length: 255 }).notNull().default("application/octet-stream"),
+  sizeBytes: int("sizeBytes").notNull().default(0),
+  checksum: varchar("checksum", { length: 64 }).notNull(),
+  storageKey: text("storageKey").notNull(),
+  url: text("url").notNull(),
+  extractedText: text("extractedText").notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const sapKnowledgeChunks = mysqlTable("sap_knowledge_chunks", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  releaseId: varchar("releaseId", { length: 64 }).notNull(),
+  scopeCode: varchar("scopeCode", { length: 128 }).notNull(),
+  assetId: varchar("assetId", { length: 64 }).notNull(),
+  chunkIndex: int("chunkIndex").notNull(),
+  content: text("content").notNull(),
+  language: varchar("language", { length: 16 }).notNull().default(""),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export const deliveryItems = mysqlTable("delivery_items", {

@@ -113,7 +113,7 @@ export default function WorkshopsPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">{ws.title}</CardTitle>
-                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); deleteWs.mutate({ id: ws.id }); }}><Trash2 className="h-4 w-4" /></Button>
+                {!ws.templateId && ws.source !== "delivery_template" && <Button variant="ghost" size="icon" title="Excluir workshop local" onClick={(e) => { e.stopPropagation(); deleteWs.mutate({ id: ws.id }); }}><Trash2 className="h-4 w-4" /></Button>}
               </div>
             </CardHeader>
             <CardContent>

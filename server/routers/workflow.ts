@@ -28,6 +28,8 @@ import type { ProjectCapabilities, TechMoveData } from "../../shared/types";
 import * as projectAccess from "../projectAccess";
 import * as approvalStore from "../approvalStore";
 import { deliveryMasterRouter } from "./deliveryMaster";
+import { sapLibraryRouter } from "./sapLibrary";
+import { getKnowledgeContext } from "../sapLibraryStore";
 
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
@@ -695,6 +697,9 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
   const answerMap = new Map(
     answers.map((answer: any) => [answer.questionId, answer])
   );
+  const sapKnowledge = await getKnowledgeContext(
+    filteredScope.map((item: any) => String(item.code || "")).filter(Boolean)
+  );
   const hashPayload = {
     module: module || "",
     scope: filteredScope
@@ -725,6 +730,8 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
         item.updatedAt,
       ])
       .sort(),
+    sapRelease: sapKnowledge.releaseCode,
+    sapEntries: sapKnowledge.entries,
   };
   const sourceHash = createHash("sha256")
     .update(JSON.stringify(hashPayload))
@@ -734,6 +741,7 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
     filteredQuestions,
     filteredRequirements,
     answerMap,
+    sapKnowledge,
     sourceHash,
   };
 }
@@ -750,6 +758,7 @@ export async function streamDcdGeneration(input: {
     filteredQuestions,
     filteredRequirements,
     answerMap,
+    sapKnowledge,
     sourceHash,
   } = await getDcdGenerationContext(input.projectId, input.module);
   const cached = await wdb.findDcdBySourceHash(input.projectId, sourceHash);
@@ -814,7 +823,11 @@ ${
 }
 
 Contexto SAP de referência:
-${getSapKnowledgeContext(input.module)}
+${sapKnowledge.releaseCode
+  ? `Release ativa: ${sapKnowledge.releaseCode}\n${sapKnowledge.entries
+      .map((entry: any) => `### Fonte SAP [${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`)
+      .join("\n")}\nUse somente estas fontes para os scope items do projeto e cite o código correspondente em cada decisão.`
+  : getSapKnowledgeContext(input.module)}
 
 ${DCD_FEW_SHOT_EXAMPLE}
 
@@ -1147,6 +1160,7 @@ async function assertEntitiesBelongToProject(
 
 export const workflowRouter = router({
   delivery: deliveryMasterRouter,
+  sapLibrary: sapLibraryRouter,
   prompts: router({
     models: adminProcedure.query(async () => {
       try {
@@ -1682,6 +1696,7 @@ export const workflowRouter = router({
     .input(z.object({ projectId: z.string() }))
     .query(async ({ input }) => {
       const [
+        governance,
         scope,
         questions,
         answers,
@@ -1692,6 +1707,7 @@ export const workflowRouter = router({
         configList,
         testCases,
       ] = await Promise.all([
+        approvalStore.getGovernanceReadiness(input.projectId),
         wdb.listScopeItems(input.projectId),
         wdb.listBdcqQuestions(input.projectId),
         wdb.listBdcqAnswers(input.projectId),
@@ -1724,6 +1740,19 @@ export const workflowRouter = router({
       ).length;
       return {
         steps: [
+          {
+            id: "governance",
+            percent: governance.percent,
+            label: governance.label,
+            details: {
+              policiesEvaluated: governance.policiesEvaluated,
+              policiesEnabled: governance.policiesEnabled,
+              policiesValid: governance.policiesValid,
+              approversAvailable: governance.approversAvailable,
+              pending: governance.pending,
+              confirmed: governance.confirmed,
+            },
+          },
           {
             id: "scope-items",
             percent: scope.length ? 100 : 0,
@@ -2312,7 +2341,11 @@ export const workflowRouter = router({
         }),
       delete: workflowEntityProcedure("bdcq_questions", true)
         .input(z.object({ id: z.string() }))
-        .mutation(({ input }) => wdb.deleteBdcqQuestion(input.id)),
+        .mutation(async ({ input }) => {
+          if (await wdb.isDeliveryMaterializationTarget(input.id))
+            throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+          return wdb.deleteBdcqQuestion(input.id);
+        }),
       bulkCreate: workflowProjectProcedure(true)
         .input(
           z.object({
@@ -2717,7 +2750,15 @@ export const workflowRouter = router({
       }),
     delete: workflowEntityProcedure("workshops", true)
       .input(z.object({ id: z.string() }))
-      .mutation(({ input }) => wdb.deleteWorkshop(input.id)),
+      .mutation(async ({ input }) => {
+        const workshop: any = await wdb.getWorkshopById(input.id);
+        if (workshop?.templateId || workshop?.source === "delivery_template")
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
+          });
+        return wdb.deleteWorkshop(input.id);
+      }),
     uploadPresentation: workflowProjectProcedure(true)
       .input(
         z.object({
@@ -3140,6 +3181,8 @@ Retorne em formato markdown.`;
     delete: workflowEntityProcedure("dcd_documents", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ input }) => {
+        if (await wdb.isDeliveryMaterializationTarget(input.id))
+          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
         await approvalStore.assertEntityEditable("dcd", input.id);
         return wdb.deleteDcdDocument(input.id);
       }),
@@ -3516,6 +3559,8 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
     delete: workflowEntityProcedure("gaps", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ input }) => {
+        if (await wdb.isDeliveryMaterializationTarget(input.id))
+          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
         await approvalStore.assertEntityEditable("gap", input.id);
         return wdb.deleteGap(input.id);
       }),
@@ -3893,7 +3938,11 @@ Retorne APENAS um JSON array com objetos no formato:
       }),
     delete: workflowEntityProcedure("configurations", true)
       .input(z.object({ id: z.string() }))
-      .mutation(({ input }) => wdb.deleteConfiguration(input.id)),
+      .mutation(async ({ input }) => {
+        if (await wdb.isDeliveryMaterializationTarget(input.id))
+          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        return wdb.deleteConfiguration(input.id);
+      }),
   }),
 
   tests: router({
@@ -4186,6 +4235,8 @@ Retorne APENAS um JSON array com objetos no formato:
     delete: workflowEntityProcedure("workflow_test_cases", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ input }) => {
+        if (await wdb.isDeliveryMaterializationTarget(input.id))
+          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
         await approvalStore.assertEntityEditable("test_case", input.id);
         return wdb.deleteWorkflowTestCase(input.id);
       }),

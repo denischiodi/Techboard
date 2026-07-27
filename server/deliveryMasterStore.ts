@@ -107,7 +107,10 @@ export async function listTemplates(
      ORDER BY t."type",t."sortOrder",t."title"`,
     values
   );
-  return result.rows;
+  return Promise.all(result.rows.map(async template => ({
+    ...template,
+    attachments: await listTemplateAttachments(template.id),
+  })));
 }
 
 export async function getTemplate(id: string) {
@@ -116,6 +119,33 @@ export async function getTemplate(id: string) {
   const result = await pool.query(
     'SELECT * FROM "delivery_templates" WHERE "id"=$1',
     [id]
+  );
+  const template = result.rows[0] || null;
+  return template
+    ? { ...template, attachments: await listTemplateAttachments(template.id) }
+    : null;
+}
+
+export async function listTemplateAttachments(templateId: string) {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const result = await pool.query(
+    'SELECT * FROM "delivery_template_attachments" WHERE "templateId"=$1 AND "archivedAt" IS NULL ORDER BY "createdAt"',
+    [templateId]
+  );
+  return result.rows;
+}
+
+export async function createTemplateAttachment(data: Record<string, unknown>) {
+  return insert("delivery_template_attachments", data);
+}
+
+export async function archiveTemplateAttachment(id: string, templateId: string) {
+  const pool = getPgPool();
+  if (!pool) return { id };
+  const result = await pool.query(
+    'UPDATE "delivery_template_attachments" SET "archivedAt"=now() WHERE "id"=$1 AND "templateId"=$2 AND "archivedAt" IS NULL RETURNING *',
+    [id, templateId]
   );
   return result.rows[0] || null;
 }
@@ -447,6 +477,12 @@ export async function applyTrail(
               ...(template.payload || {}),
               instructions: template.instructions || "",
               completionCriteria: template.completionCriteria || "",
+              attachments: (template.attachments || []).map((file: any) => ({
+                name: file.fileName,
+                url: file.url,
+                contentType: file.contentType,
+                templateVersion: file.templateVersion,
+              })),
             }),
           ]
         );
@@ -474,6 +510,12 @@ export async function applyTrail(
               ...(template.payload || {}),
               instructions: template.instructions || "",
               completionCriteria: template.completionCriteria || "",
+              attachments: (template.attachments || []).map((file: any) => ({
+                name: file.fileName,
+                url: file.url,
+                contentType: file.contentType,
+                templateVersion: file.templateVersion,
+              })),
             }),
           ]
         );

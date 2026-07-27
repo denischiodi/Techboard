@@ -31,7 +31,6 @@ const steps = [
 ];
 
 const deliveryTypesByStep: Record<string, string[]> = {
-  governance: ["activity"],
   "scope-items": ["activity"],
   bdcq: ["bdcq"],
   workshops: ["workshop"],
@@ -125,7 +124,6 @@ export default function ProjectWorkflow() {
     return (deliveryItems as any[]).filter(item => {
       const normalizedStage = String(item.stage || "").toLocaleLowerCase("pt-BR").replaceAll("_", "-");
       if (item.type === "activity") {
-        if (stepId === "governance") return ["governance", "governanca", "preparation", "preparacao"].includes(normalizedStage);
         if (stepId === "scope-items") return ["scope", "scope-items", "dda", "escopo"].includes(normalizedStage);
         return normalizedStage === stepId;
       }
@@ -159,6 +157,7 @@ export default function ProjectWorkflow() {
       return (dependencySummary.percent ?? progressByStep.get(id)?.percent ?? 0) < 100;
     });
     if (percent >= 100) return { label: "Concluído", className: "bg-emerald-100 text-emerald-800", blocked: false, missingDependencies };
+    if (step.id === "governance" && percent === 0) return { label: "Não configurado", className: "bg-slate-100 text-slate-800", blocked: false, missingDependencies };
     if (percent > 0) return { label: "Em andamento", className: "bg-blue-100 text-blue-800", blocked: false, missingDependencies };
     if (missingDependencies.length) return { label: "Aguardando dependência", className: "bg-amber-100 text-amber-800", blocked: true, missingDependencies };
     return { label: "Pronto para começar", className: "bg-violet-100 text-violet-800", blocked: false, missingDependencies };

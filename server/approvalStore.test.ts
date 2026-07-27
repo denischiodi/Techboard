@@ -24,7 +24,15 @@ vi.mock("./activityStore", () => ({
 }));
 vi.mock("./activityMailer", () => ({ flushActivityEmailOutbox: vi.fn(async () => undefined) }));
 
-import { decide, isEntityLocked, reopen, submitForApproval } from "./approvalStore";
+import {
+  decide,
+  getGovernanceReadiness,
+  isEntityLocked,
+  reopen,
+  setGovernanceConfirmation,
+  submitForApproval,
+  upsertPolicy,
+} from "./approvalStore";
 
 const requester = { id: "requester", name: "Consultor", email: "c@x.com", role: "consultant", active: true, permissions: {} } as AppUser;
 const approver = { id: "approver", name: "Aprovador", email: "a@x.com", role: "viewer", active: true, permissions: {} } as AppUser;
@@ -51,5 +59,23 @@ describe("approval workflow", () => {
     await decide(round!.id, approver, "approved", "Ok");
     await expect(reopen(round!.id, requester, "")).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(reopen(round!.id, requester, "Mudança de escopo")).resolves.toMatchObject({ nextVersion: 2 });
+  });
+});
+
+describe("governance readiness", () => {
+  it("exige confirmação explícita e permite reabertura", async () => {
+    const projectId = "project-governance-ready";
+    expect((await getGovernanceReadiness(projectId)).percent).toBe(0);
+    expect(await setGovernanceConfirmation(projectId, requester, true)).toMatchObject({ confirmed: true, percent: 100 });
+    expect(await setGovernanceConfirmation(projectId, requester, false)).toMatchObject({ confirmed: false, percent: 0 });
+  });
+
+  it("bloqueia confirmação quando uma política habilitada não possui aprovador", async () => {
+    const projectId = "project-governance-invalid";
+    await upsertPolicy({ projectId, entityType: "dcd", enabled: true, quorum: "any", minimumApprovals: 1, approverMembershipIds: [] });
+    const readiness = await getGovernanceReadiness(projectId);
+    expect(readiness.readyToConfirm).toBe(false);
+    expect(readiness.pending).toHaveLength(1);
+    await expect(setGovernanceConfirmation(projectId, requester, true)).rejects.toThrow("sem aprovadores ou quórum válido");
   });
 });

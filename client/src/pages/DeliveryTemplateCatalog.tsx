@@ -4,9 +4,11 @@ import {
   CheckCircle2,
   Filter,
   Pencil,
+  Paperclip,
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -211,6 +213,7 @@ export default function DeliveryTemplateCatalog({
     { enabled: Boolean(user?.email) },
   );
   const isTechnicalLead = appUser?.role === "technical_lead";
+  const isAdmin = appUser?.role === "admin";
   const managedModules = isTechnicalLead
     ? moduleOptions.filter(module =>
         (appUser.teamFronts || []).some(front =>
@@ -230,6 +233,11 @@ export default function DeliveryTemplateCatalog({
   const [editorOpen, setEditorOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<any>(null);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
+  const { data: attachments = [] } =
+    trpc.workflow.delivery.templates.attachments.list.useQuery(
+      { templateId: form.id },
+      { enabled: Boolean(form.id && editorOpen && form.source === "delivery") }
+    );
 
   const refresh = async () => {
     await utils.workflow.delivery.templates.invalidate();
@@ -258,6 +266,39 @@ export default function DeliveryTemplateCatalog({
     },
     onError: error => toast.error(error.message),
   });
+  const uploadAttachment = trpc.workflow.delivery.templates.attachments.upload.useMutation({
+    onSuccess: async () => {
+      await utils.workflow.delivery.templates.attachments.list.invalidate();
+      toast.success("Anexo incluído no padrão");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const removeAttachment = trpc.workflow.delivery.templates.attachments.remove.useMutation({
+    onSuccess: async () => {
+      await utils.workflow.delivery.templates.attachments.list.invalidate();
+      toast.success("Anexo removido da versão atual");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const attachFile = async (file?: File) => {
+    if (!file || !form.id) return;
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("O arquivo deve ter no máximo 50 MB");
+      return;
+    }
+    const fileData = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    uploadAttachment.mutate({
+      templateId: form.id,
+      fileName: file.name,
+      contentType: file.type,
+      fileData,
+    });
+  };
   const createWorkshopTemplate =
     trpc.workflow.workshops.templates.create.useMutation({
       onSuccess: async () => {
@@ -479,7 +520,7 @@ export default function DeliveryTemplateCatalog({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {!compactHeader && <Card className="border-blue-200 bg-blue-50/50">
         <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
@@ -499,14 +540,18 @@ export default function DeliveryTemplateCatalog({
           </Button>
         </CardContent>
       </Card>}
-      {compactHeader && <div className="flex justify-end">
-        <Button onClick={() => openNew()}><Plus className="mr-2 h-4 w-4" />Novo padrão</Button>
+      {compactHeader && <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-muted-foreground">
+            {allowedTypes.length === 1 ? typeLabels[allowedTypes[0]] : "Padrões desta categoria"}
+          </span>
+          <Badge variant="secondary">{filtered.length} de {templates.filter((template: any) => allowedTypes.includes(template.type)).length}</Badge>
+        </div>
+        <Button className="w-full shrink-0 sm:w-auto" onClick={() => openNew()}><Plus className="mr-2 h-4 w-4" />Novo padrão</Button>
       </div>}
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {(
-          allowedTypes.filter(type => ["bdcq", "workshop", "configuration", "unit_test"].includes(type))
-        ).map(type => (
+      {allowedTypes.length > 1 && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {allowedTypes.map(type => (
           <button
             key={type}
             type="button"
@@ -521,9 +566,9 @@ export default function DeliveryTemplateCatalog({
             </span>
           </button>
         ))}
-      </div>
+      </div>}
 
-      <div className="grid gap-2 md:grid-cols-[1fr_220px_180px_auto]">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_220px_180px_auto]">
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -560,7 +605,7 @@ export default function DeliveryTemplateCatalog({
             ))}
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-2 rounded-md border px-3 text-sm">
+        <label className="flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm">
           <Checkbox
             checked={includeArchived}
             onCheckedChange={value => setIncludeArchived(value === true)}
@@ -661,8 +706,8 @@ export default function DeliveryTemplateCatalog({
                   <Button
                     variant="ghost"
                     size="icon"
-                    title="Arquivar"
-                    disabled={!canManage(template)}
+                    title={isAdmin ? "Arquivar padrão" : "Somente administradores podem arquivar padrões"}
+                    disabled={!isAdmin}
                     onClick={() => setArchiveTarget(template)}
                   >
                     <Archive className="h-4 w-4" />
@@ -747,6 +792,43 @@ export default function DeliveryTemplateCatalog({
                 />
               </div>
             </section>
+            {form.id && form.source === "delivery" && (
+              <section className="space-y-3 rounded-lg border p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <Label>Anexos do modelo</Label>
+                    <p className="text-xs text-muted-foreground">Word, PDF, PowerPoint ou Excel · até 20 arquivos de 50 MB.</p>
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted">
+                    <Paperclip className="mr-2 h-4 w-4" />
+                    Anexar arquivo
+                    <input
+                      className="hidden"
+                      type="file"
+                      accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx"
+                      disabled={uploadAttachment.isPending}
+                      onChange={event => {
+                        void attachFile(event.target.files?.[0]);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="space-y-2">
+                  {(attachments as any[]).map(file => (
+                    <div key={file.id} className="flex items-center gap-3 rounded-md border p-2 text-sm">
+                      <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <a className="min-w-0 flex-1 truncate text-primary hover:underline" href={file.url} target="_blank" rel="noreferrer">{file.fileName}</a>
+                      <span className="text-xs text-muted-foreground">{Math.max(1, Math.round(Number(file.sizeBytes) / 1024))} KB · v{file.templateVersion}</span>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeAttachment.mutate({ templateId: form.id, id: file.id })}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  {!attachments.length && <p className="text-sm text-muted-foreground">Nenhum anexo incluído.</p>}
+                </div>
+              </section>
+            )}
 
             {form.type === "workshop" && (
               <section className="grid gap-4 rounded-lg border border-blue-200 bg-blue-50/40 p-4 sm:grid-cols-2">

@@ -219,7 +219,12 @@ async function materializeOperational(template: any, project: any, occurrence: a
       objective: payload.objective || template.description, content: payload.content || template.instructions,
       duration: payload.duration || "", agenda: payload.agenda || [],
       expectedOutcomes: payload.expectedOutcomes || [], prerequisites: payload.prerequisites || [],
-      requiredRoles: payload.requiredRoles || [], presentationFiles: payload.presentationFiles || [],
+      requiredRoles: payload.requiredRoles || [],
+      presentationFiles: (template.attachments || payload.presentationFiles || []).map((file: any) => ({
+        name: file.fileName || file.name,
+        url: file.url,
+        contentType: file.contentType,
+      })),
       templateId: template.id, source: "delivery_template", status: "Planejado",
     } as any);
     return { id: row.id, state: "created" };

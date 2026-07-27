@@ -2,6 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as approvalStore from "../approvalStore";
 import * as projectAccess from "../projectAccess";
+import * as workflowDb from "./workflowDb";
+import { randomUUID } from "node:crypto";
 
 const entityType = z.enum(["bdcq_answer", "dcd", "gap", "test_case", "activity", "workshop", "configuration", "risk", "issue", "cutover", "closure"]);
 const quorum = z.enum(["any", "all", "minimum"]);
@@ -15,12 +17,49 @@ export const approvalsRouter = router({
     await projectAccess.assertProjectCapability(ctx.appUser, input.projectId, "viewProject");
     return approvalStore.listPolicies(input.projectId);
   }),
+  governanceReadiness: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).query(async ({ ctx, input }) => {
+    await projectAccess.assertProjectCapability(ctx.appUser, input.projectId, "viewProject");
+    return approvalStore.getGovernanceReadiness(input.projectId);
+  }),
   configurePolicy: protectedProcedure.input(z.object({
     projectId: z.string().min(1), entityType, enabled: z.boolean(), quorum,
     minimumApprovals: z.number().int().min(1).default(1), approverMembershipIds: z.array(z.string().min(1)).max(100),
   })).mutation(async ({ ctx, input }) => {
     await projectAccess.assertProjectCapability(ctx.appUser, input.projectId, "configureGovernance");
-    return approvalStore.upsertPolicy(input);
+    const previous = await approvalStore.getGovernanceReadiness(input.projectId);
+    const policy = await approvalStore.upsertPolicy(input);
+    if (previous.confirmationStored) {
+      await approvalStore.setGovernanceConfirmation(input.projectId, ctx.appUser, false);
+      await workflowDb.createWorkflowAudit({
+        id: `audit_${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+        projectId: input.projectId, userId: ctx.appUser.id, userName: ctx.appUser.name || ctx.appUser.email,
+        action: "governance_reopened", entityType: "governance", entityId: input.projectId,
+        details: { reason: "policy_changed", entityType: input.entityType },
+      });
+    }
+    return policy;
+  }),
+  confirmGovernance: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    await projectAccess.assertProjectCapability(ctx.appUser, input.projectId, "configureGovernance");
+    const readiness = await approvalStore.setGovernanceConfirmation(input.projectId, ctx.appUser, true);
+    await workflowDb.createWorkflowAudit({
+      id: `audit_${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+      projectId: input.projectId, userId: ctx.appUser.id, userName: ctx.appUser.name || ctx.appUser.email,
+      action: "governance_confirmed", entityType: "governance", entityId: input.projectId,
+      details: { policiesEnabled: readiness.policiesEnabled, approversAvailable: readiness.approversAvailable },
+    });
+    return readiness;
+  }),
+  reopenGovernance: protectedProcedure.input(z.object({ projectId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    await projectAccess.assertProjectCapability(ctx.appUser, input.projectId, "configureGovernance");
+    const readiness = await approvalStore.setGovernanceConfirmation(input.projectId, ctx.appUser, false);
+    await workflowDb.createWorkflowAudit({
+      id: `audit_${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+      projectId: input.projectId, userId: ctx.appUser.id, userName: ctx.appUser.name || ctx.appUser.email,
+      action: "governance_reopened", entityType: "governance", entityId: input.projectId,
+      details: { reason: "manual" },
+    });
+    return readiness;
   }),
   history: protectedProcedure.input(z.object({ projectId: z.string().min(1), entityType: entityType.optional(), entityId: z.string().optional() })).query(async ({ ctx, input }) => {
     await projectAccess.assertProjectCapability(ctx.appUser, input.projectId, "viewProject");

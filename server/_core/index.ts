@@ -16,6 +16,7 @@ import { syncActivitiesFromSources } from "../activitySync";
 import { flushActivityEmailOutbox } from "../activityMailer";
 import { startDashboardSnapshotScheduler } from "../dashboardSnapshots";
 import { enqueueReconciliation, resumePendingPublications } from "../deliveryPublisher";
+import { resumePendingSapImports } from "../sapLibraryStore";
 
 function isAllowedOrigin(req: express.Request) {
   const origin = req.headers.origin;
@@ -44,8 +45,8 @@ async function startServer() {
   app.set("trust proxy", 1);
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(express.json({ limit: "70mb" }));
+  app.use(express.urlencoded({ limit: "70mb", extended: true }));
   app.get("/health", (_req, res) => {
     res.status(200).json({
       ok: true,
@@ -116,6 +117,9 @@ async function startServer() {
         console.warn("Falha na publicação automática de padrões", error)
       );
   void runTemplatePublisher();
+  void resumePendingSapImports().catch(error =>
+    console.warn("Falha ao retomar importações SAP", error)
+  );
   const templatePublicationTimer = setInterval(
     () => void runTemplatePublisher(),
     5 * 60 * 1000
