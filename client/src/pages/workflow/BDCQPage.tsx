@@ -999,6 +999,8 @@ export default function BDCQPage() {
             <Table className="min-w-[1720px] table-fixed">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[110px]">Status</TableHead>
+                  <TableHead className="w-[150px]">Ações</TableHead>
                   <TableHead className="w-[440px]">Pergunta</TableHead>
                   <TableHead className="w-[100px]">Módulo</TableHead>
                   <TableHead className="w-[110px]">SAP ID</TableHead>
@@ -1008,8 +1010,6 @@ export default function BDCQPage() {
                   <TableHead className="w-[130px]">Origem</TableHead>
                   <TableHead className="w-[170px]">Consultor</TableHead>
                   <TableHead className="w-[170px]">Key user</TableHead>
-                  <TableHead className="w-[110px]">Status</TableHead>
-                  <TableHead className="w-[150px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1038,6 +1038,69 @@ export default function BDCQPage() {
                           }
                         }}
                       >
+                        <TableCell className="align-top">
+                          {q.active === 0 ? (
+                            <Badge variant="secondary">Inativa</Badge>
+                          ) : String((ans as any)?.answer || "").trim() ? (
+                            <Badge className="bg-green-100 text-green-800">
+                              Respondida
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">Pendente</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="flex gap-1 align-top">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={event => {
+                              event.stopPropagation();
+                              openAnswer(q, ans);
+                            }}
+                            title="Visualizar e responder"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                          {canManageBdcq && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={event => {
+                                event.stopPropagation();
+                                openQuestionForm(q);
+                              }}
+                              title="Editar pergunta"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {ans && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={event => {
+                                event.stopPropagation();
+                                setShowHistory(ans);
+                              }}
+                              title="Histórico da resposta"
+                            >
+                              <History className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canManageBdcq && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={event => {
+                                event.stopPropagation();
+                                deleteQ.mutate({ id: q.id });
+                              }}
+                              title="Excluir pergunta"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-normal align-top">
                           <p className="line-clamp-3 break-words font-medium">
                             {q.question}
@@ -1128,68 +1191,6 @@ export default function BDCQPage() {
                             <span className="text-muted-foreground">
                               Não definido
                             </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="align-top">
-                          {q.active === 0 ? (
-                            <Badge variant="secondary">Inativa</Badge>
-                          ) : String((ans as any)?.answer || "").trim() ? (
-                            <Badge className="bg-green-100 text-green-800">
-                              Respondida
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Pendente</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="flex gap-1 align-top">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={event => {
-                              event.stopPropagation();
-                              openAnswer(q, ans);
-                            }}
-                            title="Visualizar e responder"
-                          >
-                            <MessageSquare className="h-4 w-4" />
-                          </Button>
-                          {canManageBdcq && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={event => {
-                                event.stopPropagation();
-                                openQuestionForm(q);
-                              }}
-                              title="Editar pergunta"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {ans && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={event => {
-                                event.stopPropagation();
-                                setShowHistory(ans);
-                              }}
-                              title="Histórico da resposta"
-                            >
-                              <History className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {canManageBdcq && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={event => {
-                                event.stopPropagation();
-                                deleteQ.mutate({ id: q.id });
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           )}
                         </TableCell>
                       </TableRow>
