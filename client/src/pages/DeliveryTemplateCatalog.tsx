@@ -226,6 +226,7 @@ export default function DeliveryTemplateCatalog({
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [editorOpen, setEditorOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<any>(null);
+  const [attachmentProgress, setAttachmentProgress] = useState(0);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const { data: attachments = [] } =
     trpc.workflow.delivery.templates.attachments.list.useQuery(
@@ -260,13 +261,9 @@ export default function DeliveryTemplateCatalog({
     },
     onError: error => toast.error(error.message),
   });
-  const uploadAttachment = trpc.workflow.delivery.templates.attachments.upload.useMutation({
-    onSuccess: async () => {
-      await utils.workflow.delivery.templates.attachments.list.invalidate();
-      toast.success("Anexo incluído no padrão");
-    },
-    onError: error => toast.error(error.message),
-  });
+  const prepareAttachment = trpc.workflow.delivery.templates.attachments.prepareUpload.useMutation();
+  const uploadAttachmentChunk = trpc.workflow.delivery.templates.attachments.uploadChunk.useMutation();
+  const registerAttachment = trpc.workflow.delivery.templates.attachments.registerUpload.useMutation();
   const removeAttachment = trpc.workflow.delivery.templates.attachments.remove.useMutation({
     onSuccess: async () => {
       await utils.workflow.delivery.templates.attachments.list.invalidate();
@@ -280,18 +277,57 @@ export default function DeliveryTemplateCatalog({
       toast.error("O arquivo deve ter no máximo 50 MB");
       return;
     }
-    const fileData = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-    uploadAttachment.mutate({
-      templateId: form.id,
-      fileName: file.name,
-      contentType: file.type,
-      fileData,
-    });
+    setAttachmentProgress(1);
+    try {
+      const target = await prepareAttachment.mutateAsync({
+        templateId: form.id,
+        fileName: file.name,
+      });
+      const chunkSize = target.localUpload ? 2 * 1024 * 1024 : file.size;
+      const totalParts = Math.ceil(file.size / chunkSize);
+      for (let part = 0; part < totalParts; part++) {
+        if (target.localUpload) {
+          const chunk = file.slice(part * chunkSize, Math.min(file.size, (part + 1) * chunkSize));
+          const bytes = new Uint8Array(await chunk.arrayBuffer());
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += 32_768)
+            binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+          await uploadAttachmentChunk.mutateAsync({
+            key: target.key,
+            expires: target.localUpload.expires,
+            signature: target.localUpload.signature,
+            part,
+            totalParts,
+            offset: part * chunkSize,
+            totalSize: file.size,
+            dataBase64: btoa(binary),
+          });
+        } else {
+          const response = await fetch(target.uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": file.type || "application/octet-stream" },
+            body: file,
+          });
+          if (!response.ok)
+            throw new Error(`Falha no envio do arquivo (${response.status})`);
+        }
+        setAttachmentProgress(Math.round(((part + 1) / totalParts) * 90));
+      }
+      await registerAttachment.mutateAsync({
+        templateId: form.id,
+        fileName: file.name,
+        contentType: file.type,
+        storageKey: target.key,
+        sizeBytes: file.size,
+      });
+      setAttachmentProgress(100);
+      await utils.workflow.delivery.templates.attachments.list.invalidate();
+      toast.success("Anexo incluído no padrão");
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível anexar o arquivo");
+    } finally {
+      setAttachmentProgress(0);
+    }
   };
   const createWorkshopTemplate =
     trpc.workflow.workshops.templates.create.useMutation({
@@ -782,7 +818,7 @@ export default function DeliveryTemplateCatalog({
                       className="hidden"
                       type="file"
                       accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx"
-                      disabled={uploadAttachment.isPending}
+                      disabled={attachmentProgress > 0}
                       onChange={event => {
                         void attachFile(event.target.files?.[0]);
                         event.currentTarget.value = "";
@@ -790,6 +826,12 @@ export default function DeliveryTemplateCatalog({
                     />
                   </label>
                 </div>
+                {attachmentProgress > 0 && (
+                  <div className="space-y-1">
+                    <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${attachmentProgress}%` }} /></div>
+                    <p className="text-xs text-muted-foreground">Enviando e validando arquivo… {attachmentProgress}%</p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   {(attachments as any[]).map(file => (
                     <div key={file.id} className="flex items-center gap-3 rounded-md border p-2 text-sm">

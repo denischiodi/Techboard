@@ -7,7 +7,7 @@ import * as store from "../deliveryMasterStore";
 import * as workflowDb from "./workflowDb";
 import * as plannerStore from "../plannerStore";
 import * as publisher from "../deliveryPublisher";
-import { storagePut } from "../storage";
+import { storagePresignPut, storagePut, storagePutLocalChunk, storageRead, storageValidateUpload } from "../storage";
 import { createHash } from "node:crypto";
 
 const typeSchema = z.enum(store.DELIVERY_TYPES);
@@ -261,6 +261,96 @@ export const deliveryMasterRouter = router({
             checksum: createHash("sha256").update(buffer).digest("hex"),
             storageKey: stored.key,
             url: stored.url,
+            uploadedBy: ctx.appUser.id,
+          });
+          await publisher.enqueueTemplatePublication(template, ctx.appUser.id, "template_attachment_added");
+          return attachment;
+        }),
+      prepareUpload: protectedProcedure
+        .input(z.object({
+          templateId: z.string().min(1),
+          fileName: z.string().trim().min(1).max(255),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          const template: any = await store.getTemplate(input.templateId);
+          if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Padrão não encontrado" });
+          assertTemplateManager(ctx.appUser, template);
+          const extension = input.fileName.toLowerCase().match(/\.(doc|docx|pdf|ppt|pptx|xls|xlsx)$/)?.[1];
+          if (!extension)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Envie Word, PDF, PowerPoint ou Excel" });
+          const existing = await store.listTemplateAttachments(input.templateId);
+          if (existing.length >= 20)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Cada padrão aceita no máximo 20 anexos" });
+          const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+          return storagePresignPut(`delivery-templates/${template.id}/pending/${nanoid()}-${safeName}`);
+        }),
+      uploadChunk: protectedProcedure
+        .input(z.object({
+          key: z.string().min(1).max(2000),
+          expires: z.number().int().positive(),
+          signature: z.string().regex(/^[a-f0-9]{64}$/),
+          part: z.number().int().min(0),
+          totalParts: z.number().int().min(1).max(50),
+          offset: z.number().int().min(0).max(50 * 1024 * 1024),
+          totalSize: z.number().int().positive().max(50 * 1024 * 1024),
+          dataBase64: z.string().min(1).max(6_000_000),
+        }))
+        .mutation(({ input }) => storagePutLocalChunk({
+          key: input.key,
+          expires: input.expires,
+          signature: input.signature,
+          part: input.part,
+          totalParts: input.totalParts,
+          offset: input.offset,
+          totalSize: input.totalSize,
+          data: Buffer.from(input.dataBase64, "base64"),
+        })),
+      registerUpload: protectedProcedure
+        .input(z.object({
+          templateId: z.string().min(1),
+          fileName: z.string().trim().min(1).max(255),
+          contentType: z.string().max(255).default(""),
+          storageKey: z.string().min(1).max(2000),
+          sizeBytes: z.number().int().positive().max(50 * 1024 * 1024),
+        }))
+        .mutation(async ({ ctx, input }) => {
+          let template: any = await store.getTemplate(input.templateId);
+          if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Padrão não encontrado" });
+          assertTemplateManager(ctx.appUser, template);
+          if (!input.storageKey.startsWith(`delivery-templates/${template.id}/pending/`))
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Arquivo enviado para um local inválido" });
+          const existing = await store.listTemplateAttachments(input.templateId);
+          if (existing.length >= 20)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Cada padrão aceita no máximo 20 anexos" });
+          const extension = input.fileName.toLowerCase().match(/\.(doc|docx|pdf|ppt|pptx|xls|xlsx)$/)?.[1];
+          if (!extension)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Envie Word, PDF, PowerPoint ou Excel" });
+          await storageValidateUpload(input.storageKey, input.sizeBytes);
+          const buffer = await storageRead(input.storageKey);
+          if (!buffer.length || buffer.length !== input.sizeBytes)
+            throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo recebido está incompleto" });
+          const signatures: Record<string, (data: Buffer) => boolean> = {
+            pdf: data => data.subarray(0, 5).toString() === "%PDF-",
+            docx: data => data[0] === 0x50 && data[1] === 0x4b,
+            xlsx: data => data[0] === 0x50 && data[1] === 0x4b,
+            pptx: data => data[0] === 0x50 && data[1] === 0x4b,
+            doc: data => data.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1])),
+            xls: data => data.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1])),
+            ppt: data => data.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1])),
+          };
+          if (!signatures[extension]?.(buffer))
+            throw new TRPCError({ code: "BAD_REQUEST", message: "O conteúdo do arquivo não corresponde à extensão informada" });
+          template = await store.updateTemplate(template.id, {}, ctx.appUser.id);
+          const attachment = await store.createTemplateAttachment({
+            id: `dta_${nanoid(20)}`,
+            templateId: template.id,
+            templateVersion: template.version,
+            fileName: input.fileName,
+            contentType: input.contentType || "application/octet-stream",
+            sizeBytes: buffer.length,
+            checksum: createHash("sha256").update(buffer).digest("hex"),
+            storageKey: input.storageKey,
+            url: `/manus-storage/${input.storageKey}`,
             uploadedBy: ctx.appUser.id,
           });
           await publisher.enqueueTemplatePublication(template, ctx.appUser.id, "template_attachment_added");
