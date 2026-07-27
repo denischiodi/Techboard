@@ -312,12 +312,6 @@ export default function BDCQPage() {
       },
       onError: error => toast.error(error.message),
     });
-  const seedMut = trpc.workflow.bdcq.questions.seedDefaults.useMutation({
-    onSuccess: (data: any) => {
-      refetchQ();
-      toast.success(`${data.added} perguntas padrão adicionadas`);
-    },
-  });
   const bulkCreate = trpc.workflow.bdcq.questions.bulkCreate.useMutation({
     onSuccess: data => {
       Promise.all([refetchQ(), refetchA()]);
@@ -941,14 +935,6 @@ export default function BDCQPage() {
                     onChange={handleExcelImport}
                   />
                 </label>
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => seedMut.mutate({ projectId: PROJECT_ID })}
-                disabled={seedMut.isPending}
-              >
-                <Sparkles className="h-4 w-4 mr-2" />
-                Carregar Padrão SAP
               </Button>
               <Button onClick={() => openQuestionForm()}>
                 <Plus className="h-4 w-4 mr-2" />
