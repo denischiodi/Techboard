@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { getPgPool } from "./db";
-import { storageGetSignedUrl, storagePut } from "./storage";
+import { localStoragePath, storageGetSignedUrl, storagePut } from "./storage";
 
 export async function listReleases() {
   const pool = getPgPool();
@@ -126,9 +126,6 @@ export async function processRelease(releaseId: string) {
   try {
     await pool.query('UPDATE "sap_content_releases" SET "status"=\'processing\',"updatedAt"=now() WHERE "id"=$1', [releaseId]);
     const release = (await pool.query('SELECT * FROM "sap_content_releases" WHERE "id"=$1', [releaseId])).rows[0];
-    const signedUrl = await storageGetSignedUrl(release.storageKey);
-    const response = await fetch(signedUrl);
-    if (!response.ok) throw new Error(`Não foi possível ler o ZIP (${response.status})`);
     // O parser central reconhece o diretório do ZIP sem extrair arquivos no servidor.
     // A leitura usa o utilitário nativo disponível na imagem de produção.
     const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
@@ -142,11 +139,19 @@ export async function processRelease(releaseId: string) {
     const exec = promisify(execFile);
     const dir = await mkdtemp(join(tmpdir(), "sap-library-"));
     const zipPath = join(dir, "release.zip");
-    if (!response.body) throw new Error("A fonte do ZIP retornou conteúdo vazio");
-    await pipeline(
-      Readable.fromWeb(response.body as any),
-      createWriteStream(zipPath, { flags: "wx" })
-    );
+    const signedUrl = await storageGetSignedUrl(release.storageKey);
+    if (signedUrl.startsWith("local-file://")) {
+      const { copyFile } = await import("node:fs/promises");
+      await copyFile(localStoragePath(release.storageKey), zipPath);
+    } else {
+      const response = await fetch(signedUrl);
+      if (!response.ok) throw new Error(`Não foi possível ler o ZIP (${response.status})`);
+      if (!response.body) throw new Error("A fonte do ZIP retornou conteúdo vazio");
+      await pipeline(
+        Readable.fromWeb(response.body as any),
+        createWriteStream(zipPath, { flags: "wx" })
+      );
+    }
     try {
       const { stdout } = await exec("unzip", ["-Z1", zipPath], { maxBuffer: 64 * 1024 * 1024 });
       const names = stdout.split(/\r?\n/).filter(Boolean);

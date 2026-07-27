@@ -3,6 +3,9 @@
 // Downloads return /manus-storage/{key} paths served via 307 redirect.
 
 import { ENV } from "./_core/env";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 
 function getForgeConfig() {
   const forgeUrl = ENV.forgeApiUrl;
@@ -21,6 +24,32 @@ function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
 }
 
+function localStorageRoot() {
+  return resolve(process.env.LOCAL_STORAGE_DIR || "/data/techboard-storage");
+}
+
+export function localStoragePath(relKey: string): string {
+  const root = localStorageRoot();
+  const path = resolve(root, normalizeKey(relKey));
+  if (path !== root && !path.startsWith(root + sep))
+    throw new Error("Chave de armazenamento inválida");
+  return path;
+}
+
+function localUploadSignature(key: string, expires: number) {
+  return createHmac("sha256", ENV.cookieSecret)
+    .update(`${key}:${expires}`)
+    .digest("hex");
+}
+
+export function verifyLocalUploadToken(key: string, expires: number, signature: string) {
+  if (!Number.isFinite(expires) || expires < Date.now() || expires > Date.now() + 20 * 60_000)
+    return false;
+  const expected = localUploadSignature(key, expires);
+  if (signature.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+
 function appendHashSuffix(relKey: string): string {
   const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
   const lastDot = relKey.lastIndexOf(".");
@@ -31,8 +60,17 @@ function appendHashSuffix(relKey: string): string {
 export async function storagePresignPut(
   relKey: string,
 ): Promise<{ key: string; uploadUrl: string; url: string }> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
+  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+    const expires = Date.now() + 10 * 60_000;
+    const signature = localUploadSignature(key, expires);
+    return {
+      key,
+      uploadUrl: `/api/local-storage-upload?key=${encodeURIComponent(key)}&expires=${expires}&signature=${signature}`,
+      url: `/manus-storage/${key}`,
+    };
+  }
+  const { forgeUrl, forgeKey } = getForgeConfig();
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
   presignUrl.searchParams.set("path", key);
   const response = await fetch(presignUrl, {
@@ -52,8 +90,14 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
+  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+    const path = localStoragePath(key);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, data);
+    return { key, url: `/manus-storage/${key}` };
+  }
+  const { forgeUrl, forgeKey } = getForgeConfig();
 
   // 1. Get presigned PUT URL from Forge
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
@@ -96,6 +140,8 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
+  if (!ENV.forgeApiUrl || !ENV.forgeApiKey)
+    return `local-file://${localStoragePath(relKey)}`;
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = normalizeKey(relKey);
 
