@@ -828,11 +828,18 @@ ${
 }
 
 Contexto SAP de referência:
-${sapKnowledge.releaseCode
-  ? `Release ativa: ${sapKnowledge.releaseCode}\n${sapKnowledge.entries
-      .map((entry: any) => `### Fonte SAP [${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`)
-      .join("\n")}\nUse somente estas fontes para os scope items do projeto e cite o código correspondente em cada decisão.`
-  : getSapKnowledgeContext(input.module)}
+${
+  sapKnowledge.releaseCode
+    ? `Release ativa: ${sapKnowledge.releaseCode}\n${sapKnowledge.entries
+        .map(
+          (entry: any) =>
+            `### Fonte SAP [${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`
+        )
+        .join(
+          "\n"
+        )}\nUse somente estas fontes para os scope items do projeto e cite o código correspondente em cada decisão.`
+    : getSapKnowledgeContext(input.module)
+}
 
 ${DCD_FEW_SHOT_EXAMPLE}
 
@@ -920,9 +927,27 @@ export async function ensureBdcqTemplates(
     question: string;
     required?: boolean;
     scopeItemIds?: string[];
-  }> = BDCQ_TEMPLATES.filter(
-    template => !moduleSet || moduleSet.has(template.module)
-  ).map(template => ({ ...template }));
+  }> = BDCQ_TEMPLATES.flatMap(template =>
+    template.modules
+      .filter(module => !moduleSet || moduleSet.has(module))
+      .map(module => ({
+        id: template.id,
+        module,
+        category: template.category,
+        question: template.question,
+        required: template.required,
+        scopeItemIds: scopeItems
+          .filter(
+            (item: any) =>
+              String(item.module || "").toUpperCase() === module &&
+              template.scopeItemKeys.some(
+                key =>
+                  normalize(key) === normalize(item.code || item.name || "")
+              )
+          )
+          .map((item: any) => item.id),
+      }))
+  );
   for (const template of customTemplates.filter(
     (item: any) => item.active !== 0
   )) {
@@ -2025,14 +2050,8 @@ export const workflowRouter = router({
     templates: router({
       list: protectedProcedure.query(async () => {
         const custom = await wdb.listBdcqTemplateLibrary();
-        const builtIn = BDCQ_TEMPLATES.map((template, index) => ({
-          id: `builtin-${template.module}-${index}`,
-          question: template.question,
-          category: template.category,
-          modules: [template.module],
-          scopeItemKeys: [],
-          required: false,
-          active: 1,
+        const builtIn = BDCQ_TEMPLATES.map(template => ({
+          ...template,
           createdBy: "Sistema",
           builtIn: true,
         }));
@@ -2086,6 +2105,17 @@ export const workflowRouter = router({
               .default([]),
             required: z.boolean().default(false),
             active: z.number().int().min(0).max(1).optional(),
+            sapId: z.string().trim().max(64).default(""),
+            level: z.string().trim().max(16).default("L3"),
+            process: z.string().trim().max(256).default(""),
+            sscuiReference: z.string().trim().max(10000).default(""),
+            area: z.string().trim().max(256).default(""),
+            topic: z.string().trim().max(256).default(""),
+            topicDefinition: z.string().trim().max(20000).default(""),
+            solution: z.string().trim().max(10000).default(""),
+            source: z.string().trim().max(64).default("Personalizado"),
+            sourceFile: z.string().trim().max(512).default(""),
+            sourceRelease: z.string().trim().max(64).default(""),
           })
         )
         .mutation(({ ctx, input }) =>
@@ -2114,10 +2144,62 @@ export const workflowRouter = router({
                 .optional(),
               required: z.boolean().optional(),
               active: z.number().int().min(0).max(1).optional(),
+              sapId: z.string().trim().max(64).optional(),
+              level: z.string().trim().max(16).optional(),
+              process: z.string().trim().max(256).optional(),
+              sscuiReference: z.string().trim().max(10000).optional(),
+              area: z.string().trim().max(256).optional(),
+              topic: z.string().trim().max(256).optional(),
+              topicDefinition: z.string().trim().max(20000).optional(),
+              solution: z.string().trim().max(10000).optional(),
+              source: z.string().trim().max(64).optional(),
+              sourceFile: z.string().trim().max(512).optional(),
+              sourceRelease: z.string().trim().max(64).optional(),
             }),
           })
         )
         .mutation(({ input }) => wdb.updateBdcqTemplate(input.id, input.data)),
+      importLayout: adminProcedure
+        .input(
+          z.object({
+            items: z
+              .array(
+                z.object({
+                  question: z.string().trim().min(1).max(5000),
+                  questionOriginal: z.string().trim().max(5000).optional(),
+                  category: z.string().trim().max(256).default(""),
+                  modules: z.array(z.string().trim().min(1).max(128)).max(30),
+                  scopeItemKeys: z
+                    .array(z.string().trim().min(1).max(512))
+                    .max(200),
+                  sapId: z.string().trim().max(64).default(""),
+                  level: z.string().trim().max(16).default("L3"),
+                  process: z.string().trim().max(256).default(""),
+                  sscuiReference: z.string().trim().max(10000).default(""),
+                  area: z.string().trim().max(256).default(""),
+                  topic: z.string().trim().max(256).default(""),
+                  topicDefinition: z.string().trim().max(20000).default(""),
+                  solution: z.string().trim().max(10000).default(""),
+                  source: z.string().trim().max(64).default("Importado"),
+                  sourceFile: z.string().trim().max(512).default(""),
+                  sourceRelease: z.string().trim().max(64).default(""),
+                  required: z.boolean().default(false),
+                  active: z.number().int().min(0).max(1).default(1),
+                })
+              )
+              .min(1)
+              .max(5000),
+          })
+        )
+        .mutation(({ ctx, input }) =>
+          wdb.replaceBdcqTemplateLibrary(
+            input.items.map(item => ({
+              id: nanoid(),
+              ...item,
+              createdBy: ctx.appUser.name || ctx.appUser.email,
+            }))
+          )
+        ),
       delete: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteBdcqTemplate(input.id)),
@@ -2347,8 +2429,15 @@ export const workflowRouter = router({
       delete: workflowEntityProcedure("bdcq_questions", true)
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-          if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-            throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+          if (
+            ctx.appUser.role !== "admin" &&
+            (await wdb.isDeliveryMaterializationTarget(input.id))
+          )
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+            });
           return wdb.deleteBdcqQuestion(input.id);
         }),
       bulkCreate: workflowProjectProcedure(true)
@@ -2757,10 +2846,14 @@ export const workflowRouter = router({
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const workshop: any = await wdb.getWorkshopById(input.id);
-        if (ctx.appUser.role !== "admin" && (workshop?.templateId || workshop?.source === "delivery_template"))
+        if (
+          ctx.appUser.role !== "admin" &&
+          (workshop?.templateId || workshop?.source === "delivery_template")
+        )
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
+            message:
+              "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
           });
         return wdb.deleteWorkshop(input.id);
       }),
@@ -3186,8 +3279,15 @@ Retorne em formato markdown.`;
     delete: workflowEntityProcedure("dcd_documents", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        if (
+          ctx.appUser.role !== "admin" &&
+          (await wdb.isDeliveryMaterializationTarget(input.id))
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         await approvalStore.assertEntityEditable("dcd", input.id);
         return wdb.deleteDcdDocument(input.id);
       }),
@@ -3564,8 +3664,15 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
     delete: workflowEntityProcedure("gaps", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        if (
+          ctx.appUser.role !== "admin" &&
+          (await wdb.isDeliveryMaterializationTarget(input.id))
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         await approvalStore.assertEntityEditable("gap", input.id);
         return wdb.deleteGap(input.id);
       }),
@@ -3944,8 +4051,15 @@ Retorne APENAS um JSON array com objetos no formato:
     delete: workflowEntityProcedure("configurations", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        if (
+          ctx.appUser.role !== "admin" &&
+          (await wdb.isDeliveryMaterializationTarget(input.id))
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         return wdb.deleteConfiguration(input.id);
       }),
   }),
@@ -4241,7 +4355,11 @@ Retorne APENAS um JSON array com objetos no formato:
       .input(z.object({ id: z.string() }))
       .mutation(async ({ input }) => {
         if (await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         await approvalStore.assertEntityEditable("test_case", input.id);
         return wdb.deleteWorkflowTestCase(input.id);
       }),
