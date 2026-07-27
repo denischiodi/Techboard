@@ -36,6 +36,7 @@ export default function WorkshopsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [selectedWs, setSelectedWs] = useState<any>(null);
+  const [workshopToDelete, setWorkshopToDelete] = useState<any>(null);
   const [showAgenda, setShowAgenda] = useState(false);
   const [agendaSuggestion, setAgendaSuggestion] = useState("");
   const [view, setView] = useState<"cards" | "timeline">("timeline");
@@ -53,7 +54,15 @@ export default function WorkshopsPage() {
   const { data: lookups } = trpc.settings.getLookups.useQuery();
   const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
   const createWs = trpc.workflow.workshops.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); setForm(emptyWorkshopForm); toast.success("Workshop criado"); }, onError: error => toast.error(error.message) });
-  const deleteWs = trpc.workflow.workshops.delete.useMutation({ onSuccess: () => { refetch(); toast.success("Removido"); } });
+  const deleteWs = trpc.workflow.workshops.delete.useMutation({
+    onSuccess: (_data, variables) => {
+      refetch();
+      if (selectedWs?.id === variables.id) setSelectedWs(null);
+      setWorkshopToDelete(null);
+      toast.success("Workshop excluído");
+    },
+    onError: error => toast.error(error.message || "Não foi possível excluir o workshop"),
+  });
   const suggestAgenda = trpc.workflow.workshops.suggestAgenda.useMutation({
     onSuccess: (data: any) => { setAgendaSuggestion(data.suggestion); setShowAgenda(true); },
     onError: () => toast.error("Erro ao gerar sugestão"),
@@ -71,6 +80,8 @@ export default function WorkshopsPage() {
   ) && !absences.some((absence: any) => absence.resourceId === resource.id && form.date && absence.startDate <= form.date && absence.endDate >= form.date));
   const toggleParticipant = (name: string) => setForm(current => ({ ...current, participants: current.participants.includes(name) ? current.participants.filter(item => item !== name) : [...current.participants, name] }));
   const toggle = (items: string[], value: string) => items.includes(value) ? items.filter(item => item !== value) : [...items, value];
+  const isTechTemplateWorkshop = (workshop: any) => Boolean(workshop.templateId) || ["template", "delivery_template"].includes(workshop.source);
+  const canDeleteWorkshop = (workshop: any) => isAdmin || !isTechTemplateWorkshop(workshop);
   const uploadFile = async (file: File | undefined, target: "workshop" | "template") => {
     if (!file) return;
     const fileData = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
@@ -99,11 +110,11 @@ export default function WorkshopsPage() {
 
       {view === "timeline" ? <Card><CardContent className="py-5">
         {sortedWorkshops.length === 0 ? <p className="py-4 text-center text-muted-foreground">Nenhum workshop agendado.</p> : <div className="relative ml-4 border-l-2 border-primary/20 pl-6">
-          {sortedWorkshops.map((ws: any) => <button key={ws.id} className="relative mb-5 block w-full rounded-lg border bg-background p-4 text-left transition-shadow hover:shadow-md" onClick={() => setSelectedWs(ws)}>
+          {sortedWorkshops.map((ws: any) => <div key={ws.id} role="button" tabIndex={0} className="relative mb-5 block w-full cursor-pointer rounded-lg border bg-background p-4 text-left transition-shadow hover:shadow-md" onClick={() => setSelectedWs(ws)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedWs(ws); } }}>
             <span className="absolute -left-[2.05rem] top-5 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3>{ws.objective && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ws.objective}</p>}</div><div className="flex flex-wrap gap-2">{(ws.modules?.length ? ws.modules : ws.module ? [ws.module] : []).map((module: string) => <Badge key={module} variant="secondary">{module}</Badge>)}{["template", "delivery_template"].includes(ws.source) && <Badge>Configurações do Tech · v{ws.templateVersion || 1}</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge></div></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3>{ws.objective && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ws.objective}</p>}</div><div className="flex flex-wrap items-center gap-2">{(ws.modules?.length ? ws.modules : ws.module ? [ws.module] : []).map((module: string) => <Badge key={module} variant="secondary">{module}</Badge>)}{isTechTemplateWorkshop(ws) && <Badge>Configurações do Tech · v{ws.templateVersion || 1}</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge>{canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={event => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}</div></div>
             <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">{ws.duration && <span>{ws.duration}</span>}<span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.participants?.length || 0} participantes</span></div>
-          </button>)}
+          </div>)}
         </div>}
       </CardContent></Card> : <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {workshops.length === 0 ? (
@@ -113,7 +124,7 @@ export default function WorkshopsPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">{ws.title}</CardTitle>
-                {!ws.templateId && ws.source !== "delivery_template" && <Button variant="ghost" size="icon" title="Excluir workshop local" onClick={(e) => { e.stopPropagation(); deleteWs.mutate({ id: ws.id }); }}><Trash2 className="h-4 w-4" /></Button>}
+                {canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={(event) => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}
               </div>
             </CardHeader>
             <CardContent>
@@ -125,6 +136,21 @@ export default function WorkshopsPage() {
       </div>}
 
       {selectedWs && <WorkshopDetail ws={selectedWs} onClose={() => setSelectedWs(null)} onUpdated={(data) => { setSelectedWs((current: any) => ({ ...current, ...data })); refetch(); }} />}
+
+      <Dialog open={Boolean(workshopToDelete)} onOpenChange={open => { if (!open && !deleteWs.isPending) setWorkshopToDelete(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Excluir workshop?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {isTechTemplateWorkshop(workshopToDelete)
+              ? `O workshop “${workshopToDelete?.title || ""}” veio de Configurações do Tech. Esta ação remove somente a cópia deste projeto e está disponível apenas para administradores.`
+              : `O workshop “${workshopToDelete?.title || ""}” será removido deste projeto. Esta ação não pode ser desfeita.`}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWorkshopToDelete(null)} disabled={deleteWs.isPending}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => workshopToDelete && deleteWs.mutate({ id: workshopToDelete.id })} disabled={!workshopToDelete || deleteWs.isPending}>{deleteWs.isPending ? "Excluindo..." : "Excluir workshop"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent>
