@@ -64,7 +64,21 @@ export async function registerRelease(input: {
     'SELECT * FROM "sap_content_releases" WHERE "checksum"=$1 OR "releaseCode"=$2',
     [input.checksum, input.releaseCode]
   );
-  if (existing.rows[0]) return existing.rows[0];
+  if (existing.rows[0]) {
+    const release = existing.rows[0];
+    if (release.status === "failed") {
+      const refreshed = await pool.query(
+        `UPDATE "sap_content_releases"
+         SET "status"='uploaded',"fileName"=$2,"storageKey"=$3,"checksum"=$4,
+             "sizeBytes"=$5,"uploadedBy"=$6,"lastError"=NULL,"summary"='{}'::jsonb,"updatedAt"=now()
+         WHERE "id"=$1 RETURNING *`,
+        [release.id, input.fileName, input.storageKey, input.checksum, input.sizeBytes, input.uploadedBy]
+      );
+      void processRelease(release.id);
+      return refreshed.rows[0];
+    }
+    return release;
+  }
   const id = `sapr_${nanoid(20)}`;
   const result = await pool.query(
     `INSERT INTO "sap_content_releases"
