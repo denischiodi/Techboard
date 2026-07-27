@@ -168,7 +168,7 @@ export async function processRelease(releaseId: string) {
         const scopeId = `saps_${nanoid(20)}`;
         await pool.query(
           `INSERT INTO "sap_scope_catalog" ("id","releaseId","code","name","summary","primaryLanguage","reviewStatus","searchText")
-           VALUES ($1,$2,$3,$4,'','PT_BR','review_required',$4)
+           VALUES ($1,$2,$3,$4::varchar,'','PT_BR','review_required',$4::text)
            ON CONFLICT ("releaseId","code") DO NOTHING`,
           [scopeId, releaseId, code, `Scope Item ${code}`]
         );
