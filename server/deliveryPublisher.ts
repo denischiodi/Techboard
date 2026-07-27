@@ -579,7 +579,8 @@ export async function enqueueReconciliation(createdBy = "system") {
   if (!pool) return 0;
   const recent = await pool.query(
     `SELECT 1 FROM "delivery_publication_jobs"
-     WHERE "trigger"='reconciliation' AND "createdAt">now()-interval '5 minutes' LIMIT 1`,
+     WHERE "trigger"='reconciliation' AND "status" IN ('pending','processing')
+       AND "createdAt">now()-interval '5 minutes' LIMIT 1`,
   );
   if (recent.rowCount) return 0;
   const templates: any[] = await deliveryStore.listTemplates();
