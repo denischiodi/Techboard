@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createWriteStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { ENV } from "./env";
@@ -20,20 +20,40 @@ export function registerStorageProxy(app: Express) {
       return;
     }
     const declaredSize = Number(req.headers["content-length"] || 0);
-    if (declaredSize > 2 * 1024 * 1024 * 1024) {
-      res.status(413).send("O ZIP excede o limite de 2 GB");
+    const part = req.query.part === undefined ? null : Number(req.query.part);
+    const totalParts = req.query.totalParts === undefined ? null : Number(req.query.totalParts);
+    const chunked = part !== null || totalParts !== null;
+    if (chunked && (
+      !Number.isInteger(part) || !Number.isInteger(totalParts) ||
+      (part as number) < 0 || (totalParts as number) < 1 || (part as number) >= (totalParts as number)
+    )) {
+      res.status(400).send("Parte de upload inválida");
+      return;
+    }
+    const requestLimit = chunked ? 16 * 1024 * 1024 : 2 * 1024 * 1024 * 1024;
+    if (declaredSize > requestLimit) {
+      res.status(413).send(chunked ? "A parte excede 16 MB" : "O ZIP excede o limite de 2 GB");
       return;
     }
     try {
       const path = localStoragePath(key);
       await mkdir(dirname(path), { recursive: true });
+      const writePath = chunked ? `${path}.uploading` : path;
+      if (chunked && part === 0) await unlink(writePath).catch(() => undefined);
       let received = 0;
       req.on("data", chunk => {
         received += chunk.length;
-        if (received > 2 * 1024 * 1024 * 1024) req.destroy(new Error("ZIP acima de 2 GB"));
+        if (received > requestLimit) req.destroy(new Error("Parte acima do limite"));
       });
-      await pipeline(req, createWriteStream(path, { flags: "wx" }));
-      res.status(201).json({ key, sizeBytes: received });
+      await pipeline(req, createWriteStream(writePath, { flags: chunked ? "a" : "wx" }));
+      if (chunked && part === (totalParts as number) - 1) await rename(writePath, path);
+      res.status(chunked && part !== (totalParts as number) - 1 ? 202 : 201).json({
+        key,
+        part,
+        totalParts,
+        complete: !chunked || part === (totalParts as number) - 1,
+        sizeBytes: received,
+      });
     } catch (error: any) {
       console.error("[StorageProxy] local upload failed:", error);
       res.status(error?.code === "EEXIST" ? 409 : 500).send("Falha ao armazenar o ZIP");

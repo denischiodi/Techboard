@@ -43,7 +43,7 @@ function localUploadSignature(key: string, expires: number) {
 }
 
 export function verifyLocalUploadToken(key: string, expires: number, signature: string) {
-  if (!Number.isFinite(expires) || expires < Date.now() || expires > Date.now() + 20 * 60_000)
+  if (!Number.isFinite(expires) || expires < Date.now() || expires > Date.now() + 5 * 60 * 60_000)
     return false;
   const expected = localUploadSignature(key, expires);
   if (signature.length !== expected.length) return false;
@@ -62,7 +62,7 @@ export async function storagePresignPut(
 ): Promise<{ key: string; uploadUrl: string; url: string }> {
   const key = appendHashSuffix(normalizeKey(relKey));
   if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-    const expires = Date.now() + 10 * 60_000;
+    const expires = Date.now() + 4 * 60 * 60_000;
     const signature = localUploadSignature(key, expires);
     return {
       key,
