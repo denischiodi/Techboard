@@ -589,7 +589,6 @@ export default function StandardConfigurations() {
         </TabsContent>
         {(
           [
-            ["central-bdcq", ["bdcq"], "bdcq"],
             ["central-workshops", ["workshop"], "workshop"],
             ["central-dcd", ["dcd"], "dcd"],
             ["central-configurations", ["configuration"], "configuration"],
@@ -695,7 +694,7 @@ export default function StandardConfigurations() {
             )}
           </div>
         </TabsContent>
-        <TabsContent value="bdcq" className="space-y-4">
+        <TabsContent value="central-bdcq" className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
             <span className="font-semibold">Biblioteca Standard SAP.</span> As
             perguntas oficiais preservam SAP ID, Level, módulo, scope item e
