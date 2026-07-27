@@ -155,4 +155,19 @@ describe("delivery master applicability", () => {
     expect(constrained).toHaveLength(1);
     expect(constrained[0].scopeItemIds).toEqual(["scope-fi"]);
   });
+
+  it("normaliza espaços e caixa em módulo e código do scope item", async () => {
+    const { applicableOccurrences } = await import("./deliveryMasterStore");
+    const result = applicableOccurrences(
+      template({ modules: [" sd "], scopeItemKeys: [" 2eq "] }),
+      "project-1",
+      ["SD"],
+      [{ id: "scope-2eq", key: "2EQ", module: "sd" }]
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      module: "sd",
+      scopeItemIds: ["scope-2eq"],
+    });
+  });
 });

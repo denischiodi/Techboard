@@ -154,6 +154,7 @@ function GapCardContent({ gap }: { gap: any }) {
         {gap.description}
       </p>
       <div className="mt-2 flex flex-wrap gap-1">
+        {gap.source === "delivery_template" && <Badge>Configurações do Tech · v{gap.templateVersion || 1}</Badge>}
         {modules.length ? (
           modules.map((module: string) => (
             <Badge key={module} variant="outline" className="bg-background">

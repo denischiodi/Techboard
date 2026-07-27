@@ -761,6 +761,11 @@ export async function streamDcdGeneration(input: {
     sapKnowledge,
     sourceHash,
   } = await getDcdGenerationContext(input.projectId, input.module);
+  if (!sapKnowledge.releaseCode) {
+    throw new Error(
+      "Nenhuma release SAP está ativa na Biblioteca SAP. Importe, revise e ative uma release em Configurações do Tech antes de gerar um DCD fundamentado."
+    );
+  }
   const cached = await wdb.findDcdBySourceHash(input.projectId, sourceHash);
   if (cached && !input.forceRegenerate) {
     await recordWorkflowAudit(
@@ -2341,8 +2346,8 @@ export const workflowRouter = router({
         }),
       delete: workflowEntityProcedure("bdcq_questions", true)
         .input(z.object({ id: z.string() }))
-        .mutation(async ({ input }) => {
-          if (await wdb.isDeliveryMaterializationTarget(input.id))
+        .mutation(async ({ ctx, input }) => {
+          if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
             throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
           return wdb.deleteBdcqQuestion(input.id);
         }),
@@ -2750,9 +2755,9 @@ export const workflowRouter = router({
       }),
     delete: workflowEntityProcedure("workshops", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const workshop: any = await wdb.getWorkshopById(input.id);
-        if (workshop?.templateId || workshop?.source === "delivery_template")
+        if (ctx.appUser.role !== "admin" && (workshop?.templateId || workshop?.source === "delivery_template"))
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
@@ -3180,8 +3185,8 @@ Retorne em formato markdown.`;
       }),
     delete: workflowEntityProcedure("dcd_documents", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => {
-        if (await wdb.isDeliveryMaterializationTarget(input.id))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
           throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
         await approvalStore.assertEntityEditable("dcd", input.id);
         return wdb.deleteDcdDocument(input.id);
@@ -3558,8 +3563,8 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
       }),
     delete: workflowEntityProcedure("gaps", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => {
-        if (await wdb.isDeliveryMaterializationTarget(input.id))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
           throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
         await approvalStore.assertEntityEditable("gap", input.id);
         return wdb.deleteGap(input.id);
@@ -3938,8 +3943,8 @@ Retorne APENAS um JSON array com objetos no formato:
       }),
     delete: workflowEntityProcedure("configurations", true)
       .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => {
-        if (await wdb.isDeliveryMaterializationTarget(input.id))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
           throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
         return wdb.deleteConfiguration(input.id);
       }),

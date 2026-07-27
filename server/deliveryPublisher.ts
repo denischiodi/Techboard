@@ -15,11 +15,22 @@ type Summary = {
   outOfScope: number;
   failed: number;
   errors: Array<{ projectId: string; message: string }>;
+  projects: Array<{
+    projectId: string;
+    projectName: string;
+    status: "out_of_scope" | "applicable" | "created" | "updated" | "preserved" | "blocked" | "failed";
+    created: number;
+    updated: number;
+    preserved: number;
+    blocked: number;
+    message: string;
+  }>;
 };
 
 const emptySummary = (): Summary => ({
   evaluated: 0, applicable: 0, created: 0, updated: 0, preserved: 0,
   blocked: 0, outOfScope: 0, failed: 0, errors: [],
+  projects: [],
 });
 
 let publicationQueue = Promise.resolve();
@@ -165,10 +176,21 @@ async function materializeOperational(template: any, project: any, occurrence: a
       `SELECT "id" FROM "${table}" WHERE "projectId"=$1 AND "archivedAt" IS NULL
        AND lower(trim("${textColumn}"))=lower(trim($2))
        ${supportsModule ? `AND COALESCE("module",'')=COALESCE($3,'')` : ""}
-       ORDER BY "createdAt" LIMIT 1`,
+       ORDER BY "createdAt" LIMIT 2`,
       supportsModule ? [project.id, textValue, moduleValue || (table === "bdcq_questions" ? "Geral" : "")] : [project.id, textValue],
     );
-    return result.rows[0]?.id || null;
+    if (result.rows.length > 1)
+      throw new Error(`Mais de um registro legado corresponde ao padrão em ${table}; revisão administrativa necessária`);
+    const id = result.rows[0]?.id || null;
+    if (id && ["bdcq_questions", "workshops", "configurations", "gaps", "workflow_test_cases"].includes(table)) {
+      await pool.query(
+        `UPDATE "${table}" SET "templateId"=$2,"templateVersion"=$3,
+          "occurrenceKey"=$4,"source"='delivery_template',"updatedAt"=now()
+         WHERE "id"=$1`,
+        [id, template.id, template.version, occurrence.key],
+      );
+    }
+    return id;
   };
 
   if (template.type === "bdcq") {
@@ -191,6 +213,8 @@ async function materializeOperational(template: any, project: any, occurrence: a
       id: `q_${nanoid(20)}`, projectId: project.id, module: module || "Geral",
       category: String(payload.category || ""), question: String(payload.question || template.title),
       templateId: template.id, scopeItemIds: occurrence.scopeItemIds || [],
+      templateVersion: template.version, occurrenceKey: occurrence.key,
+      source: "delivery_template",
       required: template.required, isDefault: 1, sortOrder: template.sortOrder,
     } as any);
     return { id: row.id, state: "created" };
@@ -225,7 +249,8 @@ async function materializeOperational(template: any, project: any, occurrence: a
         url: file.url,
         contentType: file.contentType,
       })),
-      templateId: template.id, source: "delivery_template", status: "Planejado",
+      templateId: template.id, templateVersion: template.version,
+      occurrenceKey: occurrence.key, source: "delivery_template", status: "Planejado",
     } as any);
     return { id: row.id, state: "created" };
   }
@@ -248,7 +273,8 @@ async function materializeOperational(template: any, project: any, occurrence: a
       id: `cfg_${nanoid(20)}`, projectId: project.id, module,
       category: payload.category || "Configuração", description: template.description || template.title,
       status: "Pendente", templateId: template.id, scopeItemIds: occurrence.scopeItemIds || [],
-      source: "delivery_template",
+      source: "delivery_template", templateVersion: template.version,
+      occurrenceKey: occurrence.key,
     } as any);
     return { id: row.id, state: "created" };
   }
@@ -271,6 +297,8 @@ async function materializeOperational(template: any, project: any, occurrence: a
       id: `gap_${nanoid(20)}`, projectId: project.id, module, modules: module ? [module] : [],
       description: template.description || template.title, impact: payload.impact || "Médio",
       responsible: payload.responsible || "", resolution: payload.strategy || "", status: "Aberto",
+      templateId: template.id, templateVersion: template.version,
+      occurrenceKey: occurrence.key, source: "delivery_template",
     } as any);
     return { id: row.id, state: "created" };
   }
@@ -298,6 +326,8 @@ async function materializeOperational(template: any, project: any, occurrence: a
       steps: Array.isArray(payload.steps) ? payload.steps.join("\n") : payload.steps || template.instructions,
       expectedResult: payload.expectedResult || template.completionCriteria,
       evidence: (template.evidenceRequirements || []).join("\n"), status: "Não iniciado",
+      templateId: template.id, templateVersion: template.version,
+      occurrenceKey: occurrence.key, source: "delivery_template",
     } as any);
     return { id: row.id, state: "created" };
   }
@@ -343,7 +373,7 @@ async function materializeOperational(template: any, project: any, occurrence: a
       participantUserIds: current?.participantUserIds || [creator.id],
       dueDate: occurrence.dueDate || dueDate(project.startDate, template.dueOffsetDays),
       sourceType: "delivery_template", sourceKey,
-      sourceUrl: `/techlead/gp-track?projectId=${encodeURIComponent(project.id)}&phase=${encodeURIComponent(template.phase)}`,
+      sourceUrl: `/techboard/techlead/gp-track?projectId=${encodeURIComponent(project.id)}&phase=${encodeURIComponent(template.phase)}`,
       sourceResolved: false,
     } as any);
     return { id: row?.id || current?.id, state: current ? "updated" : "created" };
@@ -373,8 +403,19 @@ async function publishTemplate(template: any, options: { confirmedProjectId?: st
   const projects = await plannerStore.listProjects();
   for (const project of projects as any[]) {
     summary.evaluated++;
+    const projectResult = {
+      projectId: project.id,
+      projectName: project.name || project.id,
+      status: "applicable" as Summary["projects"][number]["status"],
+      created: 0, updated: 0, preserved: 0, blocked: 0, message: "",
+    };
     if (inactiveProject(project) || (options.confirmedProjectId && project.id !== options.confirmedProjectId)) {
       summary.outOfScope++;
+      projectResult.status = "out_of_scope";
+      projectResult.message = inactiveProject(project)
+        ? "Projeto concluído ou cancelado"
+        : "Projeto diferente do selecionado";
+      summary.projects.push(projectResult);
       continue;
     }
     try {
@@ -388,6 +429,9 @@ async function publishTemplate(template: any, options: { confirmedProjectId?: st
         occurrences = occurrences.map(occurrence => activityOccurrence(template, occurrence));
       if (!occurrences.length) {
         summary.outOfScope++;
+        projectResult.status = "out_of_scope";
+        projectResult.message = "Módulo, scope item ou restrição de projeto não corresponde";
+        summary.projects.push(projectResult);
         continue;
       }
       summary.applicable++;
@@ -395,6 +439,7 @@ async function publishTemplate(template: any, options: { confirmedProjectId?: st
         const existing = await existingMaterialization(template.id, project.id, occurrence.key);
         if (existing?.state === "customized" || existing?.state === "archived") {
           summary.preserved++;
+          projectResult.preserved++;
           continue;
         }
         const completed = await stageIsComplete(project.id, template.type, template.stage);
@@ -405,6 +450,7 @@ async function publishTemplate(template: any, options: { confirmedProjectId?: st
             state: "blocked", reason: "Etapa 100% concluída",
           });
           summary.blocked++;
+          projectResult.blocked++;
           continue;
         }
         const result = await materializeOperational(template, project, occurrence, existing);
@@ -415,13 +461,30 @@ async function publishTemplate(template: any, options: { confirmedProjectId?: st
           reason: result.state === "preserved" ? "Execução local preservada" : "",
           confirmed: options.confirmedProjectId === project.id,
         });
-        if (result.state === "created") summary.created++;
-        else if (result.state === "updated") summary.updated++;
-        else summary.preserved++;
+        if (result.state === "created") {
+          summary.created++;
+          projectResult.created++;
+        } else if (result.state === "updated") {
+          summary.updated++;
+          projectResult.updated++;
+        } else {
+          summary.preserved++;
+          projectResult.preserved++;
+        }
       }
+      projectResult.status = projectResult.created ? "created"
+        : projectResult.updated ? "updated"
+        : projectResult.blocked ? "blocked"
+        : projectResult.preserved ? "preserved"
+        : "applicable";
+      summary.projects.push(projectResult);
     } catch (error) {
       summary.failed++;
-      summary.errors.push({ projectId: project.id, message: error instanceof Error ? error.message : String(error) });
+      const message = error instanceof Error ? error.message : String(error);
+      summary.errors.push({ projectId: project.id, message });
+      projectResult.status = "failed";
+      projectResult.message = message;
+      summary.projects.push(projectResult);
     }
   }
   return summary;
@@ -480,6 +543,20 @@ export async function processPublicationJob(id: string) {
     );
     throw error;
   }
+}
+
+export async function retryPublicationJob(id: string) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const reset = await pool.query(
+    `UPDATE "delivery_publication_jobs"
+     SET "status"='pending',"lastError"='',"finishedAt"=NULL,"updatedAt"=now()
+     WHERE "id"=$1 AND "status" IN ('failed','completed_with_warnings','completed')
+     RETURNING "id"`,
+    [id],
+  );
+  if (!reset.rowCount) throw new Error("Esta publicação ainda está em processamento");
+  return processPublicationJob(id);
 }
 
 export async function resumePendingPublications() {

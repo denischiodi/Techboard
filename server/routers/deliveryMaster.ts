@@ -288,7 +288,9 @@ export const deliveryMasterRouter = router({
       .query(({ input }) => publisher.listPublicationHistory(input.limit)),
     retry: adminProcedure
       .input(z.object({ id: z.string().min(1) }))
-      .mutation(({ input }) => publisher.processPublicationJob(input.id)),
+      .mutation(({ input }) => publisher.retryPublicationJob(input.id)),
+    reconcile: adminProcedure
+      .mutation(({ ctx }) => publisher.enqueueReconciliation(ctx.appUser.id)),
     blocked: protectedProcedure
       .input(z.object({ projectId: z.string().min(1) }))
       .query(async ({ ctx, input }) => {

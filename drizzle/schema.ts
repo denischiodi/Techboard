@@ -335,6 +335,9 @@ export const bdcqQuestions = mysqlTable("bdcq_questions", {
   category: varchar("category", { length: 256 }).notNull().default(""),
   question: text("question").notNull(),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  source: varchar("source", { length: 32 }).notNull().default("manual"),
   scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
   consultantResourceId: varchar("consultantResourceId", { length: 64 })
     .notNull()
@@ -544,6 +547,8 @@ export const workshops = mysqlTable("workshops", {
     .$type<WorkshopPresentationFile[]>()
     .default([]),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
   source: varchar("source", { length: 32 }).notNull().default("manual"),
   scheduledDate: varchar("scheduledDate", { length: 10 }).notNull().default(""),
   duration: varchar("duration", { length: 64 }).notNull().default(""),
@@ -637,6 +642,10 @@ export const gaps = mysqlTable("gaps", {
   attachments: json("attachments").$type<string[]>().default([]),
   resolution: text("resolution"),
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  source: varchar("source", { length: 32 }).notNull().default("manual"),
   archivedAt: timestamp("archivedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -655,6 +664,8 @@ export const configurations = mysqlTable("configurations", {
   status: varchar("status", { length: 64 }).notNull().default("Pendente"),
   notes: text("notes"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
   bdcqQuestionId: varchar("bdcqQuestionId", { length: 64 })
     .notNull()
     .default(""),
@@ -684,6 +695,10 @@ export const workflowTestCases = mysqlTable("workflow_test_cases", {
   responsible: varchar("responsible", { length: 255 }).notNull().default(""),
   evidence: text("evidence"),
   status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  source: varchar("source", { length: 32 }).notNull().default("manual"),
   executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
   archivedAt: timestamp("archivedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

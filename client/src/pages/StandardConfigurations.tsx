@@ -169,25 +169,43 @@ function PublicationHistory() {
     },
     onError: error => toast.error(error.message),
   });
+  const reconcile = trpc.workflow.delivery.publications.reconcile.useMutation({
+    onSuccess: async count => {
+      await utils.workflow.delivery.publications.history.invalidate();
+      toast.success(`${count} padrão(ões) enviados para reconciliação`);
+    },
+    onError: error => toast.error(error.message),
+  });
   const statusLabel: Record<string, string> = {
     pending: "Aguardando", processing: "Processando", completed: "Concluído",
     completed_with_warnings: "Concluído com alertas", failed: "Falhou", cancelled: "Cancelado",
   };
   if (isLoading) return <Empty label="Carregando histórico de publicação..." />;
   return <div className="space-y-3">
-    <div className="rounded-lg border bg-muted/30 p-4">
-      <h2 className="font-semibold">Publicação automática</h2>
-      <p className="text-sm text-muted-foreground">Cada alteração é distribuída aos projetos compatíveis. Etapas concluídas e personalizações locais são preservadas.</p>
+    <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div><h2 className="font-semibold">Publicação automática</h2>
+      <p className="text-sm text-muted-foreground">Cada alteração é distribuída aos projetos compatíveis. Etapas concluídas e personalizações locais são preservadas.</p></div>
+      <Button variant="outline" disabled={reconcile.isPending} onClick={() => reconcile.mutate()}>
+        <RefreshCw className="mr-2 h-4 w-4" />Reconciliar padrões ativos
+      </Button>
     </div>
     {jobs.map((job: any) => {
       const summary = job.summary || {};
-      return <Card key={job.id}><CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+      const projects = summary.projects || [];
+      return <Card key={job.id}><CardContent className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div>
           <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{job.title || "Padrão removido"}</span><Badge variant="outline">{job.type}</Badge><Badge variant={job.status === "failed" ? "destructive" : "secondary"}>{statusLabel[job.status] || job.status}</Badge><Badge variant="outline">v{job.templateVersion}</Badge></div>
-          <p className="mt-2 text-xs text-muted-foreground">{summary.evaluated || 0} projetos avaliados · {summary.created || 0} criados · {summary.updated || 0} atualizados · {summary.preserved || 0} preservados · {summary.blocked || 0} bloqueados</p>
+          <p className="mt-2 text-xs text-muted-foreground">{summary.evaluated || 0} avaliados · {summary.applicable || 0} aplicáveis · {summary.created || 0} criados · {summary.updated || 0} atualizados · {summary.preserved || 0} preservados · {summary.blocked || 0} bloqueados · {summary.outOfScope || 0} fora do escopo · {summary.failed || 0} falhas</p>
           {job.lastError && <p className="mt-1 text-sm text-destructive">{job.lastError}</p>}
         </div>
-        {job.status === "failed" && <Button variant="outline" onClick={() => retry.mutate({ id: job.id })} disabled={retry.isPending}><RefreshCw className="mr-2 h-4 w-4" />Reprocessar</Button>}
+        {["failed", "completed_with_warnings", "completed"].includes(job.status) && <Button variant="outline" onClick={() => retry.mutate({ id: job.id })} disabled={retry.isPending}><RefreshCw className="mr-2 h-4 w-4" />Reprocessar</Button>}
+        </div>
+        {projects.length > 0 && <details className="rounded-md border bg-muted/20 p-3"><summary className="cursor-pointer text-sm font-medium">Detalhes por projeto ({projects.length})</summary>
+          <div className="mt-3 space-y-2">{projects.map((project: any) => <div key={`${job.id}-${project.projectId}`} className="rounded border bg-background p-2 text-xs">
+            <span className="font-medium">{project.projectName || project.projectId}</span>
+            <span className="ml-2">{project.status === "out_of_scope" ? "Fora do escopo" : project.status === "failed" ? "Falhou" : project.status === "created" ? "Criado" : project.status === "updated" ? "Atualizado" : project.status === "preserved" ? "Preservado" : project.status === "blocked" ? "Bloqueado" : "Aplicável"}{project.message ? ` · ${project.message}` : ""}</span>
+          </div>)}</div>
+        </details>}
       </CardContent></Card>;
     })}
     {!jobs.length && <Empty label="Nenhuma publicação registrada." />}

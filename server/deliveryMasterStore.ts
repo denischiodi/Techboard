@@ -309,21 +309,25 @@ export function applicableOccurrences(
   modules: string[],
   scopeItems: TrailScopeItem[]
 ) {
+  const normalizeKey = (value: unknown) =>
+    String(value || "").trim().toLocaleUpperCase("pt-BR");
   if (!template.active) return [];
   if (template.projectIds?.length && !template.projectIds.includes(projectId))
     return [];
   const allowedModules = new Set(
-    (template.modules || []).map((value: string) => value.toUpperCase())
+    (template.modules || []).map(normalizeKey)
   );
-  const allowedScopes = new Set(template.scopeItemKeys || []);
+  const allowedScopes = new Set(
+    (template.scopeItemKeys || []).map(normalizeKey)
+  );
 
   if (allowedScopes.size) {
     return scopeItems
-      .filter(item => allowedScopes.has(item.key))
+      .filter(item => allowedScopes.has(normalizeKey(item.key)))
       .filter(
         item =>
           !allowedModules.size ||
-          allowedModules.has(String(item.module || "").toUpperCase())
+          allowedModules.has(normalizeKey(item.module))
       )
       .map(item => ({
         key: occurrenceKey(template.id, item.module || "", [item.id]),
@@ -335,7 +339,7 @@ export function applicableOccurrences(
   if (allowedModules.size) {
     return [
       ...new Set(
-        modules.filter(module => allowedModules.has(module.toUpperCase()))
+        modules.filter(module => allowedModules.has(normalizeKey(module)))
       ),
     ].map(module => ({
       key: occurrenceKey(template.id, module, []),

@@ -720,7 +720,7 @@ export default function TestsPage() {
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline">{scenario.code || "E2E"}</Badge>
+                  <div className="flex gap-1"><Badge variant="outline">{scenario.code || "E2E"}</Badge>{scenario.source === "delivery_template" && <Badge>Configurações do Tech · v{scenario.templateVersion || 1}</Badge>}</div>
                   <ChevronRight className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <CardTitle className="text-lg">{scenario.title}</CardTitle>
