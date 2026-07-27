@@ -280,11 +280,22 @@ export default function BDCQPage() {
   const createA = trpc.workflow.bdcq.answers.create.useMutation();
   const updateA = trpc.workflow.bdcq.answers.update.useMutation();
   const uploadAttachment = trpc.workflow.upload.useMutation();
-  const { data: answerHistory = [] } =
+  const { data: answerHistory = [], refetch: refetchAnswerHistory } =
     trpc.workflow.bdcq.answers.history.useQuery(
       { answerId: showHistory?.id || "" },
       { enabled: Boolean(showHistory?.id) }
     );
+  const restoreAnswerVersion =
+    trpc.workflow.bdcq.answers.restoreVersion.useMutation({
+      onSuccess: async restored => {
+        await Promise.all([refetchA(), refetchAnswerHistory()]);
+        setShowHistory((current: any) =>
+          current?.id === restored.id ? { ...current, ...restored } : current
+        );
+        toast.success("Versão restaurada como resposta atual");
+      },
+      onError: error => toast.error(error.message),
+    });
   const seedMut = trpc.workflow.bdcq.questions.seedDefaults.useMutation({
     onSuccess: (data: any) => {
       refetchQ();
@@ -2387,11 +2398,32 @@ export default function BDCQPage() {
             <div className="space-y-3">
               {answerHistory.map((version: any) => (
                 <div key={version.id} className="rounded-md border p-3">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-medium">Versão anterior</p>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(version.createdAt).toLocaleString("pt-BR")}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(version.createdAt).toLocaleString("pt-BR")}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={restoreAnswerVersion.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Restaurar esta versão como a resposta atual?"
+                            )
+                          )
+                            restoreAnswerVersion.mutate({
+                              answerId: showHistory.id,
+                              historyId: version.id,
+                            });
+                        }}
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Restaurar
+                      </Button>
+                    </div>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm">
                     {version.answer}

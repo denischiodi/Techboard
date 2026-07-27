@@ -657,6 +657,20 @@ export async function listBdcqAnswerHistory(answerId: string) {
   );
   return result.rows as Array<typeof bdcqAnswerHistory.$inferSelect>;
 }
+export async function getBdcqAnswerHistoryVersion(
+  answerId: string,
+  historyId: string
+) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT * FROM "bdcq_answer_history"
+     WHERE "id" = $1 AND "answerId" = $2
+     LIMIT 1`,
+    [historyId, answerId]
+  );
+  return (result.rows[0] as typeof bdcqAnswerHistory.$inferSelect) || null;
+}
 export async function deleteBdcqAnswer(id: string) {
   return deleteRow("bdcq_answers", id);
 }

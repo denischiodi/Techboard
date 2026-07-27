@@ -3069,6 +3069,53 @@ export const workflowRouter = router({
           );
           return wdb.listBdcqAnswerHistory(input.answerId);
         }),
+      restoreVersion: workflowEntityProcedure(
+        "bdcq_answers",
+        true,
+        "answerId",
+        "fillAssignedBdcq"
+      )
+        .input(
+          z.object({
+            answerId: z.string(),
+            historyId: z.string(),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          const answer = await wdb.getBdcqAnswerById(input.answerId);
+          if (!answer)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Resposta não encontrada",
+            });
+          await assertCanAnswerBdcq(
+            ctx.appUser,
+            answer.projectId,
+            answer.questionId
+          );
+          await approvalStore.assertEntityEditable(
+            "bdcq_answer",
+            input.answerId
+          );
+          const version = await wdb.getBdcqAnswerHistoryVersion(
+            input.answerId,
+            input.historyId
+          );
+          if (!version)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Versão do histórico não encontrada",
+            });
+          return wdb.updateBdcqAnswerWithHistory(
+            input.answerId,
+            {
+              answer: version.answer,
+              answeredBy: version.answeredBy || "",
+            },
+            nanoid(),
+            `Restaurado por ${ctx.user.name || ctx.user.email || "Usuário"}`
+          );
+        }),
       delete: workflowEntityProcedure("bdcq_answers", true)
         .input(z.object({ id: z.string() }))
         .mutation(async ({ input }) => {

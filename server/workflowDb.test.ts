@@ -116,4 +116,18 @@ describe("workflow PostgreSQL persistence", () => {
     expect(clientQuery.mock.calls.some(call => String(call[0]).includes('UPDATE "bdcq_answers"'))).toBe(true);
     expect(release).toHaveBeenCalled();
   });
+
+  it("loads a BDCQ history version only for its answer", async () => {
+    const db = await import("./routers/workflowDb");
+    query.mockResolvedValueOnce({
+      rows: [{ id: "history-1", answerId: "answer-1", answer: "Anterior" }],
+    });
+    const version = await db.getBdcqAnswerHistoryVersion(
+      "answer-1",
+      "history-1"
+    );
+    expect(query.mock.calls[0][0]).toContain('"id" = $1 AND "answerId" = $2');
+    expect(query.mock.calls[0][1]).toEqual(["history-1", "answer-1"]);
+    expect(version).toMatchObject({ id: "history-1", answer: "Anterior" });
+  });
 });
