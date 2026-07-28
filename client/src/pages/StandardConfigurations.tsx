@@ -217,9 +217,11 @@ function SapScopeLibrary() {
   const [search, setSearch] = useState("");
   const [releaseCode, setReleaseCode] = useState("2608_BR");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const { data: releases = [] } = trpc.workflow.sapLibrary.releases.useQuery();
   const { data: scopes = [], isLoading } = trpc.workflow.sapLibrary.scopes.useQuery({ search, limit: 300 });
   const prepare = trpc.workflow.sapLibrary.prepareUpload.useMutation();
+  const uploadChunk = trpc.workflow.sapLibrary.uploadChunk.useMutation();
   const register = trpc.workflow.sapLibrary.registerUpload.useMutation();
   const activate = trpc.workflow.sapLibrary.activate.useMutation({
     onSuccess: async () => {
@@ -242,14 +244,40 @@ function SapScopeLibrary() {
     if (!file) return;
     if (!/\.zip$/i.test(file.name)) return toast.error("Selecione um arquivo ZIP");
     setUploading(true);
+    setUploadProgress(0);
     try {
       const target = await prepare.mutateAsync({ releaseCode, fileName: file.name });
-      const response = await fetch(target.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/zip" },
-        body: file,
-      });
-      if (!response.ok) throw new Error(`Falha no envio do ZIP (${response.status})`);
+      const chunkSize = target.localUpload ? 2 * 1024 * 1024 : 8 * 1024 * 1024;
+      const totalParts = Math.ceil(file.size / chunkSize);
+      for (let part = 0; part < totalParts; part++) {
+        const chunk = file.slice(part * chunkSize, Math.min(file.size, (part + 1) * chunkSize));
+        if (target.localUpload) {
+          const bytes = new Uint8Array(await chunk.arrayBuffer());
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += 32_768)
+            binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+          await uploadChunk.mutateAsync({
+            key: target.key,
+            expires: target.localUpload.expires,
+            signature: target.localUpload.signature,
+            part,
+            totalParts,
+            dataBase64: btoa(binary),
+          });
+        } else {
+          const separator = target.uploadUrl.includes("?") ? "&" : "?";
+          const response = await fetch(`${target.uploadUrl}${separator}part=${part}&totalParts=${totalParts}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: chunk,
+          });
+          if (!response.ok) {
+            const detail = await response.text().catch(() => "");
+            throw new Error(`Falha no envio da parte ${part + 1}/${totalParts} (${response.status})${detail ? `: ${detail}` : ""}`);
+          }
+        }
+        setUploadProgress(Math.round(((part + 1) / totalParts) * 100));
+      }
       await register.mutateAsync({
         releaseCode,
         country: "BR",
@@ -263,6 +291,7 @@ function SapScopeLibrary() {
       toast.error(error?.message || "Não foi possível enviar o ZIP");
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
   const statusLabel: Record<string, string> = {
@@ -278,7 +307,7 @@ function SapScopeLibrary() {
         </div>
         <div><Label>Release</Label><Input value={releaseCode} onChange={event => setReleaseCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))} placeholder="2608_BR" /></div>
         <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
-          <Upload className="mr-2 h-4 w-4" />{uploading ? "Enviando..." : "Enviar ZIP"}
+          <Upload className="mr-2 h-4 w-4" />{uploading ? `Enviando ${uploadProgress}%` : "Enviar ZIP"}
           <input type="file" accept=".zip,application/zip" className="hidden" disabled={uploading || !releaseCode} onChange={event => { void uploadZip(event.target.files?.[0]); event.currentTarget.value = ""; }} />
         </label>
       </CardContent>

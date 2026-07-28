@@ -30,6 +30,11 @@ import * as approvalStore from "../approvalStore";
 import { deliveryMasterRouter } from "./deliveryMaster";
 import { sapLibraryRouter } from "./sapLibrary";
 import { getKnowledgeContext } from "../sapLibraryStore";
+import {
+  generateMinutesDocx,
+  generateMinutesPdf,
+  normalizeMeetingMinutesData,
+} from "../meetingMinutesDocuments";
 
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
@@ -330,6 +335,11 @@ const workshopFileSchema = z.object({
   name: z.string().trim().min(1).max(255),
   url: z.string().trim().min(1).max(2048),
   contentType: z.string().trim().max(255).default("application/octet-stream"),
+});
+
+const workshopAttachmentSchema = workshopFileSchema.extend({
+  size: z.number().int().nonnegative().max(15 * 1024 * 1024),
+  uploadedAt: z.string().datetime(),
 });
 
 const workshopTemplateDataSchema = z.object({
@@ -828,11 +838,18 @@ ${
 }
 
 Contexto SAP de referência:
-${sapKnowledge.releaseCode
-  ? `Release ativa: ${sapKnowledge.releaseCode}\n${sapKnowledge.entries
-      .map((entry: any) => `### Fonte SAP [${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`)
-      .join("\n")}\nUse somente estas fontes para os scope items do projeto e cite o código correspondente em cada decisão.`
-  : getSapKnowledgeContext(input.module)}
+${
+  sapKnowledge.releaseCode
+    ? `Release ativa: ${sapKnowledge.releaseCode}\n${sapKnowledge.entries
+        .map(
+          (entry: any) =>
+            `### Fonte SAP [${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`
+        )
+        .join(
+          "\n"
+        )}\nUse somente estas fontes para os scope items do projeto e cite o código correspondente em cada decisão.`
+    : getSapKnowledgeContext(input.module)
+}
 
 ${DCD_FEW_SHOT_EXAMPLE}
 
@@ -920,9 +937,27 @@ export async function ensureBdcqTemplates(
     question: string;
     required?: boolean;
     scopeItemIds?: string[];
-  }> = BDCQ_TEMPLATES.filter(
-    template => !moduleSet || moduleSet.has(template.module)
-  ).map(template => ({ ...template }));
+  }> = BDCQ_TEMPLATES.flatMap(template =>
+    template.modules
+      .filter(module => !moduleSet || moduleSet.has(module))
+      .map(module => ({
+        id: template.id,
+        module,
+        category: template.category,
+        question: template.question,
+        required: template.required,
+        scopeItemIds: scopeItems
+          .filter(
+            (item: any) =>
+              String(item.module || "").toUpperCase() === module &&
+              template.scopeItemKeys.some(
+                key =>
+                  normalize(key) === normalize(item.code || item.name || "")
+              )
+          )
+          .map((item: any) => item.id),
+      }))
+  );
   for (const template of customTemplates.filter(
     (item: any) => item.active !== 0
   )) {
@@ -2025,14 +2060,8 @@ export const workflowRouter = router({
     templates: router({
       list: protectedProcedure.query(async () => {
         const custom = await wdb.listBdcqTemplateLibrary();
-        const builtIn = BDCQ_TEMPLATES.map((template, index) => ({
-          id: `builtin-${template.module}-${index}`,
-          question: template.question,
-          category: template.category,
-          modules: [template.module],
-          scopeItemKeys: [],
-          required: false,
-          active: 1,
+        const builtIn = BDCQ_TEMPLATES.map(template => ({
+          ...template,
           createdBy: "Sistema",
           builtIn: true,
         }));
@@ -2086,6 +2115,17 @@ export const workflowRouter = router({
               .default([]),
             required: z.boolean().default(false),
             active: z.number().int().min(0).max(1).optional(),
+            sapId: z.string().trim().max(64).default(""),
+            level: z.string().trim().max(16).default("L3"),
+            process: z.string().trim().max(256).default(""),
+            sscuiReference: z.string().trim().max(10000).default(""),
+            area: z.string().trim().max(256).default(""),
+            topic: z.string().trim().max(256).default(""),
+            topicDefinition: z.string().trim().max(20000).default(""),
+            solution: z.string().trim().max(10000).default(""),
+            source: z.string().trim().max(64).default("Personalizado"),
+            sourceFile: z.string().trim().max(512).default(""),
+            sourceRelease: z.string().trim().max(64).default(""),
           })
         )
         .mutation(({ ctx, input }) =>
@@ -2114,10 +2154,62 @@ export const workflowRouter = router({
                 .optional(),
               required: z.boolean().optional(),
               active: z.number().int().min(0).max(1).optional(),
+              sapId: z.string().trim().max(64).optional(),
+              level: z.string().trim().max(16).optional(),
+              process: z.string().trim().max(256).optional(),
+              sscuiReference: z.string().trim().max(10000).optional(),
+              area: z.string().trim().max(256).optional(),
+              topic: z.string().trim().max(256).optional(),
+              topicDefinition: z.string().trim().max(20000).optional(),
+              solution: z.string().trim().max(10000).optional(),
+              source: z.string().trim().max(64).optional(),
+              sourceFile: z.string().trim().max(512).optional(),
+              sourceRelease: z.string().trim().max(64).optional(),
             }),
           })
         )
         .mutation(({ input }) => wdb.updateBdcqTemplate(input.id, input.data)),
+      importLayout: adminProcedure
+        .input(
+          z.object({
+            items: z
+              .array(
+                z.object({
+                  question: z.string().trim().min(1).max(5000),
+                  questionOriginal: z.string().trim().max(5000).optional(),
+                  category: z.string().trim().max(256).default(""),
+                  modules: z.array(z.string().trim().min(1).max(128)).max(30),
+                  scopeItemKeys: z
+                    .array(z.string().trim().min(1).max(512))
+                    .max(200),
+                  sapId: z.string().trim().max(64).default(""),
+                  level: z.string().trim().max(16).default("L3"),
+                  process: z.string().trim().max(256).default(""),
+                  sscuiReference: z.string().trim().max(10000).default(""),
+                  area: z.string().trim().max(256).default(""),
+                  topic: z.string().trim().max(256).default(""),
+                  topicDefinition: z.string().trim().max(20000).default(""),
+                  solution: z.string().trim().max(10000).default(""),
+                  source: z.string().trim().max(64).default("Importado"),
+                  sourceFile: z.string().trim().max(512).default(""),
+                  sourceRelease: z.string().trim().max(64).default(""),
+                  required: z.boolean().default(false),
+                  active: z.number().int().min(0).max(1).default(1),
+                })
+              )
+              .min(1)
+              .max(5000),
+          })
+        )
+        .mutation(({ ctx, input }) =>
+          wdb.replaceBdcqTemplateLibrary(
+            input.items.map(item => ({
+              id: nanoid(),
+              ...item,
+              createdBy: ctx.appUser.name || ctx.appUser.email,
+            }))
+          )
+        ),
       delete: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteBdcqTemplate(input.id)),
@@ -2347,8 +2439,15 @@ export const workflowRouter = router({
       delete: workflowEntityProcedure("bdcq_questions", true)
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-          if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-            throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+          if (
+            ctx.appUser.role !== "admin" &&
+            (await wdb.isDeliveryMaterializationTarget(input.id))
+          )
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+            });
           return wdb.deleteBdcqQuestion(input.id);
         }),
       bulkCreate: workflowProjectProcedure(true)
@@ -2670,11 +2769,13 @@ export const workflowRouter = router({
           scheduledDate: z.string().optional(),
           duration: z.string().optional(),
           participants: z.array(z.string()).optional(),
+          participantEmails: z.array(z.string().email()).max(500).optional(),
           agenda: z.array(z.string()).optional(),
           expectedOutcomes: z.array(z.string()).max(100).optional(),
           prerequisites: z.array(z.string()).max(100).optional(),
           requiredRoles: z.array(z.string()).max(100).optional(),
           presentationFiles: z.array(workshopFileSchema).max(20).optional(),
+          attachments: z.array(workshopAttachmentSchema).max(20).optional(),
           status: workshopStatusSchema.optional(),
           notes: z.string().optional(),
         })
@@ -2699,11 +2800,13 @@ export const workflowRouter = router({
           scheduledDate: input.scheduledDate || "",
           duration: input.duration || "",
           participants: input.participants || [],
+          participantEmails: input.participantEmails || [],
           agenda: input.agenda || [],
           expectedOutcomes: input.expectedOutcomes || [],
           prerequisites: input.prerequisites || [],
           requiredRoles: input.requiredRoles || [],
           presentationFiles: input.presentationFiles || [],
+          attachments: input.attachments || [],
           templateId: "",
           source: "manual",
           status: input.status || "Planejado",
@@ -2724,11 +2827,13 @@ export const workflowRouter = router({
             scheduledDate: z.string().optional(),
             duration: z.string().optional(),
             participants: z.array(z.string()).optional(),
+            participantEmails: z.array(z.string().email()).max(500).optional(),
             agenda: z.array(z.string()).optional(),
             expectedOutcomes: z.array(z.string()).max(100).optional(),
             prerequisites: z.array(z.string()).max(100).optional(),
             requiredRoles: z.array(z.string()).max(100).optional(),
             presentationFiles: z.array(workshopFileSchema).max(20).optional(),
+            attachments: z.array(workshopAttachmentSchema).max(20).optional(),
             status: workshopStatusSchema.optional(),
             notes: z.string().optional(),
           }),
@@ -2757,10 +2862,14 @@ export const workflowRouter = router({
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const workshop: any = await wdb.getWorkshopById(input.id);
-        if (ctx.appUser.role !== "admin" && (workshop?.templateId || workshop?.source === "delivery_template"))
+        if (
+          ctx.appUser.role !== "admin" &&
+          (workshop?.templateId || workshop?.source === "delivery_template")
+        )
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
+            message:
+              "Workshops originados em Configurações do Tech não podem ser excluídos no projeto; inative o padrão ou personalize a cópia",
           });
         return wdb.deleteWorkshop(input.id);
       }),
@@ -2799,6 +2908,42 @@ export const workflowRouter = router({
           url: stored.url,
           contentType: input.contentType,
         };
+      }),
+    uploadAttachment: workflowProjectProcedure(true)
+      .input(z.object({
+        projectId: z.string().min(1),
+        workshopId: z.string().min(1),
+        fileName: z.string().trim().min(1).max(255),
+        contentType: z.string().trim().max(255),
+        fileData: z.string().max(21_000_000),
+      }))
+      .mutation(async ({ input }) => {
+        const workshop: any = await wdb.getWorkshopById(input.workshopId);
+        if (!workshop || workshop.projectId !== input.projectId)
+          throw new TRPCError({ code: "NOT_FOUND", message: "Workshop não encontrado" });
+        const allowedExtension = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|png|jpe?g|webp)$/i;
+        if (!allowedExtension.test(input.fileName))
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Formato não permitido. Envie documento Office, PDF ou imagem." });
+        const buffer = Buffer.from(input.fileData.replace(/^data:[^;]+;base64,/, ""), "base64");
+        if (!buffer.length || buffer.length > 15 * 1024 * 1024)
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O arquivo deve ter até 15 MB" });
+        const current = Array.isArray(workshop.attachments) ? workshop.attachments : [];
+        if (current.length >= 20)
+          throw new TRPCError({ code: "BAD_REQUEST", message: "O Workshop já possui 20 anexos" });
+        const safeName = input.fileName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-");
+        const stored = await storagePut(`workflow/${input.projectId}/workshops/${input.workshopId}/attachments/${nanoid()}-${safeName}`, buffer, input.contentType);
+        const attachment = { name: input.fileName, url: stored.url, contentType: input.contentType || "application/octet-stream", size: buffer.length, uploadedAt: new Date().toISOString() };
+        await wdb.updateWorkshop(input.workshopId, { attachments: [...current, attachment] });
+        return attachment;
+      }),
+    removeAttachment: workflowEntityProcedure("workshops", true, "workshopId")
+      .input(z.object({ workshopId: z.string().min(1), url: z.string().min(1).max(2048) }))
+      .mutation(async ({ input }) => {
+        const workshop: any = await wdb.getWorkshopById(input.workshopId);
+        if (!workshop) throw new TRPCError({ code: "NOT_FOUND", message: "Workshop não encontrado" });
+        const attachments = (Array.isArray(workshop.attachments) ? workshop.attachments : []).filter((item: any) => item.url !== input.url);
+        await wdb.updateWorkshop(input.workshopId, { attachments });
+        return { success: true };
       }),
     suggestAgenda: workflowProjectProcedure(true)
       .input(z.object({ projectId: z.string() }))
@@ -2981,28 +3126,42 @@ Retorne a sugestão em formato markdown com workshops sugeridos, scope items cob
             workshopId: z.string(),
           })
         )
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           const transcripts = await wdb.listTranscripts(input.workshopId);
           if (transcripts.length === 0) {
-            return { error: "Nenhuma transcrição encontrada para gerar ata." };
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Nenhuma transcrição encontrada para gerar ata." });
           }
+          const workshop: any = await wdb.getWorkshopById(input.workshopId);
+          if (!workshop) throw new TRPCError({ code: "NOT_FOUND", message: "Workshop não encontrado" });
+          const [project, costCodes, resources, keyUsers] = await Promise.all([
+            plannerStore.getProjectById(workshop.projectId),
+            plannerStore.listProjectCostCodes(workshop.projectId),
+            plannerStore.listResources(),
+            wdb.listProjectKeyUsers(workshop.projectId),
+          ]);
+          if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
           const allContent = transcripts
             .map((t: any) => t.content || "")
             .filter(Boolean)
             .join("\n\n---\n\n");
-          const prompt = `Você é um consultor SAP especialista. Gere uma ata de reunião profissional a partir das transcrições abaixo.
+          const participantCompany = new Map<string, string>();
+          resources.forEach(resource => participantCompany.set(resource.name.trim().toLocaleLowerCase("pt-BR"), "SEIDOR"));
+          keyUsers.forEach((item: any) => participantCompany.set(item.name.trim().toLocaleLowerCase("pt-BR"), project.client));
+          const knownParticipants = (workshop.participants || []).map((name: string) => ({
+            name,
+            company: participantCompany.get(name.trim().toLocaleLowerCase("pt-BR")) || "",
+          }));
+          const prompt = `Você é um consultor SAP especialista. Gere uma ata profissional em português a partir das transcrições abaixo.
 
-A ata deve conter:
-1. Resumo executivo
-2. Participantes mencionados
-3. Tópicos discutidos
-4. Decisões tomadas (com responsável quando mencionado)
-5. Próximos passos / ações pendentes
+Retorne SOMENTE JSON válido neste formato:
+{"summary":"resumo e objetivo","participants":[{"name":"Nome","company":"Empresa"}],"topics":[{"title":"Assunto","items":["ponto discutido"]}],"decisions":["decisão com responsável quando mencionado"],"nextSteps":["ação, responsável e prazo quando mencionados"]}
+
+Participantes previamente cadastrados (preserve e complemente apenas quando a transcrição trouxer outros nomes):
+${JSON.stringify(knownParticipants)}
 
 Transcrições:
 ${allContent.slice(0, 8000)}
-
-Retorne em formato markdown.`;
+`;
           const ai = await getWorkflowAiConfig("minutes_generation");
           const result = await invokeWorkflowLLM({
             model: ai.model,
@@ -3011,22 +3170,86 @@ Retorne em formato markdown.`;
               { role: "user", content: prompt },
             ],
           });
-          const content =
+          const rawContent =
             (typeof result.choices?.[0]?.message?.content === "string"
               ? result.choices[0].message.content
               : "") || "";
+          let parsed: unknown = {};
+          try {
+            parsed = JSON.parse(rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+          } catch {
+            parsed = { summary: workshop.objective || workshop.title, participants: knownParticipants, topics: [{ title: "Registro da reunião", items: [rawContent || allContent.slice(0, 3000)] }], decisions: [], nextSteps: [] };
+          }
+          const structured = normalizeMeetingMinutesData(parsed);
+          for (const participant of knownParticipants) {
+            const current = structured.participants.find(item => item.name.trim().toLocaleLowerCase("pt-BR") === participant.name.trim().toLocaleLowerCase("pt-BR"));
+            if (current) current.company ||= participant.company;
+            else structured.participants.push(participant);
+          }
+          const content = [
+            `# ${workshop.title}`,
+            structured.summary,
+            ...structured.topics.flatMap(topic => [`## ${topic.title}`, ...topic.items.map(item => `- ${item}`)]),
+            ...(structured.decisions.length ? ["## Decisões", ...structured.decisions.map(item => `- ${item}`)] : []),
+            "## Próximos passos",
+            ...(structured.nextSteps.length ? structured.nextSteps.map(item => `- ${item}`) : ["- Não foram identificados próximos passos."]),
+          ].join("\n\n");
           const existing = await wdb.getMinutesByWorkshop(input.workshopId);
+          const version = existing ? Number(existing.version || 1) + 1 : 1;
+          const primaryCostCode = costCodes.find(item => item.isPrimary && item.active);
+          const generatedAt = new Date();
+          const documentContext = {
+            projectName: project.name,
+            projectCode: project.projectCode || "",
+            costCode: primaryCostCode?.code || "",
+            costCodeDescription: primaryCostCode?.description || "",
+            client: project.client,
+            seidorManager: project.manager,
+            clientManager: project.clientManager || "",
+            seidorExecutive: project.seidorExecutive || "",
+            sponsor: project.sponsor || "",
+            clientLogoUrl: project.logoUrl,
+            workshopTitle: workshop.title,
+            meetingDate: workshop.scheduledDate ? new Date(`${workshop.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR") : "",
+            meetingTime: String(workshop.duration || "").split(/[–-]/)[0]?.trim() || "",
+            author: ctx.user.name || ctx.user.email || "Usuário",
+            version,
+            generatedAt,
+          };
+          const [docx, pdf] = await Promise.all([
+            generateMinutesDocx(documentContext, structured),
+            generateMinutesPdf(documentContext, structured),
+          ]);
+          const baseName = `${project.name}-${workshop.title}-ata-v${version}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || `ata-v${version}`;
+          const [storedDocx, storedPdf] = await Promise.all([
+            storagePut(`workflow/${project.id}/workshops/${workshop.id}/minutes/${baseName}.docx`, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            storagePut(`workflow/${project.id}/workshops/${workshop.id}/minutes/${baseName}.pdf`, pdf, "application/pdf"),
+          ]);
           if (existing) {
-            await wdb.updateMinutes(existing.id, { content });
-            return { id: existing.id, content };
+            await wdb.updateMinutes(existing.id, { content, structuredContent: structured, version, docxUrl: storedDocx.url, pdfUrl: storedPdf.url, generatedBy: ctx.user.name || ctx.user.email || "ai" });
+            return { id: existing.id, content, structuredContent: structured, version, docxUrl: storedDocx.url, pdfUrl: storedPdf.url };
           }
           const id = nanoid();
           await wdb.createMinutes({
             id,
             workshopId: input.workshopId,
             content,
+            structuredContent: structured,
+            version,
+            docxUrl: storedDocx.url,
+            pdfUrl: storedPdf.url,
+            generatedBy: ctx.user.name || ctx.user.email || "ai",
           });
-          return { id, content };
+          return { id, content, structuredContent: structured, version, docxUrl: storedDocx.url, pdfUrl: storedPdf.url };
+        }),
+      export: workflowEntityProcedure("workshops", false, "workshopId")
+        .input(z.object({ workshopId: z.string().min(1), format: z.enum(["docx", "pdf"]) }))
+        .query(async ({ input }) => {
+          const minutes: any = await wdb.getMinutesByWorkshop(input.workshopId);
+          if (!minutes) throw new TRPCError({ code: "NOT_FOUND", message: "Ata não encontrada" });
+          const url = input.format === "docx" ? minutes.docxUrl : minutes.pdfUrl;
+          if (!url) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Arquivo ainda não foi gerado; gere a ata novamente." });
+          return { url, format: input.format };
         }),
     }),
   }),
@@ -3186,8 +3409,15 @@ Retorne em formato markdown.`;
     delete: workflowEntityProcedure("dcd_documents", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        if (
+          ctx.appUser.role !== "admin" &&
+          (await wdb.isDeliveryMaterializationTarget(input.id))
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         await approvalStore.assertEntityEditable("dcd", input.id);
         return wdb.deleteDcdDocument(input.id);
       }),
@@ -3564,8 +3794,15 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
     delete: workflowEntityProcedure("gaps", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        if (
+          ctx.appUser.role !== "admin" &&
+          (await wdb.isDeliveryMaterializationTarget(input.id))
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         await approvalStore.assertEntityEditable("gap", input.id);
         return wdb.deleteGap(input.id);
       }),
@@ -3944,8 +4181,15 @@ Retorne APENAS um JSON array com objetos no formato:
     delete: workflowEntityProcedure("configurations", true)
       .input(z.object({ id: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.appUser.role !== "admin" && await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+        if (
+          ctx.appUser.role !== "admin" &&
+          (await wdb.isDeliveryMaterializationTarget(input.id))
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         return wdb.deleteConfiguration(input.id);
       }),
   }),
@@ -4241,7 +4485,11 @@ Retorne APENAS um JSON array com objetos no formato:
       .input(z.object({ id: z.string() }))
       .mutation(async ({ input }) => {
         if (await wdb.isDeliveryMaterializationTarget(input.id))
-          throw new TRPCError({ code: "FORBIDDEN", message: "Itens originados em Configurações do Tech não podem ser excluídos no projeto" });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Itens originados em Configurações do Tech não podem ser excluídos no projeto",
+          });
         await approvalStore.assertEntityEditable("test_case", input.id);
         return wdb.deleteWorkflowTestCase(input.id);
       }),

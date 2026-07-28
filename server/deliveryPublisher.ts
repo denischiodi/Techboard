@@ -346,8 +346,8 @@ async function materializeOperational(template: any, project: any, occurrence: a
       `INSERT INTO "gp_checklist_items"
         ("id","projectId","templateVersion","itemKey","phase","workstream","title","description",
          "ownerRole","itemType","sortOrder","status","responsible","dueDate","notes")
-       VALUES ($1,$2,'CENTRAL',$3,$4,$5,$6,$7,$8,'Atividade',
-        COALESCE((SELECT MAX("sortOrder")+1 FROM "gp_checklist_items" WHERE "projectId"=$2),0),
+       VALUES ($1,$2::varchar,'CENTRAL',$3,$4,$5,$6,$7,$8,'Atividade',
+        COALESCE((SELECT MAX("sortOrder")+1 FROM "gp_checklist_items" WHERE "projectId"=$2::varchar),0),
         'Pendente','',$9,$10)
        ON CONFLICT ("projectId","templateVersion","itemKey") DO UPDATE SET
         "title"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."title" ELSE "gp_checklist_items"."title" END,

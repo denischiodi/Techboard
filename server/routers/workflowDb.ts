@@ -123,14 +123,30 @@ async function deleteRow(table: string, id: string) {
   ]);
 }
 
-const administrableWorkflowTables = new Set(["bdcq_questions", "configurations", "workflow_test_cases", "gaps"]);
-export async function setWorkflowEntityArchived(table: string, id: string, archived: boolean) {
-  if (!administrableWorkflowTables.has(table)) throw new Error("Tipo de entregável não administrável");
+const administrableWorkflowTables = new Set([
+  "bdcq_questions",
+  "configurations",
+  "workflow_test_cases",
+  "gaps",
+]);
+export async function setWorkflowEntityArchived(
+  table: string,
+  id: string,
+  archived: boolean
+) {
+  if (!administrableWorkflowTables.has(table))
+    throw new Error("Tipo de entregável não administrável");
   const pool = getPgPool();
   if (!pool) return null;
-  const current = await pool.query(`SELECT * FROM ${quoteIdentifier(table)} WHERE "id"=$1 LIMIT 1`, [id]);
+  const current = await pool.query(
+    `SELECT * FROM ${quoteIdentifier(table)} WHERE "id"=$1 LIMIT 1`,
+    [id]
+  );
   if (!current.rows[0]) throw new Error("Entregável de origem não encontrado");
-  await pool.query(`UPDATE ${quoteIdentifier(table)} SET "archivedAt"=${archived ? "now()" : "NULL"},"updatedAt"=now() WHERE "id"=$1`, [id]);
+  await pool.query(
+    `UPDATE ${quoteIdentifier(table)} SET "archivedAt"=${archived ? "now()" : "NULL"},"updatedAt"=now() WHERE "id"=$1`,
+    [id]
+  );
   return current.rows[0] as Record<string, unknown>;
 }
 
@@ -430,9 +446,64 @@ export async function updateBdcqTemplate(
     "workflow_bdcq_templates",
     id,
     data,
-    ["question", "category", "modules", "scopeItemKeys", "required", "active"],
+    [
+      "question",
+      "questionOriginal",
+      "category",
+      "modules",
+      "scopeItemKeys",
+      "sapId",
+      "level",
+      "process",
+      "sscuiReference",
+      "area",
+      "topic",
+      "topicDefinition",
+      "solution",
+      "source",
+      "sourceFile",
+      "sourceRelease",
+      "required",
+      "active",
+    ],
     ["modules", "scopeItemKeys"]
   );
+}
+export async function replaceBdcqTemplateLibrary(
+  items: Array<typeof bdcqTemplateLibrary.$inferInsert>
+) {
+  const pool = getPgPool();
+  if (!pool) return { removed: 0, imported: items.length };
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const removed = await client.query(`DELETE FROM "workflow_bdcq_templates"`);
+    for (const item of items) {
+      const entries = Object.entries(item).filter(
+        ([, value]) => value !== undefined && value !== null
+      );
+      const columns = entries.map(([key]) => quoteIdentifier(key)).join(", ");
+      const placeholders = entries
+        .map((_, index) => `$${index + 1}`)
+        .join(", ");
+      const values = entries.map(([key, value]) =>
+        ["modules", "scopeItemKeys"].includes(key)
+          ? JSON.stringify(value)
+          : value
+      );
+      await client.query(
+        `INSERT INTO "workflow_bdcq_templates" (${columns}) VALUES (${placeholders})`,
+        values
+      );
+    }
+    await client.query("COMMIT");
+    return { removed: removed.rowCount || 0, imported: items.length };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 export async function deleteBdcqTemplate(id: string) {
   return deleteRow("workflow_bdcq_templates", id);
@@ -599,11 +670,13 @@ export async function createWorkshop(data: typeof workshops.$inferInsert) {
     "modules",
     "scopeItemIds",
     "participants",
+    "participantEmails",
     "agenda",
     "expectedOutcomes",
     "prerequisites",
     "requiredRoles",
     "presentationFiles",
+    "attachments",
   ]);
 }
 export async function updateWorkshop(
@@ -624,11 +697,13 @@ export async function updateWorkshop(
       "scheduledDate",
       "duration",
       "participants",
+      "participantEmails",
       "agenda",
       "expectedOutcomes",
       "prerequisites",
       "requiredRoles",
       "presentationFiles",
+      "attachments",
       "templateId",
       "source",
       "status",
@@ -638,11 +713,13 @@ export async function updateWorkshop(
       "modules",
       "scopeItemIds",
       "participants",
+      "participantEmails",
       "agenda",
       "expectedOutcomes",
       "prerequisites",
       "requiredRoles",
       "presentationFiles",
+      "attachments",
     ]
   );
 }
@@ -750,7 +827,7 @@ export async function listMinutesByProject(projectId: string) {
   return result.rows as Array<typeof meetingMinutes.$inferSelect>;
 }
 export async function createMinutes(data: typeof meetingMinutes.$inferInsert) {
-  return insertRow("meeting_minutes", data);
+  return insertRow("meeting_minutes", data, ["structuredContent"]);
 }
 export async function updateMinutes(
   id: string,
@@ -760,7 +837,10 @@ export async function updateMinutes(
     "content",
     "generatedBy",
     "version",
-  ]);
+    "structuredContent",
+    "docxUrl",
+    "pdfUrl",
+  ], ["structuredContent"]);
 }
 
 // ===== DCD Documents =====

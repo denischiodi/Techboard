@@ -63,11 +63,26 @@ export const projects = mysqlTable("projects", {
   logoUrl: text("logoUrl"),
   client: varchar("client", { length: 255 }).notNull().default(""),
   manager: varchar("manager", { length: 255 }).notNull().default(""),
+  projectCode: varchar("projectCode", { length: 255 }).notNull().default(""),
+  clientManager: varchar("clientManager", { length: 255 }).notNull().default(""),
+  seidorExecutive: varchar("seidorExecutive", { length: 255 }).notNull().default(""),
+  sponsor: varchar("sponsor", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Planejado"),
   startDate: varchar("startDate", { length: 10 }).notNull().default(""),
   endDate: varchar("endDate", { length: 10 }).notNull().default(""),
   fronts: json("fronts").$type<string[]>().default([]),
   notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const projectCostCodes = mysqlTable("project_cost_codes", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  code: varchar("code", { length: 128 }).notNull(),
+  description: varchar("description", { length: 512 }).notNull().default(""),
+  active: mysqlBoolean("active").notNull().default(true),
+  isPrimary: mysqlBoolean("isPrimary").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -208,24 +223,31 @@ export const activities = mysqlTable("activities", {
   sourceUrl: text("sourceUrl"),
   sourceResolved: mysqlBoolean("sourceResolved").notNull().default(false),
   archivedAt: timestamp("archivedAt"),
-  archivedByUserId: varchar("archivedByUserId", { length: 64 }).notNull().default(""),
+  archivedByUserId: varchar("archivedByUserId", { length: 64 })
+    .notNull()
+    .default(""),
   archiveReason: text("archiveReason"),
-  archiveSnapshot: json("archiveSnapshot").$type<Record<string, unknown>>().default({}),
+  archiveSnapshot: json("archiveSnapshot")
+    .$type<Record<string, unknown>>()
+    .default({}),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export const activitySourceSuppressions = mysqlTable("activity_source_suppressions", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  sourceType: varchar("sourceType", { length: 64 }).notNull(),
-  sourceKey: varchar("sourceKey", { length: 255 }).notNull(),
-  activityId: varchar("activityId", { length: 64 }).notNull(),
-  reason: text("reason").notNull(),
-  createdByUserId: varchar("createdByUserId", { length: 64 }).notNull(),
-  restoredAt: timestamp("restoredAt"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const activitySourceSuppressions = mysqlTable(
+  "activity_source_suppressions",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    sourceType: varchar("sourceType", { length: 64 }).notNull(),
+    sourceKey: varchar("sourceKey", { length: 255 }).notNull(),
+    activityId: varchar("activityId", { length: 64 }).notNull(),
+    reason: text("reason").notNull(),
+    createdByUserId: varchar("createdByUserId", { length: 64 }).notNull(),
+    restoredAt: timestamp("restoredAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  }
+);
 
 export const activitySequenceCounters = mysqlTable(
   "activity_sequence_counters",
@@ -336,7 +358,9 @@ export const bdcqQuestions = mysqlTable("bdcq_questions", {
   question: text("question").notNull(),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 })
+    .notNull()
+    .default(""),
   source: varchar("source", { length: 32 }).notNull().default("manual"),
   scopeItemIds: json("scopeItemIds").$type<string[]>().default([]),
   consultantResourceId: varchar("consultantResourceId", { length: 64 })
@@ -393,17 +417,28 @@ export const projectApprovalPolicies = mysqlTable("project_approval_policies", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export const projectGovernanceReadiness = mysqlTable("project_governance_readiness", {
-  projectId: varchar("projectId", { length: 64 }).primaryKey(),
-  confirmed: mysqlBoolean("confirmed").notNull().default(false),
-  confirmedByUserId: varchar("confirmedByUserId", { length: 64 }).notNull().default(""),
-  confirmedByName: varchar("confirmedByName", { length: 255 }).notNull().default(""),
-  confirmedAt: timestamp("confirmedAt"),
-  reopenedByUserId: varchar("reopenedByUserId", { length: 64 }).notNull().default(""),
-  reopenedByName: varchar("reopenedByName", { length: 255 }).notNull().default(""),
-  reopenedAt: timestamp("reopenedAt"),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+export const projectGovernanceReadiness = mysqlTable(
+  "project_governance_readiness",
+  {
+    projectId: varchar("projectId", { length: 64 }).primaryKey(),
+    confirmed: mysqlBoolean("confirmed").notNull().default(false),
+    confirmedByUserId: varchar("confirmedByUserId", { length: 64 })
+      .notNull()
+      .default(""),
+    confirmedByName: varchar("confirmedByName", { length: 255 })
+      .notNull()
+      .default(""),
+    confirmedAt: timestamp("confirmedAt"),
+    reopenedByUserId: varchar("reopenedByUserId", { length: 64 })
+      .notNull()
+      .default(""),
+    reopenedByName: varchar("reopenedByName", { length: 255 })
+      .notNull()
+      .default(""),
+    reopenedAt: timestamp("reopenedAt"),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
 
 export const approvalRounds = mysqlTable("approval_rounds", {
   id: varchar("id", { length: 64 }).primaryKey(),
@@ -441,9 +476,21 @@ export const approvalDecisions = mysqlTable("approval_decisions", {
 export const workflowBdcqTemplates = mysqlTable("workflow_bdcq_templates", {
   id: varchar("id", { length: 64 }).primaryKey(),
   question: text("question").notNull(),
+  questionOriginal: text("questionOriginal"),
   category: varchar("category", { length: 256 }).notNull().default(""),
   modules: json("modules").$type<string[]>().default([]),
   scopeItemKeys: json("scopeItemKeys").$type<string[]>().default([]),
+  sapId: varchar("sapId", { length: 64 }).notNull().default(""),
+  level: varchar("level", { length: 16 }).notNull().default("L3"),
+  process: varchar("process", { length: 256 }).notNull().default(""),
+  sscuiReference: text("sscuiReference"),
+  area: varchar("area", { length: 256 }).notNull().default(""),
+  topic: varchar("topic", { length: 256 }).notNull().default(""),
+  topicDefinition: text("topicDefinition"),
+  solution: text("solution"),
+  source: varchar("source", { length: 64 }).notNull().default("Personalizado"),
+  sourceFile: varchar("sourceFile", { length: 512 }).notNull().default(""),
+  sourceRelease: varchar("sourceRelease", { length: 64 }).notNull().default(""),
   required: mysqlBoolean("required").notNull().default(false),
   active: int("active").notNull().default(1),
   createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
@@ -474,6 +521,11 @@ export type WorkshopPresentationFile = {
   name: string;
   url: string;
   contentType: string;
+};
+
+export type WorkshopAttachment = WorkshopPresentationFile & {
+  size: number;
+  uploadedAt: string;
 };
 
 export const workflowWorkshopTemplates = mysqlTable(
@@ -546,13 +598,17 @@ export const workshops = mysqlTable("workshops", {
   presentationFiles: json("presentationFiles")
     .$type<WorkshopPresentationFile[]>()
     .default([]),
+  attachments: json("attachments").$type<WorkshopAttachment[]>().default([]),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 })
+    .notNull()
+    .default(""),
   source: varchar("source", { length: 32 }).notNull().default("manual"),
   scheduledDate: varchar("scheduledDate", { length: 10 }).notNull().default(""),
   duration: varchar("duration", { length: 64 }).notNull().default(""),
   participants: json("participants").$type<string[]>().default([]),
+  participantEmails: json("participantEmails").$type<string[]>().default([]),
   agenda: json("agenda").$type<string[]>().default([]),
   status: varchar("status", { length: 64 }).notNull().default("Planejado"),
   notes: text("notes"),
@@ -580,6 +636,9 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   id: varchar("id", { length: 64 }).primaryKey(),
   workshopId: varchar("workshopId", { length: 64 }).notNull(),
   content: text("content").notNull(),
+  structuredContent: json("structuredContent").$type<Record<string, unknown>>().default({}),
+  docxUrl: varchar("docxUrl", { length: 1024 }).notNull().default(""),
+  pdfUrl: varchar("pdfUrl", { length: 1024 }).notNull().default(""),
   generatedBy: varchar("generatedBy", { length: 64 }).notNull().default("ai"),
   version: int("version").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -644,7 +703,9 @@ export const gaps = mysqlTable("gaps", {
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 })
+    .notNull()
+    .default(""),
   source: varchar("source", { length: 32 }).notNull().default("manual"),
   archivedAt: timestamp("archivedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -665,7 +726,9 @@ export const configurations = mysqlTable("configurations", {
   notes: text("notes"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 })
+    .notNull()
+    .default(""),
   bdcqQuestionId: varchar("bdcqQuestionId", { length: 64 })
     .notNull()
     .default(""),
@@ -697,7 +760,9 @@ export const workflowTestCases = mysqlTable("workflow_test_cases", {
   status: varchar("status", { length: 64 }).notNull().default("Não iniciado"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 })
+    .notNull()
+    .default(""),
   source: varchar("source", { length: 32 }).notNull().default("manual"),
   executedAt: varchar("executedAt", { length: 10 }).notNull().default(""),
   archivedAt: timestamp("archivedAt"),
@@ -766,20 +831,23 @@ export const deliveryTemplates = mysqlTable("delivery_templates", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export const deliveryTemplateAttachments = mysqlTable("delivery_template_attachments", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  templateId: varchar("templateId", { length: 64 }).notNull(),
-  templateVersion: int("templateVersion").notNull().default(1),
-  fileName: varchar("fileName", { length: 255 }).notNull(),
-  contentType: varchar("contentType", { length: 255 }).notNull(),
-  sizeBytes: int("sizeBytes").notNull(),
-  checksum: varchar("checksum", { length: 64 }).notNull(),
-  storageKey: text("storageKey").notNull(),
-  url: text("url").notNull(),
-  uploadedBy: varchar("uploadedBy", { length: 64 }).notNull(),
-  archivedAt: timestamp("archivedAt"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const deliveryTemplateAttachments = mysqlTable(
+  "delivery_template_attachments",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    templateId: varchar("templateId", { length: 64 }).notNull(),
+    templateVersion: int("templateVersion").notNull().default(1),
+    fileName: varchar("fileName", { length: 255 }).notNull(),
+    contentType: varchar("contentType", { length: 255 }).notNull(),
+    sizeBytes: int("sizeBytes").notNull(),
+    checksum: varchar("checksum", { length: 64 }).notNull(),
+    storageKey: text("storageKey").notNull(),
+    url: text("url").notNull(),
+    uploadedBy: varchar("uploadedBy", { length: 64 }).notNull(),
+    archivedAt: timestamp("archivedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  }
+);
 
 export const sapContentReleases = mysqlTable("sap_content_releases", {
   id: varchar("id", { length: 64 }).primaryKey(),
@@ -807,8 +875,12 @@ export const sapScopeCatalog = mysqlTable("sap_scope_catalog", {
   summary: text("summary").notNull().default(""),
   module: varchar("module", { length: 128 }).notNull().default(""),
   processArea: varchar("processArea", { length: 256 }).notNull().default(""),
-  primaryLanguage: varchar("primaryLanguage", { length: 16 }).notNull().default("PT_BR"),
-  reviewStatus: varchar("reviewStatus", { length: 32 }).notNull().default("review_required"),
+  primaryLanguage: varchar("primaryLanguage", { length: 16 })
+    .notNull()
+    .default("PT_BR"),
+  reviewStatus: varchar("reviewStatus", { length: 32 })
+    .notNull()
+    .default("review_required"),
   searchText: text("searchText").notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -822,7 +894,9 @@ export const sapScopeAssets = mysqlTable("sap_scope_assets", {
   fileName: varchar("fileName", { length: 512 }).notNull(),
   assetType: varchar("assetType", { length: 32 }).notNull(),
   language: varchar("language", { length: 16 }).notNull().default(""),
-  contentType: varchar("contentType", { length: 255 }).notNull().default("application/octet-stream"),
+  contentType: varchar("contentType", { length: 255 })
+    .notNull()
+    .default("application/octet-stream"),
   sizeBytes: int("sizeBytes").notNull().default(0),
   checksum: varchar("checksum", { length: 64 }).notNull(),
   storageKey: text("storageKey").notNull(),
@@ -848,7 +922,9 @@ export const deliveryItems = mysqlTable("delivery_items", {
   sequenceNumber: int("sequenceNumber").notNull().unique(),
   projectId: varchar("projectId", { length: 64 }).notNull(),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull().default(""),
+  occurrenceKey: varchar("occurrenceKey", { length: 512 })
+    .notNull()
+    .default(""),
   templateVersion: int("templateVersion").notNull().default(1),
   type: varchar("type", { length: 32 }).notNull(),
   title: varchar("title", { length: 512 }).notNull(),
@@ -888,7 +964,9 @@ export const deliveryPublicationJobs = mysqlTable("delivery_publication_jobs", {
   id: varchar("id", { length: 64 }).primaryKey(),
   templateId: varchar("templateId", { length: 64 }).notNull(),
   templateVersion: int("templateVersion").notNull().default(1),
-  trigger: varchar("trigger", { length: 64 }).notNull().default("template_changed"),
+  trigger: varchar("trigger", { length: 64 })
+    .notNull()
+    .default("template_changed"),
   status: varchar("status", { length: 32 }).notNull().default("pending"),
   attempts: int("attempts").notNull().default(0),
   summary: json("summary").$type<Record<string, unknown>>().default({}),
@@ -901,21 +979,24 @@ export const deliveryPublicationJobs = mysqlTable("delivery_publication_jobs", {
 });
 
 /** Idempotent link between one applicable template occurrence and its operational record. */
-export const deliveryMaterializations = mysqlTable("delivery_materializations", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  templateId: varchar("templateId", { length: 64 }).notNull(),
-  templateVersion: int("templateVersion").notNull().default(1),
-  projectId: varchar("projectId", { length: 64 }).notNull(),
-  occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull(),
-  targetType: varchar("targetType", { length: 64 }).notNull(),
-  targetId: varchar("targetId", { length: 64 }).notNull().default(""),
-  state: varchar("state", { length: 32 }).notNull().default("current"),
-  reason: text("reason").notNull().default(""),
-  publishedAt: timestamp("publishedAt"),
-  confirmedAt: timestamp("confirmedAt"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+export const deliveryMaterializations = mysqlTable(
+  "delivery_materializations",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    templateId: varchar("templateId", { length: 64 }).notNull(),
+    templateVersion: int("templateVersion").notNull().default(1),
+    projectId: varchar("projectId", { length: 64 }).notNull(),
+    occurrenceKey: varchar("occurrenceKey", { length: 512 }).notNull(),
+    targetType: varchar("targetType", { length: 64 }).notNull(),
+    targetId: varchar("targetId", { length: 64 }).notNull().default(""),
+    state: varchar("state", { length: 32 }).notNull().default("current"),
+    reason: text("reason").notNull().default(""),
+    publishedAt: timestamp("publishedAt"),
+    confirmedAt: timestamp("confirmedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
 
 export const deliveryRaidItems = mysqlTable("delivery_raid_items", {
   id: varchar("id", { length: 64 }).primaryKey(),

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
-import { storagePresignPut } from "../storage";
+import { storagePresignPut, storagePutLocalChunk } from "../storage";
 import * as library from "../sapLibraryStore";
 
 export const sapLibraryRouter = router({
@@ -26,6 +26,23 @@ export const sapLibraryRouter = router({
       const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
       return storagePresignPut(`sap-library/${input.releaseCode}/${nanoid()}-${safeName}`);
     }),
+  uploadChunk: adminProcedure
+    .input(z.object({
+      key: z.string().min(1).max(2000),
+      expires: z.number().int().positive(),
+      signature: z.string().regex(/^[a-f0-9]{64}$/),
+      part: z.number().int().min(0),
+      totalParts: z.number().int().min(1).max(2000),
+      dataBase64: z.string().min(1).max(6_000_000),
+    }))
+    .mutation(({ input }) => storagePutLocalChunk({
+      key: input.key,
+      expires: input.expires,
+      signature: input.signature,
+      part: input.part,
+      totalParts: input.totalParts,
+      data: Buffer.from(input.dataBase64, "base64"),
+    })),
   registerUpload: adminProcedure
     .input(z.object({
       releaseCode: z.string().trim().regex(/^[A-Za-z0-9_-]{3,64}$/),
