@@ -1,0 +1,38 @@
+name: Configure Railway Storage
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure:
+    name: Ensure persistent volume
+    runs-on: ubuntu-latest
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+      RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+      RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+    steps:
+      - name: Check Railway configuration
+        run: |
+          test -n "$RAILWAY_API_TOKEN"
+          test -n "$RAILWAY_PROJECT_ID"
+          test -n "$RAILWAY_ENVIRONMENT_ID"
+          test -n "$RAILWAY_SERVICE_ID"
+
+      - name: Ensure persistent volume
+        run: |
+          volumes="$(railway volume list \
+            --service "$RAILWAY_SERVICE_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID" \
+            --json)"
+          if printf '%s' "$volumes" | grep -q '"id"'; then
+            echo "Persistent volume already attached."
+          else
+            railway volume add \
+              --service "$RAILWAY_SERVICE_ID" \
+              --environment "$RAILWAY_ENVIRONMENT_ID" \
+              --mount-path /data \
+              --json
+          fi
