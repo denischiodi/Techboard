@@ -10,6 +10,7 @@ import {
   meetingMinutes,
   clientRequirements,
   dcdDocuments,
+  dcdTemplates,
   gaps,
   configurations,
   workflowAuditLog,
@@ -808,11 +809,23 @@ export async function saveWorkshopLearningPattern(input: {
       "usageCount"="workshop_learning_patterns"."usageCount"+1,"updatedAt"=now()
      RETURNING *`,
     [
-      input.id, input.projectId, input.workshopId, input.learningKey, input.module,
-      JSON.stringify(input.scopeItemCodes), input.title, input.objective, input.content,
-      input.duration, JSON.stringify(input.agenda), JSON.stringify(input.expectedOutcomes),
-      JSON.stringify(input.prerequisites), JSON.stringify(input.requiredRoles),
-      input.decision, input.confidence, input.createdBy,
+      input.id,
+      input.projectId,
+      input.workshopId,
+      input.learningKey,
+      input.module,
+      JSON.stringify(input.scopeItemCodes),
+      input.title,
+      input.objective,
+      input.content,
+      input.duration,
+      JSON.stringify(input.agenda),
+      JSON.stringify(input.expectedOutcomes),
+      JSON.stringify(input.prerequisites),
+      JSON.stringify(input.requiredRoles),
+      input.decision,
+      input.confidence,
+      input.createdBy,
     ]
   );
   return result.rows[0];
@@ -941,7 +954,7 @@ export async function listDcdDocuments(
   if (!pool) return [];
   const columns = includeContent
     ? "*"
-    : `"id", "projectId", "seriesId", "sourceHash", "module", "title", "version", "status", "createdAt", "updatedAt"`;
+    : `"id", "projectId", "seriesId", "sourceHash", "module", "title", "version", "status", "templateId", "templateVersion", "docxUrl", "pdfUrl", "versionReason", "restoredFromId", "createdBy", "createdAt", "updatedAt"`;
   const hasLimit = typeof pagination?.limit === "number";
   const result = await pool.query(
     `SELECT ${columns} FROM "dcd_documents" WHERE "projectId" = $1 ORDER BY "createdAt" DESC${hasLimit ? " LIMIT $2 OFFSET $3" : ""}`,
@@ -980,27 +993,89 @@ export async function getLatestDcdByModule(projectId: string, module: string) {
     (result.rows[0] as typeof dcdDocuments.$inferSelect | undefined) || null
   );
 }
+export async function listDcdSeries(projectId: string, seriesId: string) {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const result = await pool.query(
+    `SELECT * FROM "dcd_documents" WHERE "projectId"=$1 AND "seriesId"=$2 AND "archivedAt" IS NULL ORDER BY "version" DESC, "createdAt" DESC`,
+    [projectId, seriesId]
+  );
+  return result.rows as Array<typeof dcdDocuments.$inferSelect>;
+}
 export async function createDcdDocument(
   data: typeof dcdDocuments.$inferInsert
 ) {
-  return insertRow("dcd_documents", data);
+  return insertRow("dcd_documents", data, ["sourceSnapshot"]);
 }
 export async function updateDcdDocument(
   id: string,
   data: Partial<typeof dcdDocuments.$inferInsert>
 ) {
-  return updateRow("dcd_documents", id, data, [
-    "seriesId",
-    "sourceHash",
-    "module",
-    "title",
-    "content",
-    "version",
-    "status",
-  ]);
+  return updateRow(
+    "dcd_documents",
+    id,
+    data,
+    [
+      "seriesId",
+      "sourceHash",
+      "module",
+      "title",
+      "content",
+      "version",
+      "status",
+      "sourceSnapshot",
+      "templateId",
+      "templateVersion",
+      "docxUrl",
+      "pdfUrl",
+      "versionReason",
+      "restoredFromId",
+      "createdBy",
+    ],
+    ["sourceSnapshot"]
+  );
 }
 export async function deleteDcdDocument(id: string) {
   return deleteRow("dcd_documents", id);
+}
+
+export async function listDcdTemplates() {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const result = await pool.query(
+    `SELECT * FROM "dcd_templates" WHERE "archivedAt" IS NULL ORDER BY "active" DESC, "version" DESC, "createdAt" DESC`
+  );
+  return result.rows as Array<typeof dcdTemplates.$inferSelect>;
+}
+export async function getActiveDcdTemplate() {
+  const rows = await listDcdTemplates();
+  return rows.find(template => template.active) || null;
+}
+export async function createDcdTemplate(
+  data: typeof dcdTemplates.$inferInsert
+) {
+  return insertRow("dcd_templates", data, ["structure"]);
+}
+export async function activateDcdTemplate(id: string) {
+  const pool = getPgPool();
+  if (!pool) return;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE "dcd_templates" SET "active"=false, "updatedAt"=now() WHERE "active"=true`
+    );
+    await client.query(
+      `UPDATE "dcd_templates" SET "active"=true, "publishedAt"=now(), "updatedAt"=now() WHERE "id"=$1 AND "archivedAt" IS NULL`,
+      [id]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ===== Gaps =====

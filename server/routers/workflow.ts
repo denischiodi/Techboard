@@ -81,6 +81,7 @@ const bdcqProjectFilterInput = {
   consultantResourceIds: z.array(z.string()).max(200).default([]),
   keyUserIds: z.array(z.string()).max(200).default([]),
 };
+import { generateDcdDocx, generateDcdPdf } from "../dcdDocuments";
 
 function legacyTechMoveCounts(data: TechMoveData) {
   return {
@@ -389,9 +390,9 @@ async function recordWorkshopLearning(
     workshop.learningKey ||
     createHash("sha256")
       .update(
-        `${workshop.projectId}|${workshop.module || ""}|${[
-          ...selected,
-        ].sort().join(",")}|${workshop.title || ""}`
+        `${workshop.projectId}|${workshop.module || ""}|${[...selected]
+          .sort()
+          .join(",")}|${workshop.title || ""}`
       )
       .digest("hex")
       .slice(0, 40);
@@ -770,11 +771,24 @@ const testStatusSchema = z.enum([
 ]);
 
 async function getDcdGenerationContext(projectId: string, module?: string) {
-  const [scopeItemsList, questions, answers, requirements] = await Promise.all([
+  const [
+    scopeItemsList,
+    questions,
+    answers,
+    requirements,
+    workshops,
+    minutes,
+    gaps,
+    template,
+  ] = await Promise.all([
     wdb.listScopeItems(projectId),
     wdb.listBdcqQuestions(projectId),
     wdb.listBdcqAnswers(projectId),
     wdb.listClientRequirements(projectId),
+    wdb.listWorkshops(projectId),
+    wdb.listMinutesByProject(projectId),
+    wdb.listGaps(projectId),
+    wdb.getActiveDcdTemplate(),
   ]);
   const filteredScope = module
     ? scopeItemsList.filter((item: any) => item.module === module)
@@ -790,6 +804,31 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
     : activeRequirements;
   const answerMap = new Map(
     answers.map((answer: any) => [answer.questionId, answer])
+  );
+  const filteredWorkshops = workshops.filter(
+    (workshop: any) =>
+      !module ||
+      workshop.module === module ||
+      (workshop.modules || []).includes(module) ||
+      (workshop.scopeItemIds || []).some((id: string) =>
+        filteredScope.some((scope: any) => scope.id === id)
+      )
+  );
+  const transcriptGroups = await Promise.all(
+    filteredWorkshops.map(async (workshop: any) => ({
+      workshopId: workshop.id,
+      items: await wdb.listTranscripts(workshop.id),
+    }))
+  );
+  const transcriptMap = new Map(
+    transcriptGroups.map(group => [group.workshopId, group.items])
+  );
+  const minuteMap = new Map(
+    minutes.map((minute: any) => [minute.workshopId, minute])
+  );
+  const filteredGaps = gaps.filter(
+    (gap: any) =>
+      !module || gap.module === module || (gap.modules || []).includes(module)
   );
   const sapKnowledge = await getKnowledgeContext(
     filteredScope.map((item: any) => String(item.code || "")).filter(Boolean)
@@ -824,6 +863,26 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
         item.updatedAt,
       ])
       .sort(),
+    workshops: filteredWorkshops.map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      objective: item.objective,
+      content: item.content,
+      notes: item.notes,
+      agenda: item.agenda,
+      expectedOutcomes: item.expectedOutcomes,
+      prerequisites: item.prerequisites,
+      attachments: item.attachments,
+      presentationFiles: item.presentationFiles,
+      transcript: transcriptMap.get(item.id),
+      minutes: minuteMap.get(item.id),
+      updatedAt: item.updatedAt,
+    })),
+    gaps: filteredGaps,
+    template: template
+      ? [template.id, template.version, template.fileHash]
+      : ["builtin-v5", 1, "builtin"],
     sapRelease: sapKnowledge.releaseCode,
     sapEntries: sapKnowledge.entries,
   };
@@ -835,9 +894,198 @@ async function getDcdGenerationContext(projectId: string, module?: string) {
     filteredQuestions,
     filteredRequirements,
     answerMap,
+    filteredWorkshops,
+    transcriptMap,
+    minuteMap,
+    filteredGaps,
+    template,
+    sourceSnapshot: {
+      capturedAt: new Date().toISOString(),
+      module: module || "",
+      scopeItems: filteredScope,
+      bdcq: filteredQuestions.map((question: any) => ({
+        ...question,
+        answer: answerMap.get(question.id) || null,
+      })),
+      workshops: hashPayload.workshops,
+      requirements: filteredRequirements,
+      gaps: filteredGaps,
+      template: hashPayload.template,
+    },
     sapKnowledge,
     sourceHash,
   };
+}
+
+function buildDcdPrompt(
+  context: Awaited<ReturnType<typeof getDcdGenerationContext>>,
+  module?: string
+) {
+  const mandatory = context.filteredQuestions.filter(
+    (question: any) => question.required
+  );
+  const pendingMandatory = mandatory.filter((question: any) => {
+    const answer = context.answerMap.get(question.id) as any;
+    return !String(answer?.answer || "").trim();
+  });
+  return `Você é um consultor SAP sênior. Gere um DCD completo para o módulo "${module || "Geral"}".
+
+Use integralmente o snapshot JSON abaixo. Não omita registros por quantidade e não invente fatos. Toda afirmação relevante deve indicar sua origem entre colchetes, por exemplo [BDCQ:ID], [WORKSHOP:ID], [ATA:ID], [TRANSCRICAO:ID], [REQUISITO:ID], [GAP:ID] ou [SCOPE:ID].
+
+${JSON.stringify(context.sourceSnapshot)}
+
+Perguntas obrigatórias (${mandatory.length}); pendências obrigatórias (${pendingMandatory.length}):
+${mandatory
+  .map((question: any) => {
+    const answer = context.answerMap.get(question.id) as any;
+    return `- [BDCQ:${question.id}] ${question.question}\n  Resposta: ${String(answer?.answer || "").trim() || "PENDÊNCIA OBRIGATÓRIA — sem resposta registrada"}`;
+  })
+  .join("\n")}
+
+Contexto SAP da release ativa:
+${
+  context.sapKnowledge.releaseCode
+    ? context.sapKnowledge.entries
+        .map(
+          (entry: any) =>
+            `[SAP:${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`
+        )
+        .join("\n\n")
+    : getSapKnowledgeContext(module)
+}
+
+Estruture conforme o modelo DCD V5:
+1. Escopo do documento e identificação
+2. Estrutura organizacional e dados mestres
+3. Catálogo de scope items
+4. Detalhamento funcional por scope item
+5. Configurações, decisões de design, integrações e dependências
+6. Requisitos específicos, GAPs e riscos
+7. Cenários e critérios de teste
+8. Perguntas obrigatórias do BDCQ — inclua todas, detalhadas, mesmo as pendentes
+9. Matriz de rastreabilidade
+10. Fontes e anexos
+
+Retorne Markdown profissional. Marque ausência de evidência como "Pendência obrigatória" ou "Não informado". Não invente transações, apps, decisões ou configurações.`;
+}
+
+async function buildDcdPromptWithChunking(
+  context: Awaited<ReturnType<typeof getDcdGenerationContext>>,
+  module?: string
+) {
+  const serialized = JSON.stringify(context.sourceSnapshot);
+  if (serialized.length <= 90_000) return buildDcdPrompt(context, module);
+
+  const records = [
+    ...((context.sourceSnapshot.scopeItems as unknown[]) || []).map(item => ({
+      type: "scope",
+      item,
+    })),
+    ...((context.sourceSnapshot.bdcq as unknown[]) || []).map(item => ({
+      type: "bdcq",
+      item,
+    })),
+    ...((context.sourceSnapshot.workshops as unknown[]) || []).map(item => ({
+      type: "workshop",
+      item,
+    })),
+    ...((context.sourceSnapshot.requirements as unknown[]) || []).map(item => ({
+      type: "requirement",
+      item,
+    })),
+    ...((context.sourceSnapshot.gaps as unknown[]) || []).map(item => ({
+      type: "gap",
+      item,
+    })),
+  ];
+  const chunks: string[] = [];
+  let current = "";
+  for (const record of records) {
+    const line = `${JSON.stringify(record)}\n`;
+    if (current && current.length + line.length > 55_000) {
+      chunks.push(current);
+      current = "";
+    }
+    current += line;
+  }
+  if (current) chunks.push(current);
+  const ai = await getWorkflowAiConfig("dcd_generation");
+  const summaries: string[] = [];
+  for (let index = 0; index < chunks.length; index++) {
+    const result = await invokeWorkflowLLM({
+      model: ai.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Consolide o bloco de evidências para um DCD SAP. Preserve todos os IDs, decisões, pendências, anexos e referências. Não invente dados.",
+        },
+        {
+          role: "user",
+          content: `Bloco ${index + 1} de ${chunks.length} do módulo ${module || "Geral"}:\n${chunks[index]}`,
+        },
+      ],
+    });
+    const summary =
+      typeof result.choices?.[0]?.message?.content === "string"
+        ? result.choices[0].message.content
+        : "";
+    if (!summary.trim())
+      throw new Error(
+        `A IA não consolidou o bloco ${index + 1} dos insumos do DCD`
+      );
+    summaries.push(`## Bloco ${index + 1}\n${summary}`);
+  }
+  return buildDcdPrompt(
+    {
+      ...context,
+      sourceSnapshot: {
+        capturedAt: context.sourceSnapshot.capturedAt,
+        module: module || "",
+        processing: { chunked: true, chunks: chunks.length },
+        consolidatedEvidence: summaries,
+      } as any,
+    },
+    module
+  );
+}
+
+async function createDcdArtifacts(input: {
+  id: string;
+  projectId: string;
+  module: string;
+  title: string;
+  content: string;
+  version: number;
+  status: string;
+  author: string;
+  template?: any;
+}) {
+  const project = await plannerStore.getProjectById(input.projectId);
+  const context = {
+    projectName: project?.name || input.projectId,
+    module: input.module || "Geral",
+    title: input.title,
+    version: input.version,
+    status: input.status,
+    author: input.author,
+    generatedAt: new Date(),
+    templateName: input.template?.name || "DCD V5",
+  };
+  const [docx, pdf] = await Promise.all([
+    generateDcdDocx(context, input.content),
+    generateDcdPdf(context, input.content),
+  ]);
+  const base = `workflow/${input.projectId}/dcd/${input.module || "geral"}/${input.id}`;
+  const [storedDocx, storedPdf] = await Promise.all([
+    storagePut(
+      `${base}.docx`,
+      docx,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    storagePut(`${base}.pdf`, pdf, "application/pdf"),
+  ]);
+  return { docxUrl: storedDocx.url, pdfUrl: storedPdf.url };
 }
 
 export async function streamDcdGeneration(input: {
@@ -847,14 +1095,11 @@ export async function streamDcdGeneration(input: {
   user: { id: string; name: string };
   onDelta: (text: string) => void | Promise<void>;
 }) {
-  const {
-    filteredScope,
-    filteredQuestions,
-    filteredRequirements,
-    answerMap,
-    sapKnowledge,
-    sourceHash,
-  } = await getDcdGenerationContext(input.projectId, input.module);
+  const generationContext = await getDcdGenerationContext(
+    input.projectId,
+    input.module
+  );
+  const { sapKnowledge, sourceHash } = generationContext;
   if (!sapKnowledge.releaseCode) {
     throw new Error(
       "Nenhuma release SAP está ativa na Biblioteca SAP. Importe, revise e ative uma release em Configurações do Tech antes de gerar um DCD fundamentado."
@@ -878,75 +1123,10 @@ export async function streamDcdGeneration(input: {
       cached: true,
     };
   }
-  const answeredCount = filteredQuestions.filter((question: any) =>
-    answerMap.has(question.id)
-  ).length;
-  const completion =
-    filteredQuestions.length === 0
-      ? 0
-      : answeredCount / filteredQuestions.length;
-  if (filteredQuestions.length > 0 && completion < 0.7) {
-    const pending = filteredQuestions
-      .filter((question: any) => !answerMap.has(question.id))
-      .slice(0, 10);
-    throw new Error(
-      `Complete ao menos 70% do BDCQ antes de gerar o DCD. Progresso atual: ${Math.round(completion * 100)}%. Pendentes: ${pending.map((question: any) => question.question).join("; ")}`
-    );
-  }
-  const prompt = `Você é um consultor SAP sênior. Gere um documento DCD (Design de Configuração Detalhada) para o módulo "${input.module || "Geral"}".
-
-Scope Items relevantes (${filteredScope.length}):
-${filteredScope
-  .slice(0, 15)
-  .map((scope: any) => `- ${scope.code || ""} ${scope.name}`)
-  .join("\n")}
-
-Perguntas e Respostas BDCQ:
-${filteredQuestions
-  .slice(0, 15)
-  .map(
-    (question: any) =>
-      `Q: ${question.question}\nA: ${(answerMap.get(question.id) as any)?.answer || "Sem resposta"}`
-  )
-  .join("\n\n")}
-
-Requisitos do Cliente levantados nos workshops (${filteredRequirements.length}):
-${
-  filteredRequirements
-    .slice(0, 40)
-    .map(
-      (requirement: any) =>
-        `- [${requirement.priority}/${requirement.status}] ${requirement.code ? `${requirement.code} - ` : ""}${requirement.title}: ${requirement.description}${requirement.acceptanceCriteria ? `\n  Critérios de aceite: ${requirement.acceptanceCriteria}` : ""}`
-    )
-    .join("\n") || "- Nenhum requisito registrado"
-}
-
-Contexto SAP de referência:
-${
-  sapKnowledge.releaseCode
-    ? `Release ativa: ${sapKnowledge.releaseCode}\n${sapKnowledge.entries
-        .map(
-          (entry: any) =>
-            `### Fonte SAP [${entry.code}] ${entry.name}\n${entry.summary || ""}\n${entry.context || ""}`
-        )
-        .join(
-          "\n"
-        )}\nUse somente estas fontes para os scope items do projeto e cite o código correspondente em cada decisão.`
-    : getSapKnowledgeContext(input.module)
-}
-
-${DCD_FEW_SHOT_EXAMPLE}
-
-O DCD deve conter:
-1. Visão geral do processo
-2. Configurações necessárias (transações, tabelas, campos)
-3. Decisões de design
-4. Gaps identificados (se houver)
-5. Dependências e integrações
-6. Cenários e critérios de teste
-7. Matriz de rastreabilidade entre requisitos, BDCQ e decisões
-
-Retorne em formato markdown profissional. Não copie os fatos do exemplo e não invente transações ou apps ausentes do contexto.`;
+  const prompt = await buildDcdPromptWithChunking(
+    generationContext,
+    input.module
+  );
   const ai = await getWorkflowAiConfig("dcd_generation");
   const streamed = await invokeLLMStream(
     {
@@ -968,6 +1148,17 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
   const version = (latest?.version || 0) + 1;
   const seriesId = latest?.seriesId || latest?.id || id;
   const title = `DCD - ${input.module || "Geral"} - v${version}`;
+  const artifacts = await createDcdArtifacts({
+    id,
+    projectId: input.projectId,
+    module: input.module || "",
+    title,
+    content: streamed.content,
+    version,
+    status: "Rascunho",
+    author: input.user.name,
+    template: generationContext.template,
+  });
   await wdb.createDcdDocument({
     id,
     seriesId,
@@ -978,6 +1169,13 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
     title,
     content: streamed.content,
     status: "Rascunho",
+    sourceSnapshot: generationContext.sourceSnapshot,
+    templateId: generationContext.template?.id || "builtin-v5",
+    templateVersion: generationContext.template?.version || 1,
+    docxUrl: artifacts.docxUrl,
+    pdfUrl: artifacts.pdfUrl,
+    versionReason: "generated",
+    createdBy: input.user.name,
   });
   await recordWorkflowAudit(
     { user: input.user },
@@ -3671,9 +3869,20 @@ export const workflowRouter = router({
           input.data.status !== "Rascunho"
         ) {
           const editedFields = [
-            "title", "module", "modules", "scopeItemIds", "objective", "content",
-            "duration", "participants", "agenda", "expectedOutcomes",
-            "prerequisites", "requiredRoles", "consultantResourceId", "responsible",
+            "title",
+            "module",
+            "modules",
+            "scopeItemIds",
+            "objective",
+            "content",
+            "duration",
+            "participants",
+            "agenda",
+            "expectedOutcomes",
+            "prerequisites",
+            "requiredRoles",
+            "consultantResourceId",
+            "responsible",
           ];
           const edited = editedFields.some(
             key => input.data[key as keyof typeof input.data] !== undefined
@@ -3743,7 +3952,9 @@ export const workflowRouter = router({
       .input(z.object({ projectId: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const centralApplied =
-          await deliveryPublisher.applyPublishedWorkshopTemplates(input.projectId);
+          await deliveryPublisher.applyPublishedWorkshopTemplates(
+            input.projectId
+          );
         const legacyApplied = await applyWorkshopTemplates(input.projectId);
         const [
           project,
@@ -3767,20 +3978,33 @@ export const workflowRouter = router({
           wdb.listProjectKeyUsers(input.projectId),
         ]);
         if (!project)
-          throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Projeto não encontrado",
+          });
         if (!scopeItemsList.length)
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "Selecione os scope items do projeto antes de sugerir workshops",
+            message:
+              "Selecione os scope items do projeto antes de sugerir workshops",
           });
         const projectModules = [
-          ...new Set(scopeItemsList.map((item: any) => item.module).filter(Boolean)),
+          ...new Set(
+            scopeItemsList.map((item: any) => item.module).filter(Boolean)
+          ),
         ] as string[];
-        const learnedPatterns = await wdb.listWorkshopLearningPatterns(projectModules);
-        const answeredIds = new Set(answers.map((answer: any) => answer.questionId));
-        const pendingQuestions = questions.filter((question: any) => !answeredIds.has(question.id));
+        const learnedPatterns =
+          await wdb.listWorkshopLearningPatterns(projectModules);
+        const answeredIds = new Set(
+          answers.map((answer: any) => answer.questionId)
+        );
+        const pendingQuestions = questions.filter(
+          (question: any) => !answeredIds.has(question.id)
+        );
         const coveredScopeIds = new Set(
-          currentWorkshops.flatMap((workshop: any) => workshop.scopeItemIds || [])
+          currentWorkshops.flatMap(
+            (workshop: any) => workshop.scopeItemIds || []
+          )
         );
         const uncoveredScopes = scopeItemsList.filter(
           (item: any) => !coveredScopeIds.has(item.id)
@@ -3805,32 +4029,69 @@ Workshops já existentes:
 ${currentWorkshops.map((item: any) => `- ${item.title} | ${item.module || "Geral"} | ${(item.scopeItemIds || []).join(",")}`).join("\n")}
 
 BDCQ pendente:
-${pendingQuestions.slice(0, 100).map((item: any) => `- ${item.module || "Geral"} | ${item.category || ""} | ${item.question}`).join("\n")}
+${pendingQuestions
+  .slice(0, 100)
+  .map(
+    (item: any) =>
+      `- ${item.module || "Geral"} | ${item.category || ""} | ${item.question}`
+  )
+  .join("\n")}
 
 Requisitos identificados:
-${requirements.slice(0, 100).map((item: any) => `- ${item.module || "Geral"} | ${item.title}: ${item.description}`).join("\n")}
+${requirements
+  .slice(0, 100)
+  .map(
+    (item: any) =>
+      `- ${item.module || "Geral"} | ${item.title}: ${item.description}`
+  )
+  .join("\n")}
 
 Aprendizados aprovados de projetos anteriores (use como referência, sem copiar dados de cliente):
-${learnedPatterns.slice(0, 80).map((item: any) => `- ${item.module || "Geral"} | ${item.title} | scopes ${(item.scopeItemCodes || []).join(",")} | duração ${item.duration || "a definir"} | confiança ${item.confidence}`).join("\n")}
+${learnedPatterns
+  .slice(0, 80)
+  .map(
+    (item: any) =>
+      `- ${item.module || "Geral"} | ${item.title} | scopes ${(item.scopeItemCodes || []).join(",")} | duração ${item.duration || "a definir"} | confiança ${item.confidence}`
+  )
+  .join("\n")}
 
 Formato obrigatório de cada objeto:
 {"title":"...","module":"... ou Geral","scopeItemCodes":["códigos existentes"],"objective":"...","content":"...","duration":"ex.: 2h","agenda":["..."],"expectedOutcomes":["..."],"prerequisites":["..."],"requiredRoles":["..."],"reason":"por que é necessário"}
 
 Retorne no máximo 100 workshops e somente JSON válido.`;
         const ai = await getWorkflowAiConfig("agenda_suggestion");
-        const suggestionSchema = z.array(z.object({
-          title: z.string().trim().min(1).max(512),
-          module: z.string().trim().max(128).default("Geral"),
-          scopeItemCodes: z.array(z.string().trim().min(1).max(128)).max(100).default([]),
-          objective: z.string().trim().max(10000).default(""),
-          content: z.string().trim().max(20000).default(""),
-          duration: z.string().trim().max(64).default(""),
-          agenda: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
-          expectedOutcomes: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
-          prerequisites: z.array(z.string().trim().min(1).max(2000)).max(100).default([]),
-          requiredRoles: z.array(z.string().trim().min(1).max(255)).max(100).default([]),
-          reason: z.string().trim().max(4000).default(""),
-        })).max(100);
+        const suggestionSchema = z
+          .array(
+            z.object({
+              title: z.string().trim().min(1).max(512),
+              module: z.string().trim().max(128).default("Geral"),
+              scopeItemCodes: z
+                .array(z.string().trim().min(1).max(128))
+                .max(100)
+                .default([]),
+              objective: z.string().trim().max(10000).default(""),
+              content: z.string().trim().max(20000).default(""),
+              duration: z.string().trim().max(64).default(""),
+              agenda: z
+                .array(z.string().trim().min(1).max(2000))
+                .max(100)
+                .default([]),
+              expectedOutcomes: z
+                .array(z.string().trim().min(1).max(2000))
+                .max(100)
+                .default([]),
+              prerequisites: z
+                .array(z.string().trim().min(1).max(2000))
+                .max(100)
+                .default([]),
+              requiredRoles: z
+                .array(z.string().trim().min(1).max(255))
+                .max(100)
+                .default([]),
+              reason: z.string().trim().max(4000).default(""),
+            })
+          )
+          .max(100);
         let suggestions: z.infer<typeof suggestionSchema> | null = null;
         let lastOutput = "";
         for (let attempt = 0; attempt < 2 && !suggestions; attempt++) {
@@ -3840,9 +4101,11 @@ Retorne no máximo 100 workshops e somente JSON válido.`;
               { role: "system", content: ai.systemPrompt },
               {
                 role: "user",
-                content: prompt + (attempt
-                  ? `\n\nA resposta anterior não era JSON válido. Corrija e devolva somente o array:\n${lastOutput.slice(0, 3000)}`
-                  : ""),
+                content:
+                  prompt +
+                  (attempt
+                    ? `\n\nA resposta anterior não era JSON válido. Corrija e devolva somente o array:\n${lastOutput.slice(0, 3000)}`
+                    : ""),
               },
             ],
           });
@@ -3852,7 +4115,9 @@ Retorne no máximo 100 workshops e somente JSON válido.`;
               : "";
           try {
             const match = lastOutput.match(/\[[\s\S]*\]/);
-            suggestions = match ? suggestionSchema.parse(JSON.parse(match[0])) : null;
+            suggestions = match
+              ? suggestionSchema.parse(JSON.parse(match[0]))
+              : null;
           } catch {
             suggestions = null;
           }
@@ -3860,25 +4125,33 @@ Retorne no máximo 100 workshops e somente JSON válido.`;
         if (!suggestions)
           throw new TRPCError({
             code: "BAD_GATEWAY",
-            message: "A IA não retornou workshops estruturados após nova tentativa",
+            message:
+              "A IA não retornou workshops estruturados após nova tentativa",
           });
 
         const normalize = (value: unknown) =>
-          String(value || "").trim().toLocaleUpperCase("pt-BR");
+          String(value || "")
+            .trim()
+            .toLocaleUpperCase("pt-BR");
         const scopeByCode = new Map<string, any>();
         for (const item of scopeItemsList)
           for (const key of [item.id, item.code, item.name])
             if (key) scopeByCode.set(normalize(key), item);
-        const resourceById = new Map(resources.map((resource: any) => [resource.id, resource]));
+        const resourceById = new Map(
+          resources.map((resource: any) => [resource.id, resource])
+        );
         const projectAllocations = allocations.filter(
           (allocation: any) => allocation.projectId === input.projectId
         );
         const existingKeys = new Set(
-          currentWorkshops.map((workshop: any) => workshop.learningKey).filter(Boolean)
+          currentWorkshops
+            .map((workshop: any) => workshop.learningKey)
+            .filter(Boolean)
         );
         const existingTitles = new Set(
-          currentWorkshops.map((workshop: any) =>
-            `${normalize(workshop.module)}|${normalize(workshop.title)}`
+          currentWorkshops.map(
+            (workshop: any) =>
+              `${normalize(workshop.module)}|${normalize(workshop.title)}`
           )
         );
         const created: any[] = [];
@@ -3898,7 +4171,12 @@ Retorne no máximo 100 workshops e somente JSON válido.`;
               : matchedScopes[0]?.module || "";
           const titleKey = `${normalize(module)}|${normalize(suggestion.title)}`;
           const learningKey = createHash("sha256")
-            .update(`${input.projectId}|${normalize(module)}|${matchedScopes.map(item => item.id).sort().join(",")}|${normalize(suggestion.title)}`)
+            .update(
+              `${input.projectId}|${normalize(module)}|${matchedScopes
+                .map(item => item.id)
+                .sort()
+                .join(",")}|${normalize(suggestion.title)}`
+            )
             .digest("hex")
             .slice(0, 40);
           if (existingKeys.has(learningKey) || existingTitles.has(titleKey)) {
@@ -3915,7 +4193,11 @@ Retorne no máximo 100 workshops e somente JSON válido.`;
               if (!resource || resource.status !== "Ativo") return null;
               const busyHours = allocations
                 .filter((item: any) => item.resourceId === resource.id)
-                .reduce((sum: number, item: any) => sum + Number(item.hoursPerDay || 0), 0);
+                .reduce(
+                  (sum: number, item: any) =>
+                    sum + Number(item.hoursPerDay || 0),
+                  0
+                );
               return {
                 resource,
                 availability: Number(resource.dailyCapacity || 8) - busyHours,
@@ -3926,19 +4208,26 @@ Retorne no máximo 100 workshops e somente JSON válido.`;
           const consultant = candidates[0]?.resource;
           const participantNames = new Set(
             matchingAllocations
-              .map((allocation: any) => (resourceById.get(allocation.resourceId) as any)?.name)
+              .map(
+                (allocation: any) =>
+                  (resourceById.get(allocation.resourceId) as any)?.name
+              )
               .filter(Boolean)
           );
           const moduleQuestionKeyUserIds = new Set(
             questions
-              .filter((question: any) => !module || normalize(question.module) === normalize(module))
+              .filter(
+                (question: any) =>
+                  !module || normalize(question.module) === normalize(module)
+              )
               .map((question: any) => question.keyUserId)
               .filter(Boolean)
           );
           for (const keyUser of keyUsers as any[])
             if (
               keyUser.active &&
-              (!moduleQuestionKeyUserIds.size || moduleQuestionKeyUserIds.has(keyUser.id))
+              (!moduleQuestionKeyUserIds.size ||
+                moduleQuestionKeyUserIds.has(keyUser.id))
             )
               participantNames.add(keyUser.name);
           const row: any = await wdb.createWorkshop({
@@ -4159,6 +4448,71 @@ Retorne em formato markdown.`;
 
   // ===== DCD Documents =====
   dcd: router({
+    templates: router({
+      list: adminProcedure.query(() => wdb.listDcdTemplates()),
+      upload: adminProcedure
+        .input(
+          z.object({
+            name: z.string().trim().min(3).max(255),
+            filename: z
+              .string()
+              .trim()
+              .regex(/\.docx$/i),
+            base64: z.string().min(100).max(30_000_000),
+            activate: z.boolean().optional(),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          const bytes = Buffer.from(input.base64, "base64");
+          if (bytes.length < 100 || bytes[0] !== 0x50 || bytes[1] !== 0x4b)
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "O arquivo não é um DOCX válido",
+            });
+          const hash = createHash("sha256").update(bytes).digest("hex");
+          const existing = await wdb.listDcdTemplates();
+          const version =
+            Math.max(
+              0,
+              ...existing
+                .filter((item: any) => item.name === input.name)
+                .map((item: any) => item.version || 0)
+            ) + 1;
+          const id = nanoid();
+          const stored = await storagePut(
+            `workflow/dcd/templates/${id}-v${version}.docx`,
+            bytes,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          );
+          await wdb.createDcdTemplate({
+            id,
+            name: input.name,
+            version,
+            fileUrl: stored.url,
+            fileHash: hash,
+            active: false,
+            structure: {
+              archetype: "DCD V5",
+              validated: true,
+              originalFilename: input.filename,
+            },
+            createdBy: ctx.user.name || ctx.user.email,
+          });
+          if (input.activate) await wdb.activateDcdTemplate(id);
+          return {
+            id,
+            version,
+            fileUrl: stored.url,
+            active: Boolean(input.activate),
+          };
+        }),
+      activate: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input }) => {
+          await wdb.activateDcdTemplate(input.id);
+          return { activated: true };
+        }),
+    }),
     list: workflowProjectProcedure()
       .input(z.object({ projectId: z.string(), ...paginationInput }))
       .query(({ input }) =>
@@ -4184,12 +4538,20 @@ Retorne em formato markdown.`;
             code: "NOT_FOUND",
             message: "DCD não encontrado",
           });
-        if (document.status !== "Aprovado")
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: "Apenas DCDs aprovados podem ser exportados em PDF",
-          });
-        const pdf = generateWorkflowPdf(document.title, document.content);
+        const project = await plannerStore.getProjectById(document.projectId);
+        const pdf = await generateDcdPdf(
+          {
+            projectName: project?.name || document.projectId,
+            module: document.module || "Geral",
+            title: document.title,
+            version: document.version || 1,
+            status: document.status,
+            author: document.createdBy || ctx.user.name || ctx.user.email,
+            generatedAt: document.createdAt || new Date(),
+            templateName: document.templateId || "DCD V5",
+          },
+          document.content
+        );
         const filename = `${
           document.title
             .normalize("NFD")
@@ -4210,6 +4572,52 @@ Retorne em formato markdown.`;
           filename,
           contentType: "application/pdf" as const,
           base64: pdf.toString("base64"),
+        };
+      }),
+    exportDocx: workflowEntityProcedure("dcd_documents")
+      .input(z.object({ id: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const document = await wdb.getDcdDocument(input.id);
+        if (!document)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "DCD não encontrado",
+          });
+        const project = await plannerStore.getProjectById(document.projectId);
+        const docx = await generateDcdDocx(
+          {
+            projectName: project?.name || document.projectId,
+            module: document.module || "Geral",
+            title: document.title,
+            version: document.version || 1,
+            status: document.status,
+            author: document.createdBy || ctx.user.name || ctx.user.email,
+            generatedAt: document.createdAt || new Date(),
+            templateName: document.templateId || "DCD V5",
+          },
+          document.content
+        );
+        const filename = `${
+          document.title
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9_-]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .toLowerCase() || "dcd"
+        }.docx`;
+        await recordWorkflowAudit(
+          ctx,
+          document.projectId,
+          "DCD_EXPORTED_DOCX",
+          "dcd",
+          document.id,
+          { filename, bytes: docx.length }
+        );
+        return {
+          filename,
+          contentType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" as const,
+          base64: docx.toString("base64"),
         };
       }),
     create: workflowProjectProcedure(true)
@@ -4248,21 +4656,82 @@ Retorne em formato markdown.`;
       .mutation(async ({ ctx, input }) => {
         await approvalStore.assertEntityEditable("dcd", input.id);
         const before = await wdb.getDcdDocument(input.id);
+        if (!before)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "DCD não encontrado",
+          });
         const projectId =
           before?.projectId ||
           (await wdb.getWorkflowEntityProjectId("dcd_documents", input.id));
-        await wdb.updateDcdDocument(input.id, input.data);
+        const contentChanged =
+          (typeof input.data.content === "string" &&
+            input.data.content !== before.content) ||
+          (typeof input.data.title === "string" &&
+            input.data.title !== before.title);
+        let targetId = input.id;
+        if (contentChanged) {
+          const latest = await wdb.getLatestDcdByModule(
+            before.projectId,
+            before.module || ""
+          );
+          const version =
+            Math.max(before.version || 1, latest?.version || 0) + 1;
+          targetId = nanoid();
+          const titleBase = (input.data.title || before.title).replace(
+            /\s+-\s+v\d+$/i,
+            ""
+          );
+          const title = `${titleBase} - v${version}`;
+          const content = input.data.content ?? before.content;
+          const status = input.data.status || "Rascunho";
+          const artifacts = await createDcdArtifacts({
+            id: targetId,
+            projectId: before.projectId,
+            module: before.module || "",
+            title,
+            content,
+            version,
+            status,
+            author: ctx.user.name || ctx.user.email,
+          });
+          await wdb.createDcdDocument({
+            id: targetId,
+            projectId: before.projectId,
+            seriesId: before.seriesId || before.id,
+            sourceHash: "",
+            sourceSnapshot: before.sourceSnapshot || {},
+            module: before.module || "",
+            title,
+            content,
+            version,
+            status,
+            templateId: before.templateId || "builtin-v5",
+            templateVersion: before.templateVersion || 1,
+            versionReason: "manual_edit",
+            createdBy: ctx.user.name || ctx.user.email,
+            ...artifacts,
+          });
+        } else {
+          await wdb.updateDcdDocument(input.id, input.data);
+        }
         if (projectId)
           await recordWorkflowAudit(
             ctx,
             projectId,
             input.data.status === "Aprovado" ? "DCD_APPROVED" : "DCD_UPDATED",
             "dcd",
-            input.id,
-            { fields: Object.keys(input.data), status: input.data.status }
+            targetId,
+            {
+              sourceId: input.id,
+              fields: Object.keys(input.data),
+              status: input.data.status,
+              createdVersion: contentChanged,
+            }
           );
         if (
           projectId &&
+          !contentChanged &&
           input.data.status === "Aprovado" &&
           before?.status !== "Aprovado"
         ) {
@@ -4272,6 +4741,7 @@ Retorne em formato markdown.`;
             `${input.data.title || before?.title || "DCD"} foi aprovado por ${ctx.user.name || ctx.user.email || "um usuário"}.`
           );
         }
+        return { id: targetId, createdVersion: contentChanged };
       }),
     bulkUpdate: workflowProjectProcedure(true)
       .input(
@@ -4324,6 +4794,121 @@ Retorne em formato markdown.`;
         await approvalStore.assertEntityEditable("dcd", input.id);
         return wdb.deleteDcdDocument(input.id);
       }),
+    preflight: workflowProjectProcedure()
+      .input(z.object({ projectId: z.string(), module: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const context = await getDcdGenerationContext(
+          input.projectId,
+          input.module
+        );
+        const required = context.filteredQuestions.filter(
+          (question: any) => question.required
+        );
+        const pendingRequired = required.filter((question: any) => {
+          const answer = context.answerMap.get(question.id) as any;
+          return !String(answer?.answer || "").trim();
+        });
+        const workshopWarnings = context.filteredWorkshops
+          .filter(
+            (workshop: any) =>
+              !(context.transcriptMap.get(workshop.id) as any[])?.length ||
+              !context.minuteMap.get(workshop.id)
+          )
+          .map((workshop: any) => ({
+            id: workshop.id,
+            title: workshop.title,
+            missingTranscript: !(
+              context.transcriptMap.get(workshop.id) as any[]
+            )?.length,
+            missingMinutes: !context.minuteMap.get(workshop.id),
+          }));
+        return {
+          module: input.module,
+          counts: {
+            scopeItems: context.filteredScope.length,
+            bdcqQuestions: context.filteredQuestions.length,
+            requiredQuestions: required.length,
+            pendingRequired: pendingRequired.length,
+            workshops: context.filteredWorkshops.length,
+            requirements: context.filteredRequirements.length,
+            gaps: context.filteredGaps.length,
+          },
+          pendingRequired: pendingRequired.map((question: any) => ({
+            id: question.id,
+            question: question.question,
+          })),
+          workshopWarnings,
+          template: context.template
+            ? {
+                id: context.template.id,
+                name: context.template.name,
+                version: context.template.version,
+              }
+            : { id: "builtin-v5", name: "DCD V5", version: 1 },
+        };
+      }),
+    history: workflowProjectProcedure()
+      .input(z.object({ projectId: z.string(), seriesId: z.string().min(1) }))
+      .query(({ input }) => wdb.listDcdSeries(input.projectId, input.seriesId)),
+    restore: workflowEntityProcedure("dcd_documents", true)
+      .input(
+        z.object({
+          id: z.string().min(1),
+          note: z.string().max(500).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const source = await wdb.getDcdDocument(input.id);
+        if (!source)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Versão não encontrada",
+          });
+        const latest = await wdb.getLatestDcdByModule(
+          source.projectId,
+          source.module || ""
+        );
+        const version = Math.max(source.version || 1, latest?.version || 0) + 1;
+        const id = nanoid();
+        const title = `${source.title.replace(/\s+-\s+v\d+$/i, "")} - v${version}`;
+        const artifacts = await createDcdArtifacts({
+          id,
+          projectId: source.projectId,
+          module: source.module || "",
+          title,
+          content: source.content,
+          version,
+          status: "Rascunho",
+          author: ctx.user.name || ctx.user.email,
+        });
+        await wdb.createDcdDocument({
+          id,
+          projectId: source.projectId,
+          seriesId: source.seriesId || source.id,
+          sourceHash: "",
+          sourceSnapshot: source.sourceSnapshot || {},
+          module: source.module || "",
+          title,
+          content: source.content,
+          version,
+          status: "Rascunho",
+          templateId: source.templateId || "builtin-v5",
+          templateVersion: source.templateVersion || 1,
+          restoredFromId: source.id,
+          versionReason: input.note ? `restored: ${input.note}` : "restored",
+          createdBy: ctx.user.name || ctx.user.email,
+          ...artifacts,
+        });
+        await recordWorkflowAudit(
+          ctx,
+          source.projectId,
+          "DCD_RESTORED",
+          "dcd",
+          id,
+          { sourceId: source.id, version, note: input.note || "" }
+        );
+        return { id, version, title };
+      }),
     generationStatus: workflowProjectProcedure()
       .input(
         z.object({
@@ -4362,13 +4947,11 @@ Retorne em formato markdown.`;
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const {
-          filteredScope,
-          filteredQuestions,
-          filteredRequirements,
-          answerMap,
-          sourceHash,
-        } = await getDcdGenerationContext(input.projectId, input.module);
+        const generationContext = await getDcdGenerationContext(
+          input.projectId,
+          input.module
+        );
+        const { sourceHash } = generationContext;
         const cached = await wdb.findDcdBySourceHash(
           input.projectId,
           sourceHash
@@ -4390,64 +4973,10 @@ Retorne em formato markdown.`;
             cached: true,
           };
         }
-        const answeredCount = filteredQuestions.filter((q: any) =>
-          answerMap.has(q.id)
-        ).length;
-        const completion =
-          filteredQuestions.length === 0
-            ? 0
-            : answeredCount / filteredQuestions.length;
-        if (filteredQuestions.length > 0 && completion < 0.7) {
-          const pending = filteredQuestions
-            .filter((q: any) => !answerMap.has(q.id))
-            .slice(0, 10);
-          throw new Error(
-            `Complete ao menos 70% do BDCQ antes de gerar o DCD. Progresso atual: ${Math.round(completion * 100)}%. Pendentes: ${pending.map((q: any) => q.question).join("; ")}`
-          );
-        }
-        const prompt = `Você é um consultor SAP sênior. Gere um documento DCD (Design de Configuração Detalhada) para o módulo "${input.module || "Geral"}".
-
-Scope Items relevantes (${filteredScope.length}):
-${filteredScope
-  .slice(0, 15)
-  .map((s: any) => `- ${s.code || ""} ${s.name}`)
-  .join("\n")}
-
-Perguntas e Respostas BDCQ:
-${filteredQuestions
-  .slice(0, 15)
-  .map((q: any) => {
-    const ans = answerMap.get(q.id);
-    return `Q: ${q.question}\nA: ${ans ? (ans as any).answer || "Sem resposta" : "Sem resposta"}`;
-  })
-  .join("\n\n")}
-
-Requisitos do Cliente levantados nos workshops (${filteredRequirements.length}):
-${
-  filteredRequirements
-    .slice(0, 40)
-    .map(
-      (requirement: any) =>
-        `- [${requirement.priority}/${requirement.status}] ${requirement.code ? requirement.code + " - " : ""}${requirement.title}: ${requirement.description}${requirement.acceptanceCriteria ? `\n  Critérios de aceite: ${requirement.acceptanceCriteria}` : ""}`
-    )
-    .join("\n") || "- Nenhum requisito registrado"
-}
-
-Contexto SAP de referência:
-${getSapKnowledgeContext(input.module)}
-
-${DCD_FEW_SHOT_EXAMPLE}
-
-O DCD deve conter:
-1. Visão geral do processo
-2. Configurações necessárias (transações, tabelas, campos)
-3. Decisões de design
-4. Gaps identificados (se houver)
-5. Dependências e integrações
-6. Cenários e critérios de teste
-7. Matriz de rastreabilidade entre requisitos, BDCQ e decisões
-
-Retorne em formato markdown profissional. Não copie os fatos do exemplo e não invente transações ou apps ausentes do contexto.`;
+        const prompt = await buildDcdPromptWithChunking(
+          generationContext,
+          input.module
+        );
         const ai = await getWorkflowAiConfig("dcd_generation");
         const result = await invokeWorkflowLLM({
           model: ai.model,
@@ -4468,6 +4997,17 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
         const version = (latest?.version || 0) + 1;
         const seriesId = latest?.seriesId || latest?.id || id;
         const title = `DCD - ${input.module || "Geral"} - v${version}`;
+        const artifacts = await createDcdArtifacts({
+          id,
+          projectId: input.projectId,
+          module: input.module || "",
+          title,
+          content,
+          version,
+          status: "Rascunho",
+          author: ctx.user.name || ctx.user.email,
+          template: generationContext.template,
+        });
         await wdb.createDcdDocument({
           id,
           seriesId,
@@ -4478,6 +5018,13 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
           title,
           content,
           status: "Rascunho",
+          sourceSnapshot: generationContext.sourceSnapshot,
+          templateId: generationContext.template?.id || "builtin-v5",
+          templateVersion: generationContext.template?.version || 1,
+          docxUrl: artifacts.docxUrl,
+          pdfUrl: artifacts.pdfUrl,
+          versionReason: "generated",
+          createdBy: ctx.user.name || ctx.user.email,
         });
         await recordWorkflowAudit(
           ctx,
@@ -4530,16 +5077,32 @@ Retorne em formato markdown profissional. Não copie os fatos do exemplo e não 
         const id = nanoid();
         const titleBase = document.title.replace(/\s+-\s+v\d+$/i, "");
         const title = `${titleBase} - v${version}`;
-        await wdb.createDcdDocument({
+        const artifacts = await createDcdArtifacts({
           id,
           projectId: document.projectId,
-          seriesId: document.seriesId || document.id,
-          sourceHash: "",
           module: document.module || "",
           title,
           content,
           version,
           status: "Rascunho",
+          author: ctx.user.name || ctx.user.email,
+        });
+        await wdb.createDcdDocument({
+          id,
+          projectId: document.projectId,
+          seriesId: document.seriesId || document.id,
+          sourceHash: "",
+          sourceSnapshot: document.sourceSnapshot || {},
+          module: document.module || "",
+          title,
+          content,
+          version,
+          status: "Rascunho",
+          templateId: document.templateId || "builtin-v5",
+          templateVersion: document.templateVersion || 1,
+          versionReason: "ai_refinement",
+          createdBy: ctx.user.name || ctx.user.email,
+          ...artifacts,
         });
         await recordWorkflowAudit(
           ctx,

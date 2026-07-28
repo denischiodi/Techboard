@@ -614,30 +614,35 @@ export const workshops = mysqlTable("workshops", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-export const workshopLearningPatterns = mysqlTable("workshop_learning_patterns", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  projectId: varchar("projectId", { length: 64 }).notNull(),
-  workshopId: varchar("workshopId", { length: 64 }).notNull().default(""),
-  learningKey: varchar("learningKey", { length: 128 }).notNull(),
-  module: varchar("module", { length: 128 }).notNull().default(""),
-  phase: varchar("phase", { length: 64 }).notNull().default("Explore"),
-  stage: varchar("stage", { length: 128 }).notNull().default("workshops"),
-  scopeItemCodes: json("scopeItemCodes").$type<string[]>().default([]),
-  title: varchar("title", { length: 512 }).notNull(),
-  objective: text("objective"),
-  content: text("content"),
-  duration: varchar("duration", { length: 64 }).notNull().default(""),
-  agenda: json("agenda").$type<string[]>().default([]),
-  expectedOutcomes: json("expectedOutcomes").$type<string[]>().default([]),
-  prerequisites: json("prerequisites").$type<string[]>().default([]),
-  requiredRoles: json("requiredRoles").$type<string[]>().default([]),
-  decision: varchar("decision", { length: 32 }).notNull().default("confirmed"),
-  confidence: int("confidence").notNull().default(50),
-  usageCount: int("usageCount").notNull().default(1),
-  createdBy: varchar("createdBy", { length: 64 }).notNull().default(""),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+export const workshopLearningPatterns = mysqlTable(
+  "workshop_learning_patterns",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    projectId: varchar("projectId", { length: 64 }).notNull(),
+    workshopId: varchar("workshopId", { length: 64 }).notNull().default(""),
+    learningKey: varchar("learningKey", { length: 128 }).notNull(),
+    module: varchar("module", { length: 128 }).notNull().default(""),
+    phase: varchar("phase", { length: 64 }).notNull().default("Explore"),
+    stage: varchar("stage", { length: 128 }).notNull().default("workshops"),
+    scopeItemCodes: json("scopeItemCodes").$type<string[]>().default([]),
+    title: varchar("title", { length: 512 }).notNull(),
+    objective: text("objective"),
+    content: text("content"),
+    duration: varchar("duration", { length: 64 }).notNull().default(""),
+    agenda: json("agenda").$type<string[]>().default([]),
+    expectedOutcomes: json("expectedOutcomes").$type<string[]>().default([]),
+    prerequisites: json("prerequisites").$type<string[]>().default([]),
+    requiredRoles: json("requiredRoles").$type<string[]>().default([]),
+    decision: varchar("decision", { length: 32 })
+      .notNull()
+      .default("confirmed"),
+    confidence: int("confidence").notNull().default(50),
+    usageCount: int("usageCount").notNull().default(1),
+    createdBy: varchar("createdBy", { length: 64 }).notNull().default(""),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
 
 /**
  * Workshop Transcripts - transcrições de workshops
@@ -696,8 +701,37 @@ export const dcdDocuments = mysqlTable("dcd_documents", {
   module: varchar("module", { length: 128 }).notNull().default(""),
   title: varchar("title", { length: 512 }).notNull(),
   content: text("content").notNull(),
+  sourceSnapshot: json("sourceSnapshot")
+    .$type<Record<string, unknown>>()
+    .default({}),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  docxUrl: varchar("docxUrl", { length: 1024 }).notNull().default(""),
+  pdfUrl: varchar("pdfUrl", { length: 1024 }).notNull().default(""),
+  versionReason: varchar("versionReason", { length: 64 })
+    .notNull()
+    .default("generated"),
+  restoredFromId: varchar("restoredFromId", { length: 64 })
+    .notNull()
+    .default(""),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
   version: int("version").notNull().default(1),
   status: varchar("status", { length: 64 }).notNull().default("Rascunho"),
+  archivedAt: timestamp("archivedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const dcdTemplates = mysqlTable("dcd_templates", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: int("version").notNull().default(1),
+  fileUrl: varchar("fileUrl", { length: 1024 }).notNull().default(""),
+  fileHash: varchar("fileHash", { length: 64 }).notNull().default(""),
+  active: mysqlBoolean("active").notNull().default(false),
+  structure: json("structure").$type<Record<string, unknown>>().default({}),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
+  publishedAt: timestamp("publishedAt"),
   archivedAt: timestamp("archivedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
