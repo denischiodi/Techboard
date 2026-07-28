@@ -26,7 +26,9 @@ function normalizeAudioType(file: File): SupportedAudioType | null {
 
 const lines = (value: string) => value.split("\n").map(item => item.trim()).filter(Boolean);
 const joinLines = (value: string[] | undefined) => (value || []).join("\n");
-const emptyWorkshopForm = { title: "", objective: "", content: "", modules: [] as string[], scopeItemIds: [] as string[], date: "", startTime: "", endTime: "", duration: "", notes: "", participants: [] as string[], agenda: "", expectedOutcomes: "", prerequisites: "", requiredRoles: "", presentationFiles: [] as Array<{ name: string; url: string; contentType: string }> };
+const emailLines = (value: string) => [...new Set(value.split(/[\n,;]+/).map(item => item.trim().toLowerCase()).filter(Boolean))];
+const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const emptyWorkshopForm = { title: "", objective: "", content: "", modules: [] as string[], scopeItemIds: [] as string[], date: "", startTime: "", endTime: "", duration: "", notes: "", participants: [] as string[], participantEmails: "", agenda: "", expectedOutcomes: "", prerequisites: "", requiredRoles: "", presentationFiles: [] as Array<{ name: string; url: string; contentType: string }> };
 const emptyTemplateForm = { id: "", title: "", objective: "", content: "", duration: "", modules: [] as string[], projectIds: [] as string[], scopeItemKeys: [] as string[], agenda: "", expectedOutcomes: "", prerequisites: "", requiredRoles: "", presentationFiles: [] as Array<{ name: string; url: string; contentType: string }>, active: true };
 
 export default function WorkshopsPage() {
@@ -34,6 +36,7 @@ export default function WorkshopsPage() {
   const { user } = useAuth();
   const isAdmin = (user as any)?.appRole === "admin" || user?.role === "admin";
   const [showAdd, setShowAdd] = useState(false);
+  const [editingWs, setEditingWs] = useState<any>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [selectedWs, setSelectedWs] = useState<any>(null);
   const [workshopToDelete, setWorkshopToDelete] = useState<any>(null);
@@ -53,7 +56,9 @@ export default function WorkshopsPage() {
   const { data: absences = [] } = trpc.absences.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
   const modules = (lookups?.fronts || []).filter((item: any) => item.active).map((item: any) => item.value);
-  const createWs = trpc.workflow.workshops.create.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); setForm(emptyWorkshopForm); toast.success("Workshop criado"); }, onError: error => toast.error(error.message) });
+  const closeWorkshopForm = () => { setShowAdd(false); setEditingWs(null); setForm(emptyWorkshopForm); };
+  const createWs = trpc.workflow.workshops.create.useMutation({ onSuccess: () => { refetch(); closeWorkshopForm(); toast.success("Workshop criado"); }, onError: error => toast.error(error.message) });
+  const updateWs = trpc.workflow.workshops.update.useMutation({ onSuccess: (_result, variables) => { refetch(); setSelectedWs((current: any) => current?.id === variables.id ? { ...current, ...variables.data } : current); closeWorkshopForm(); toast.success("Workshop atualizado"); }, onError: error => toast.error(error.message) });
   const deleteWs = trpc.workflow.workshops.delete.useMutation({
     onSuccess: (_data, variables) => {
       refetch();
@@ -87,6 +92,16 @@ export default function WorkshopsPage() {
   const toggle = (items: string[], value: string) => items.includes(value) ? items.filter(item => item !== value) : [...items, value];
   const isTechTemplateWorkshop = (workshop: any) => Boolean(workshop?.templateId) || ["template", "delivery_template"].includes(workshop?.source);
   const canDeleteWorkshop = (workshop: any) => isAdmin || !isTechTemplateWorkshop(workshop);
+  const openNewWorkshop = () => { setEditingWs(null); setForm(emptyWorkshopForm); setShowAdd(true); };
+  const openWorkshopEditor = (ws: any) => {
+    const timeRange = String(ws.duration || "").match(/^(\d{2}:\d{2})[–-](\d{2}:\d{2})$/);
+    setEditingWs(ws);
+    setForm({ ...emptyWorkshopForm, title: ws.title || "", objective: ws.objective || "", content: ws.content || "", modules: ws.modules?.length ? ws.modules : ws.module ? [ws.module] : [], scopeItemIds: ws.scopeItemIds || [], date: ws.scheduledDate || "", startTime: timeRange?.[1] || "", endTime: timeRange?.[2] || "", duration: timeRange ? "" : ws.duration || "", notes: ws.notes || "", participants: ws.participants || [], participantEmails: joinLines(ws.participantEmails), agenda: joinLines(ws.agenda), expectedOutcomes: joinLines(ws.expectedOutcomes), prerequisites: joinLines(ws.prerequisites), requiredRoles: joinLines(ws.requiredRoles), presentationFiles: ws.presentationFiles || [] });
+    setShowAdd(true);
+  };
+  const participantEmails = emailLines(form.participantEmails);
+  const hasInvalidEmail = participantEmails.some(email => !validEmail(email));
+  const workshopData = { title: form.title.trim(), objective: form.objective, content: form.content, module: form.modules[0] || "", modules: form.modules, scopeItemIds: form.scopeItemIds, scheduledDate: form.date, duration: form.startTime && form.endTime ? `${form.startTime}–${form.endTime}` : form.duration, participants: form.participants, participantEmails, agenda: lines(form.agenda), expectedOutcomes: lines(form.expectedOutcomes), prerequisites: lines(form.prerequisites), requiredRoles: lines(form.requiredRoles), presentationFiles: form.presentationFiles, notes: form.notes };
   const uploadFile = async (file: File | undefined, target: "workshop" | "template") => {
     if (!file) return;
     const fileData = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); });
@@ -107,7 +122,7 @@ export default function WorkshopsPage() {
           <Button variant="outline" onClick={() => suggestAgenda.mutate({ projectId: PROJECT_ID })} disabled={suggestAgenda.isPending}>
             <Lightbulb className="h-4 w-4 mr-2" />{suggestAgenda.isPending ? "Analisando escopo..." : "Sugerir Workshops (IA)"}
           </Button>
-          <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-2" />Novo Workshop</Button>
+          <Button onClick={openNewWorkshop}><Plus className="h-4 w-4 mr-2" />Novo Workshop</Button>
         </div>
       </div>
 
@@ -117,7 +132,7 @@ export default function WorkshopsPage() {
         {sortedWorkshops.length === 0 ? <p className="py-4 text-center text-muted-foreground">Nenhum workshop agendado.</p> : <div className="relative ml-4 border-l-2 border-primary/20 pl-6">
           {sortedWorkshops.map((ws: any) => <div key={ws.id} role="button" tabIndex={0} className="relative mb-5 block w-full cursor-pointer rounded-lg border bg-background p-4 text-left transition-shadow hover:shadow-md" onClick={() => setSelectedWs(ws)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedWs(ws); } }}>
             <span className="absolute -left-[2.05rem] top-5 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3>{ws.objective && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ws.objective}</p>}</div><div className="flex flex-wrap items-center gap-2">{(ws.modules?.length ? ws.modules : ws.module ? [ws.module] : []).map((module: string) => <Badge key={module} variant="secondary">{module}</Badge>)}{isTechTemplateWorkshop(ws) && <Badge>Configurações do Tech · v{ws.templateVersion || 1}</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge>{canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={event => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}</div></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{ws.scheduledDate ? new Date(`${ws.scheduledDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não definida"}</p><h3 className="mt-1 font-semibold">{ws.title}</h3>{ws.objective && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{ws.objective}</p>}</div><div className="flex flex-wrap items-center gap-2">{(ws.modules?.length ? ws.modules : ws.module ? [ws.module] : []).map((module: string) => <Badge key={module} variant="secondary">{module}</Badge>)}{isTechTemplateWorkshop(ws) && <Badge>Configurações do Tech · v{ws.templateVersion || 1}</Badge>}<Badge variant="outline">{ws.status || "Planejado"}</Badge><Button variant="ghost" size="icon" title="Editar workshop" aria-label={`Editar ${ws.title}`} onClick={event => { event.stopPropagation(); openWorkshopEditor(ws); }}><Pencil className="h-4 w-4" /></Button>{canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={event => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}</div></div>
             <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">{ws.duration && <span>{ws.duration}</span>}{ws.responsible && <span className="flex items-center gap-1"><UserCheck className="h-3.5 w-3.5" />Consultor: {ws.responsible}</span>}<span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />{ws.participants?.length || 0} participantes</span></div>
           </div>)}
         </div>}
@@ -129,7 +144,7 @@ export default function WorkshopsPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">{ws.title}</CardTitle>
-                {canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={(event) => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}
+                <div className="flex"><Button variant="ghost" size="icon" title="Editar workshop" aria-label={`Editar ${ws.title}`} onClick={event => { event.stopPropagation(); openWorkshopEditor(ws); }}><Pencil className="h-4 w-4" /></Button>{canDeleteWorkshop(ws) && <Button variant="ghost" size="icon" title={isTechTemplateWorkshop(ws) ? "Excluir workshop padrão aplicado" : "Excluir workshop"} aria-label={`Excluir workshop ${ws.title}`} onClick={(event) => { event.stopPropagation(); setWorkshopToDelete(ws); }}><Trash2 className="h-4 w-4" /></Button>}</div>
               </div>
             </CardHeader>
             <CardContent>
@@ -157,9 +172,9 @@ export default function WorkshopsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Novo Workshop</DialogTitle></DialogHeader>
+      <Dialog open={showAdd} onOpenChange={open => { if (!open) closeWorkshopForm(); }}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editingWs ? "Editar Workshop" : "Novo Workshop"}</DialogTitle></DialogHeader>
           <div className="grid gap-3">
             <div><Label>Título *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
             <div><Label>Objetivo</Label><Textarea value={form.objective} onChange={e => setForm(current => ({ ...current, objective: e.target.value }))} placeholder="Qual decisão ou entendimento o workshop deve produzir?" /></div>
@@ -177,10 +192,11 @@ export default function WorkshopsPage() {
               <div className="flex flex-wrap gap-2">{form.date && availableResources.map((resource: any) => <Button key={resource.id} type="button" size="sm" variant={form.participants.includes(resource.name) ? "default" : "outline"} onClick={() => toggleParticipant(resource.name)}><UserCheck className="mr-1.5 h-3.5 w-3.5" />{resource.name}</Button>)}{keyUsers.filter((item: any) => item.active).map((item: any) => <Button key={item.id} type="button" size="sm" variant={form.participants.includes(item.name) ? "default" : "outline"} onClick={() => toggleParticipant(item.name)}><Users className="mr-1.5 h-3.5 w-3.5" />{item.name}{item.role ? ` · ${item.role}` : " · Key user"}</Button>)}</div>
               {!form.date && keyUsers.length === 0 && <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Informe a data para verificar os recursos internos; os key users ativos aparecem independentemente da data.</p>}
             </div>
+            <div><Label>E-mails dos participantes</Label><Textarea value={form.participantEmails} onChange={e => setForm(current => ({ ...current, participantEmails: e.target.value }))} rows={4} placeholder={"ana@empresa.com\nbruno@empresa.com"} /><p className={`mt-1 text-xs ${hasInvalidEmail ? "text-destructive" : "text-muted-foreground"}`}>{hasInvalidEmail ? "Revise os e-mails inválidos antes de salvar." : "Informe um e-mail por linha; vírgulas e ponto e vírgula também são aceitos."}</p></div>
             <div className="space-y-2"><div className="flex items-center justify-between"><div><Label>Modelo da apresentação</Label><p className="text-xs text-muted-foreground">PPT, PPTX ou PDF, até 15 MB.</p></div><Button variant="outline" size="sm" asChild disabled={uploadPresentation.isPending}><label className="cursor-pointer"><Upload className="mr-2 h-4 w-4" />Anexar<input className="hidden" type="file" accept=".ppt,.pptx,.pdf" onChange={event => { void uploadFile(event.target.files?.[0], "workshop"); event.currentTarget.value = ""; }} /></label></Button></div>{form.presentationFiles.map((file, index) => <div key={`${file.url}-${index}`} className="flex items-center gap-2 rounded border p-2 text-sm"><Paperclip className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{file.name}</span><Button variant="ghost" size="icon" onClick={() => setForm(current => ({ ...current, presentationFiles: current.presentationFiles.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>
             <div><Label>Notas</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button onClick={() => createWs.mutate({ projectId: PROJECT_ID, title: form.title, objective: form.objective, content: form.content, module: form.modules[0] || "", modules: form.modules, scopeItemIds: form.scopeItemIds, scheduledDate: form.date, duration: form.startTime && form.endTime ? `${form.startTime}–${form.endTime}` : form.duration, participants: form.participants, agenda: lines(form.agenda), expectedOutcomes: lines(form.expectedOutcomes), prerequisites: lines(form.prerequisites), requiredRoles: lines(form.requiredRoles), presentationFiles: form.presentationFiles, notes: form.notes })} disabled={!form.title || createWs.isPending}>Criar</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={closeWorkshopForm}>Cancelar</Button><Button onClick={() => editingWs ? updateWs.mutate({ id: editingWs.id, data: workshopData }) : createWs.mutate({ projectId: PROJECT_ID, ...workshopData })} disabled={!form.title.trim() || hasInvalidEmail || createWs.isPending || updateWs.isPending}>{editingWs ? "Salvar alterações" : "Criar"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -275,7 +291,7 @@ function WorkshopDetail({ ws, onClose, onUpdated }: { ws: any; onClose: () => vo
     <Card className="mt-4">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><CardTitle>{ws.title}</CardTitle>{ws.participants?.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Participantes: {ws.participants.join(", ")}</p>}</div>
+          <div><CardTitle>{ws.title}</CardTitle>{ws.participants?.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Participantes: {ws.participants.join(", ")}</p>}{ws.participantEmails?.length > 0 && <p className="mt-1 text-xs text-muted-foreground">E-mails: {ws.participantEmails.join(", ")}</p>}</div>
           <div className="flex items-center gap-2"><Select value={ws.status || "Planejado"} onValueChange={status => updateWorkshop.mutate({ id: ws.id, data: { status: status as "Rascunho" | "Planejado" | "Agendado" | "Realizado" | "Concluído" | "Cancelado" } })}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Rascunho">Rascunho</SelectItem><SelectItem value="Planejado">Planejado</SelectItem><SelectItem value="Agendado">Agendado</SelectItem><SelectItem value="Realizado">Realizado</SelectItem><SelectItem value="Concluído">Concluído</SelectItem><SelectItem value="Cancelado">Cancelado</SelectItem></SelectContent></Select><Button variant="ghost" onClick={onClose}>Fechar</Button></div>
         </div>
       </CardHeader>

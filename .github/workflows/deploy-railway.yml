@@ -39,7 +39,6 @@ jobs:
     name: Deploy to Railway
     needs: validate
     runs-on: ubuntu-latest
-    container: ghcr.io/railwayapp/cli:latest
     env:
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
       RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
@@ -56,6 +55,26 @@ jobs:
       - name: Checkout
         if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        run: corepack enable
+
+      - name: Install dependencies and Railway CLI
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        run: |
+          pnpm install --frozen-lockfile
+          npm install --global @railway/cli
+
+      - name: Apply database migration
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        run: railway run --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --no-local node scripts/migrate-workshop-participant-emails.mjs
 
       - name: Deploy
         if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}

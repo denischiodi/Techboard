@@ -60,10 +60,11 @@ describe("workflow PostgreSQL persistence", () => {
     query.mockResolvedValueOnce({ rows: [{ id: "workshop-1" }] });
     await db.createWorkshop({
       id: "workshop-1", projectId: "project-1", title: "Descoberta",
-      participants: ["Ana"], agenda: ["Processo atual"],
+      participants: ["Ana"], participantEmails: ["ana@example.com"], agenda: ["Processo atual"],
     });
     const values = query.mock.calls[0][1] as unknown[];
     expect(values).toContain(JSON.stringify(["Ana"]));
+    expect(values).toContain(JSON.stringify(["ana@example.com"]));
     expect(values).toContain(JSON.stringify(["Processo atual"]));
   });
 

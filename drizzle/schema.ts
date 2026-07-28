@@ -600,6 +600,7 @@ export const workshops = mysqlTable("workshops", {
   scheduledDate: varchar("scheduledDate", { length: 10 }).notNull().default(""),
   duration: varchar("duration", { length: 64 }).notNull().default(""),
   participants: json("participants").$type<string[]>().default([]),
+  participantEmails: json("participantEmails").$type<string[]>().default([]),
   consultantResourceId: varchar("consultantResourceId", { length: 64 })
     .notNull()
     .default(""),
