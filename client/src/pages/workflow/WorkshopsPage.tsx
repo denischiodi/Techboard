@@ -28,6 +28,7 @@ import {
   FileText,
   Sparkles,
   Upload,
+  Download,
   Calendar,
   Lightbulb,
   ClipboardList,
@@ -1408,6 +1409,28 @@ function WorkshopDetail({
       toast.success("Ata gerada com sucesso!");
     },
   });
+  const uploadAttachment = trpc.workflow.workshops.uploadAttachment.useMutation(
+    {
+      onSuccess: attachment => {
+        onUpdated({ attachments: [...(ws.attachments || []), attachment] });
+        toast.success("Anexo adicionado");
+      },
+      onError: error => toast.error(error.message),
+    }
+  );
+  const removeAttachment = trpc.workflow.workshops.removeAttachment.useMutation(
+    {
+      onSuccess: (_result, variables) => {
+        onUpdated({
+          attachments: (ws.attachments || []).filter(
+            (item: any) => item.url !== variables.url
+          ),
+        });
+        toast.success("Anexo removido");
+      },
+      onError: error => toast.error(error.message),
+    }
+  );
   const updateWorkshop = trpc.workflow.workshops.update.useMutation({
     onSuccess: (_result, variables) => {
       onUpdated(variables.data);
@@ -1472,6 +1495,24 @@ function WorkshopDetail({
       contentType,
       base64: dataUrl.split(",")[1] || "",
       language: "pt",
+    });
+  };
+  const submitAttachment = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024)
+      return toast.error("O arquivo deve ter no máximo 15 MB");
+    const fileData = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    uploadAttachment.mutate({
+      projectId,
+      workshopId: ws.id,
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+      fileData,
     });
   };
 
@@ -1611,6 +1652,76 @@ function WorkshopDetail({
                 ))}
               </div>
             </div>
+          )}
+        </div>
+        <div className="space-y-3 rounded-lg border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Anexos do Workshop ({ws.attachments?.length || 0})
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                PDF, Word, Excel, PowerPoint ou imagens, até 15 MB.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              disabled={
+                uploadAttachment.isPending ||
+                (ws.attachments?.length || 0) >= 20
+              }
+            >
+              <label className="cursor-pointer">
+                <Upload className="mr-2 h-4 w-4" />
+                Anexar arquivo
+                <input
+                  className="hidden"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
+                  onChange={event => {
+                    void submitAttachment(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+            </Button>
+          </div>
+          {(ws.attachments || []).map((file: any) => (
+            <div
+              key={file.url}
+              className="flex items-center gap-2 rounded-md border p-2 text-sm"
+            >
+              <Paperclip className="h-4 w-4" />
+              <a
+                href={file.url}
+                target="_blank"
+                rel="noreferrer"
+                className="min-w-0 flex-1 truncate hover:underline"
+              >
+                {file.name}
+              </a>
+              <span className="text-xs text-muted-foreground">
+                {Math.max(1, Math.round((file.size || 0) / 1024))} KB
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Remover anexo"
+                onClick={() =>
+                  removeAttachment.mutate({ workshopId: ws.id, url: file.url })
+                }
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          {!ws.attachments?.length && (
+            <p className="text-sm text-muted-foreground">
+              Nenhum anexo adicionado.
+            </p>
           )}
         </div>
         <div className="space-y-3 rounded-lg border p-4">
@@ -1936,8 +2047,31 @@ function WorkshopDetail({
             Ata de Reunião
           </h3>
           {minutes ? (
-            <div className="border rounded p-3 text-sm whitespace-pre-wrap">
-              {(minutes as any).content}
+            <div className="space-y-3">
+              <div className="border rounded p-3 text-sm whitespace-pre-wrap">
+                {(minutes as any).content}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {(minutes as any).docxUrl && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={(minutes as any).docxUrl} download>
+                      <Download className="mr-2 h-4 w-4" />
+                      Baixar Word
+                    </a>
+                  </Button>
+                )}
+                {(minutes as any).pdfUrl && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={(minutes as any).pdfUrl} download>
+                      <Download className="mr-2 h-4 w-4" />
+                      Baixar PDF
+                    </a>
+                  </Button>
+                )}
+                <Badge variant="secondary">
+                  Versão {(minutes as any).version || 1}
+                </Badge>
+              </div>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">

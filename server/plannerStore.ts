@@ -1,7 +1,20 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Absence, Allocation, AppUser, LookupConfig, LookupItem, Phase, Project, Resource, TechMoveData, UserPermissions, UserRole } from "../shared/types";
+import type {
+  Absence,
+  Allocation,
+  AppUser,
+  LookupConfig,
+  LookupItem,
+  Phase,
+  Project,
+  ProjectCostCode,
+  Resource,
+  TechMoveData,
+  UserPermissions,
+  UserRole,
+} from "../shared/types";
 import { DEFAULT_PERMISSIONS } from "../shared/types";
 import { getPgPool } from "./db";
 import type { QueryResultRow } from "pg";
@@ -25,7 +38,12 @@ let schemaReady = false;
 let lookupsSeeded = false;
 let appUsersSeeded = false;
 const memoryTechMove = new Map<string, TechMoveData>();
-const bootstrapAdminEmail = (process.env.BOOTSTRAP_ADMIN_EMAIL || "denis_chiodi@hotmail.com").trim().toLowerCase();
+const memoryProjectCostCodes: ProjectCostCode[] = [];
+const bootstrapAdminEmail = (
+  process.env.BOOTSTRAP_ADMIN_EMAIL || "denis_chiodi@hotmail.com"
+)
+  .trim()
+  .toLowerCase();
 const bootstrapAdminName = process.env.BOOTSTRAP_ADMIN_NAME || "Denis Chiodi";
 
 function hasDatabase() {
@@ -44,7 +62,10 @@ function getPool() {
   return getPgPool();
 }
 
-async function query<T extends QueryResultRow = QueryResultRow>(sql: string, params: unknown[] = []): Promise<{ rows: T[]; rowCount?: number | null } | null> {
+async function query<T extends QueryResultRow = QueryResultRow>(
+  sql: string,
+  params: unknown[] = []
+): Promise<{ rows: T[]; rowCount?: number | null } | null> {
   const db = getPool();
   if (!db) return null;
   return db.query<T>(sql, params);
@@ -70,7 +91,10 @@ export async function ensureDatabaseSchema() {
     .sort();
 
   for (const migrationFile of migrationFiles) {
-    const migrationSql = await readFile(join(migrationsDir, migrationFile), "utf8");
+    const migrationSql = await readFile(
+      join(migrationsDir, migrationFile),
+      "utf8"
+    );
     const statements = migrationSql
       .split("--> statement-breakpoint")
       .map(statement => statement.trim())
@@ -79,7 +103,10 @@ export async function ensureDatabaseSchema() {
     for (const statement of statements) {
       try {
         // Skip PostgreSQL-specific statements that don't work in MySQL/TiDB
-        if (statement.startsWith("CREATE TYPE") || statement.startsWith("DROP TYPE")) {
+        if (
+          statement.startsWith("CREATE TYPE") ||
+          statement.startsWith("DROP TYPE")
+        ) {
           continue;
         }
         await query(statement);
@@ -88,11 +115,25 @@ export async function ensureDatabaseSchema() {
         const code = error?.code || error?.errno;
         const errno = error?.errno;
         // 42710/42P07/42701 = PG already exists; 1064 = parse error; 1050 = table exists; 1060 = dup field; 1101 = BLOB default
-        if (code === "42710" || code === "42P07" || code === "42701" || code === "ER_PARSE_ERROR" || errno === 1064 || code === "ER_TABLE_EXISTS_ERROR" || errno === 1050 || code === "ER_DUP_FIELDNAME" || errno === 1060 || errno === 1101) {
+        if (
+          code === "42710" ||
+          code === "42P07" ||
+          code === "42701" ||
+          code === "ER_PARSE_ERROR" ||
+          errno === 1064 ||
+          code === "ER_TABLE_EXISTS_ERROR" ||
+          errno === 1050 ||
+          code === "ER_DUP_FIELDNAME" ||
+          errno === 1060 ||
+          errno === 1101
+        ) {
           continue;
         }
         // Log and continue for any migration error to avoid blocking server startup
-        console.warn(`Migration warning (${migrationFile}):`, error?.message || error);
+        console.warn(
+          `Migration warning (${migrationFile}):`,
+          error?.message || error
+        );
         continue;
       }
     }
@@ -102,20 +143,33 @@ export async function ensureDatabaseSchema() {
 }
 
 function normalizeFronts(fronts: unknown, front = ""): string[] {
-  if (Array.isArray(fronts)) return fronts.filter((value): value is string => typeof value === "string" && value.length > 0);
+  if (Array.isArray(fronts))
+    return fronts.filter(
+      (value): value is string => typeof value === "string" && value.length > 0
+    );
   return front ? [front] : [];
 }
 
 function toResource(row: any): Resource {
   const fronts = normalizeFronts(row.fronts, row.front);
-  return { ...row, photoUrl: row.photoUrl || "", group: row.group || "", skipAllocationCheck: Boolean(row.skipAllocationCheck), fronts, front: fronts[0] || row.front || "" } as Resource;
+  return {
+    ...row,
+    photoUrl: row.photoUrl || "",
+    group: row.group || "",
+    skipAllocationCheck: Boolean(row.skipAllocationCheck),
+    fronts,
+    front: fronts[0] || row.front || "",
+  } as Resource;
 }
 
 function toProject(row: any): Project {
   return { ...row, fronts: normalizeFronts(row.fronts) } as Project;
 }
 
-function normalizePermissions(permissions: Partial<UserPermissions> | null | undefined, role: UserRole): UserPermissions {
+function normalizePermissions(
+  permissions: Partial<UserPermissions> | null | undefined,
+  role: UserRole
+): UserPermissions {
   return {
     ...DEFAULT_PERMISSIONS[role],
     ...(permissions || {}),
@@ -129,7 +183,10 @@ function toAppUser(row: any): AppUser {
     name: row.name,
     email: row.email,
     role,
-    permissions: normalizePermissions(row.permissions as Partial<UserPermissions>, role),
+    permissions: normalizePermissions(
+      row.permissions as Partial<UserPermissions>,
+      role
+    ),
     active: row.active,
     resourceId: row.resourceId || "",
     teamFronts: normalizeFronts(row.teamFronts),
@@ -157,7 +214,9 @@ function getBootstrapAdminUser(): AppUser | null {
 function withBootstrapAdmin(users: AppUser[]) {
   const bootstrapAdmin = getBootstrapAdminUser();
   if (!bootstrapAdmin) return users;
-  const exists = users.some(user => user.email.toLowerCase() === bootstrapAdmin.email.toLowerCase());
+  const exists = users.some(
+    user => user.email.toLowerCase() === bootstrapAdmin.email.toLowerCase()
+  );
   return exists ? users : [...users, bootstrapAdmin];
 }
 
@@ -182,7 +241,9 @@ function rowsByCategory(rows: any[]): LookupConfig {
 
 async function seedLookupsIfNeeded() {
   if (!hasDatabase() || lookupsSeeded) return;
-  const existing = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM "lookups"');
+  const existing = await query<{ count: string }>(
+    'SELECT COUNT(*)::text AS count FROM "lookups"'
+  );
   if (!existing || Number(existing.rows[0]?.count ?? 0) > 0) {
     lookupsSeeded = true;
     return;
@@ -192,7 +253,7 @@ async function seedLookupsIfNeeded() {
     for (const item of items) {
       await query(
         'INSERT INTO "lookups" ("id", "category", "value", "active") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO NOTHING',
-        [item.id, category, item.value, item.active],
+        [item.id, category, item.value, item.active]
       );
     }
   }
@@ -201,7 +262,9 @@ async function seedLookupsIfNeeded() {
 
 async function seedAppUsersIfNeeded() {
   if (!hasDatabase() || appUsersSeeded) return;
-  const existing = await query<{ count: string }>('SELECT COUNT(*)::text AS count FROM "app_users"');
+  const existing = await query<{ count: string }>(
+    'SELECT COUNT(*)::text AS count FROM "app_users"'
+  );
   if (!existing || Number(existing.rows[0]?.count ?? 0) > 0) {
     await upsertBootstrapAdmin();
     appUsersSeeded = true;
@@ -211,7 +274,16 @@ async function seedAppUsersIfNeeded() {
   for (const user of memoryAppUsers) {
     await query(
       'INSERT INTO "app_users" ("id", "name", "email", "role", "permissions", "active", "resourceId", "teamFronts") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT ("email") DO NOTHING',
-      [user.id, user.name, user.email, user.role, JSON.stringify(user.permissions), user.active, user.resourceId || "", JSON.stringify(user.teamFronts || [])],
+      [
+        user.id,
+        user.name,
+        user.email,
+        user.role,
+        JSON.stringify(user.permissions),
+        user.active,
+        user.resourceId || "",
+        JSON.stringify(user.teamFronts || []),
+      ]
     );
   }
   await upsertBootstrapAdmin();
@@ -223,29 +295,59 @@ async function upsertBootstrapAdmin() {
   if (!bootstrapAdmin) return;
   await query(
     'INSERT INTO "app_users" ("id", "name", "email", "role", "permissions", "active", "resourceId", "teamFronts") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT ("email") DO UPDATE SET "name" = EXCLUDED."name", "role" = EXCLUDED."role", "permissions" = EXCLUDED."permissions", "active" = true, "resourceId" = COALESCE(NULLIF("app_users"."resourceId", \'\'), EXCLUDED."resourceId"), "teamFronts" = EXCLUDED."teamFronts"',
-    [bootstrapAdmin.id, bootstrapAdmin.name, bootstrapAdmin.email, bootstrapAdmin.role, JSON.stringify(bootstrapAdmin.permissions), bootstrapAdmin.active, bootstrapAdmin.resourceId || "", JSON.stringify(bootstrapAdmin.teamFronts || [])],
+    [
+      bootstrapAdmin.id,
+      bootstrapAdmin.name,
+      bootstrapAdmin.email,
+      bootstrapAdmin.role,
+      JSON.stringify(bootstrapAdmin.permissions),
+      bootstrapAdmin.active,
+      bootstrapAdmin.resourceId || "",
+      JSON.stringify(bootstrapAdmin.teamFronts || []),
+    ]
   );
 }
 
-async function updateById<T>(table: string, id: string, values: Record<string, unknown>, columns: string[], mapper: (row: any) => T) {
-  const entries = Object.entries(values).filter(([key, value]) => key !== "id" && value !== undefined && columns.includes(key));
+async function updateById<T>(
+  table: string,
+  id: string,
+  values: Record<string, unknown>,
+  columns: string[],
+  mapper: (row: any) => T
+) {
+  const entries = Object.entries(values).filter(
+    ([key, value]) =>
+      key !== "id" && value !== undefined && columns.includes(key)
+  );
   if (entries.length === 0) {
-    const current = await query(`SELECT * FROM "${table}" WHERE "id" = $1`, [id]);
-    if (!current || current.rows.length === 0) throw new Error(`${table} item not found`);
+    const current = await query(`SELECT * FROM "${table}" WHERE "id" = $1`, [
+      id,
+    ]);
+    if (!current || current.rows.length === 0)
+      throw new Error(`${table} item not found`);
     return mapper(current.rows[0]);
   }
   const assignments = entries.map(([key], index) => `"${key}" = $${index + 2}`);
   assignments.push('"updatedAt" = now()');
   const result = await query(
     `UPDATE "${table}" SET ${assignments.join(", ")} WHERE "id" = $1 RETURNING *`,
-    [id, ...entries.map(([, value]) => value)],
+    [id, ...entries.map(([, value]) => value)]
   );
-  if (!result || result.rows.length === 0) throw new Error(`${table} item not found`);
+  if (!result || result.rows.length === 0)
+    throw new Error(`${table} item not found`);
   return mapper(result.rows[0]);
 }
 
 export async function getPlannerSnapshot() {
-  const [resources, projects, phases, absences, allocations, appUsers, lookups] = await Promise.all([
+  const [
+    resources,
+    projects,
+    phases,
+    absences,
+    allocations,
+    appUsers,
+    lookups,
+  ] = await Promise.all([
     listResources(),
     listProjects(),
     listPhases(),
@@ -254,7 +356,15 @@ export async function getPlannerSnapshot() {
     listAppUsers(),
     getLookups(),
   ]);
-  return { resources, projects, phases, absences, allocations, appUsers, lookups };
+  return {
+    resources,
+    projects,
+    phases,
+    absences,
+    allocations,
+    appUsers,
+    lookups,
+  };
 }
 
 function createEmptyTechMove(projectId: string): TechMoveData {
@@ -271,7 +381,10 @@ function createEmptyTechMove(projectId: string): TechMoveData {
   };
 }
 
-function normalizeTechMove(projectId: string, data: Partial<TechMoveData> | null | undefined): TechMoveData {
+function normalizeTechMove(
+  projectId: string,
+  data: Partial<TechMoveData> | null | undefined
+): TechMoveData {
   const empty = createEmptyTechMove(projectId);
   return {
     ...empty,
@@ -283,12 +396,16 @@ function normalizeTechMove(projectId: string, data: Partial<TechMoveData> | null
     workshops: Array.isArray(data?.workshops) ? data!.workshops : [],
     gaps: Array.isArray(data?.gaps) ? data!.gaps : [],
     dcdDraft: typeof data?.dcdDraft === "string" ? data.dcdDraft : "",
-    updatedAt: typeof data?.updatedAt === "string" ? data.updatedAt : empty.updatedAt,
+    updatedAt:
+      typeof data?.updatedAt === "string" ? data.updatedAt : empty.updatedAt,
   };
 }
 
 export async function getTechMoveData(projectId: string) {
-  const result = await query<{ data: TechMoveData }>('SELECT "data" FROM "techmove_projects" WHERE "projectId" = $1', [projectId]);
+  const result = await query<{ data: TechMoveData }>(
+    'SELECT "data" FROM "techmove_projects" WHERE "projectId" = $1',
+    [projectId]
+  );
   if (result) {
     return normalizeTechMove(projectId, result.rows[0]?.data);
   }
@@ -296,14 +413,17 @@ export async function getTechMoveData(projectId: string) {
 }
 
 export async function saveTechMoveData(projectId: string, data: TechMoveData) {
-  const normalized = normalizeTechMove(projectId, { ...data, updatedAt: new Date().toISOString() });
+  const normalized = normalizeTechMove(projectId, {
+    ...data,
+    updatedAt: new Date().toISOString(),
+  });
   if (!hasDatabase()) {
     memoryTechMove.set(projectId, normalized);
     return normalized;
   }
   const result = await query<{ data: TechMoveData }>(
     'INSERT INTO "techmove_projects" ("projectId", "data") VALUES ($1, $2) ON CONFLICT ("projectId") DO UPDATE SET "data" = EXCLUDED."data", "updatedAt" = now() RETURNING "data"',
-    [projectId, JSON.stringify(normalized)],
+    [projectId, JSON.stringify(normalized)]
   );
   return normalizeTechMove(projectId, result?.rows[0]?.data || normalized);
 }
@@ -315,29 +435,67 @@ export async function listResources() {
 
 export async function getResourceById(id: string) {
   const result = await query('SELECT * FROM "resources" WHERE "id" = $1', [id]);
-  return result ? (result.rows[0] ? toResource(result.rows[0]) : null) : memoryResources.find(r => r.id === id) || null;
+  return result
+    ? result.rows[0]
+      ? toResource(result.rows[0])
+      : null
+    : memoryResources.find(r => r.id === id) || null;
 }
 
-export async function createResource(input: Omit<Resource, "id"> & { id?: string }) {
+export async function createResource(
+  input: Omit<Resource, "id"> & { id?: string }
+) {
   const fronts = normalizeFronts(input.fronts, input.front);
-  const resource: Resource = { ...input, id: input.id || createEntityId("r"), front: fronts[0] || "", fronts } as Resource;
+  const resource: Resource = {
+    ...input,
+    id: input.id || createEntityId("r"),
+    front: fronts[0] || "",
+    fronts,
+  } as Resource;
   if (!hasDatabase()) {
     memoryResources.push(resource);
     return resource;
   }
   const result = await query(
     'INSERT INTO "resources" ("id", "name", "email", "photoUrl", "group", "profile", "front", "fronts", "dailyCapacity", "status", "birthDate", "startDate", "endDate", "contractType", "vacationDaysEntitled", "skipAllocationCheck", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
-    [resource.id, resource.name, resource.email, resource.photoUrl || "", resource.group || "", resource.profile, resource.front, JSON.stringify(resource.fronts), resource.dailyCapacity, resource.status, resource.birthDate, resource.startDate, resource.endDate, resource.contractType, resource.vacationDaysEntitled, resource.skipAllocationCheck, resource.notes],
+    [
+      resource.id,
+      resource.name,
+      resource.email,
+      resource.photoUrl || "",
+      resource.group || "",
+      resource.profile,
+      resource.front,
+      JSON.stringify(resource.fronts),
+      resource.dailyCapacity,
+      resource.status,
+      resource.birthDate,
+      resource.startDate,
+      resource.endDate,
+      resource.contractType,
+      resource.vacationDaysEntitled,
+      resource.skipAllocationCheck,
+      resource.notes,
+    ]
   );
   return toResource(result!.rows[0]);
 }
 
-export async function updateResource(input: Partial<Resource> & { id: string }) {
+export async function updateResource(
+  input: Partial<Resource> & { id: string }
+) {
   if (!hasDatabase()) {
     const idx = memoryResources.findIndex(r => r.id === input.id);
     if (idx === -1) throw new Error("Resource not found");
-    const fronts = input.fronts ?? (input.front ? [input.front] : memoryResources[idx].fronts);
-    memoryResources[idx] = { ...memoryResources[idx], ...input, fronts, front: fronts?.[0] ?? input.front ?? memoryResources[idx].front } as Resource;
+    const fronts =
+      input.fronts ??
+      (input.front ? [input.front] : memoryResources[idx].fronts);
+    memoryResources[idx] = {
+      ...memoryResources[idx],
+      ...input,
+      fronts,
+      front: fronts?.[0] ?? input.front ?? memoryResources[idx].front,
+    } as Resource;
     return memoryResources[idx];
   }
   const next: Record<string, unknown> = { ...input };
@@ -345,7 +503,30 @@ export async function updateResource(input: Partial<Resource> & { id: string }) 
     next.front = input.fronts[0] || "";
     next.fronts = JSON.stringify(input.fronts);
   }
-  return updateById("resources", input.id, next, ["name", "email", "photoUrl", "group", "profile", "front", "fronts", "dailyCapacity", "status", "birthDate", "startDate", "endDate", "contractType", "vacationDaysEntitled", "skipAllocationCheck", "notes"], toResource);
+  return updateById(
+    "resources",
+    input.id,
+    next,
+    [
+      "name",
+      "email",
+      "photoUrl",
+      "group",
+      "profile",
+      "front",
+      "fronts",
+      "dailyCapacity",
+      "status",
+      "birthDate",
+      "startDate",
+      "endDate",
+      "contractType",
+      "vacationDaysEntitled",
+      "skipAllocationCheck",
+      "notes",
+    ],
+    toResource
+  );
 }
 
 export async function deleteResource(id: string) {
@@ -369,19 +550,44 @@ export async function listProjects() {
 
 export async function getProjectById(id: string) {
   const result = await query('SELECT * FROM "projects" WHERE "id" = $1', [id]);
-  return result ? (result.rows[0] ? toProject(result.rows[0]) : null) : memoryProjects.find(p => p.id === id) || null;
+  return result
+    ? result.rows[0]
+      ? toProject(result.rows[0])
+      : null
+    : memoryProjects.find(p => p.id === id) || null;
 }
 
-export async function createProject(input: Omit<Project, "id"> & { id?: string }) {
-  const project: Project = { ...input, id: input.id || createEntityId("p"), fronts: normalizeFronts(input.fronts) } as Project;
+export async function createProject(
+  input: Omit<Project, "id"> & { id?: string }
+) {
+  const project: Project = {
+    ...input,
+    id: input.id || createEntityId("p"),
+    fronts: normalizeFronts(input.fronts),
+  } as Project;
   if (!hasDatabase()) {
     memoryProjects.push(project);
     await ensureProjectChecklist(project);
     return project;
   }
   const result = await query(
-    'INSERT INTO "projects" ("id", "name", "logoUrl", "client", "manager", "status", "startDate", "endDate", "fronts", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
-    [project.id, project.name, project.logoUrl || "", project.client, project.manager, project.status, project.startDate, project.endDate, JSON.stringify(project.fronts), project.notes],
+    'INSERT INTO "projects" ("id", "name", "logoUrl", "client", "manager", "projectCode", "clientManager", "seidorExecutive", "sponsor", "status", "startDate", "endDate", "fronts", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *',
+    [
+      project.id,
+      project.name,
+      project.logoUrl || "",
+      project.client,
+      project.manager,
+      project.projectCode || "",
+      project.clientManager || "",
+      project.seidorExecutive || "",
+      project.sponsor || "",
+      project.status,
+      project.startDate,
+      project.endDate,
+      JSON.stringify(project.fronts),
+      project.notes,
+    ]
   );
   const created = toProject(result!.rows[0]);
   await ensureProjectChecklist(created);
@@ -397,7 +603,164 @@ export async function updateProject(input: Partial<Project> & { id: string }) {
   }
   const next: Record<string, unknown> = { ...input };
   if (Array.isArray(input.fronts)) next.fronts = JSON.stringify(input.fronts);
-  return updateById("projects", input.id, next, ["name", "logoUrl", "client", "manager", "status", "startDate", "endDate", "fronts", "notes"], toProject);
+  return updateById(
+    "projects",
+    input.id,
+    next,
+    [
+      "name",
+      "logoUrl",
+      "client",
+      "manager",
+      "projectCode",
+      "clientManager",
+      "seidorExecutive",
+      "sponsor",
+      "status",
+      "startDate",
+      "endDate",
+      "fronts",
+      "notes",
+    ],
+    toProject
+  );
+}
+
+export async function listProjectCostCodes(projectId: string) {
+  const result = await query(
+    'SELECT * FROM "project_cost_codes" WHERE "projectId" = $1 ORDER BY "isPrimary" DESC, "active" DESC, "code"',
+    [projectId]
+  );
+  return result
+    ? result.rows.map(
+        row =>
+          ({
+            ...row,
+            active: Boolean(row.active),
+            isPrimary: Boolean(row.isPrimary),
+          }) as ProjectCostCode
+      )
+    : memoryProjectCostCodes.filter(item => item.projectId === projectId);
+}
+
+export async function createProjectCostCode(
+  input: Omit<ProjectCostCode, "id"> & { id?: string }
+) {
+  const item: ProjectCostCode = {
+    ...input,
+    id: input.id || createEntityId("oi"),
+  };
+  if (!hasDatabase()) {
+    if (
+      memoryProjectCostCodes.some(
+        existing =>
+          existing.projectId === item.projectId &&
+          existing.code.toLowerCase() === item.code.toLowerCase()
+      )
+    )
+      throw new Error("Código OI já cadastrado neste projeto");
+    if (item.isPrimary)
+      memoryProjectCostCodes.forEach(existing => {
+        if (existing.projectId === item.projectId) existing.isPrimary = false;
+      });
+    memoryProjectCostCodes.push(item);
+    return item;
+  }
+  const db = getPool()!;
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    if (item.isPrimary)
+      await client.query(
+        'UPDATE "project_cost_codes" SET "isPrimary" = false, "updatedAt" = now() WHERE "projectId" = $1',
+        [item.projectId]
+      );
+    const result = await client.query(
+      'INSERT INTO "project_cost_codes" ("id","projectId","code","description","active","isPrimary") VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [
+        item.id,
+        item.projectId,
+        item.code,
+        item.description,
+        item.active,
+        item.isPrimary,
+      ]
+    );
+    await client.query("COMMIT");
+    return result.rows[0] as ProjectCostCode;
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    if (error?.code === "23505")
+      throw new Error("Código OI já cadastrado neste projeto", {
+        cause: error,
+      });
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function updateProjectCostCode(
+  id: string,
+  input: Partial<Omit<ProjectCostCode, "id" | "projectId">>
+) {
+  if (!hasDatabase()) {
+    const item = memoryProjectCostCodes.find(existing => existing.id === id);
+    if (!item) throw new Error("Código OI não encontrado");
+    if (input.isPrimary)
+      memoryProjectCostCodes.forEach(existing => {
+        if (existing.projectId === item.projectId) existing.isPrimary = false;
+      });
+    Object.assign(item, input);
+    return item;
+  }
+  const db = getPool()!;
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query(
+      'SELECT * FROM "project_cost_codes" WHERE "id"=$1',
+      [id]
+    );
+    if (!current.rows[0]) throw new Error("Código OI não encontrado");
+    if (input.isPrimary)
+      await client.query(
+        'UPDATE "project_cost_codes" SET "isPrimary" = false, "updatedAt" = now() WHERE "projectId" = $1',
+        [current.rows[0].projectId]
+      );
+    const entries = Object.entries(input).filter(
+      ([, value]) => value !== undefined
+    );
+    const result = entries.length
+      ? await client.query(
+          `UPDATE "project_cost_codes" SET ${entries.map(([key], index) => `"${key}"=$${index + 2}`).join(",")}, "updatedAt"=now() WHERE "id"=$1 RETURNING *`,
+          [id, ...entries.map(([, value]) => value)]
+        )
+      : current;
+    await client.query("COMMIT");
+    return result.rows[0] as ProjectCostCode;
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    if (error?.code === "23505")
+      throw new Error("Código OI já cadastrado neste projeto", {
+        cause: error,
+      });
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteProjectCostCode(id: string) {
+  const result = await query('DELETE FROM "project_cost_codes" WHERE "id"=$1', [
+    id,
+  ]);
+  if (!result) {
+    const index = memoryProjectCostCodes.findIndex(item => item.id === id);
+    if (index === -1) throw new Error("Código OI não encontrado");
+    memoryProjectCostCodes.splice(index, 1);
+  }
+  return { success: true };
 }
 
 export async function deleteProject(id: string) {
@@ -414,18 +777,31 @@ export async function deleteProject(id: string) {
 
 export async function listPhases() {
   const result = await query('SELECT * FROM "phases" ORDER BY "startDate"');
-  return result ? result.rows as Phase[] : memoryPhases;
+  return result ? (result.rows as Phase[]) : memoryPhases;
 }
 
 export async function createPhase(input: Omit<Phase, "id"> & { id?: string }) {
-  const phase: Phase = { ...input, id: input.id || createEntityId("ph") } as Phase;
+  const phase: Phase = {
+    ...input,
+    id: input.id || createEntityId("ph"),
+  } as Phase;
   if (!hasDatabase()) {
     memoryPhases.push(phase);
     return phase;
   }
   const result = await query(
     'INSERT INTO "phases" ("id", "projectId", "phase", "startDate", "endDate", "responsible", "completionPercent", "status", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-    [phase.id, phase.projectId, phase.phase, phase.startDate, phase.endDate, phase.responsible, phase.completionPercent, phase.status, phase.notes],
+    [
+      phase.id,
+      phase.projectId,
+      phase.phase,
+      phase.startDate,
+      phase.endDate,
+      phase.responsible,
+      phase.completionPercent,
+      phase.status,
+      phase.notes,
+    ]
   );
   return result!.rows[0] as Phase;
 }
@@ -437,7 +813,22 @@ export async function updatePhase(input: Partial<Phase> & { id: string }) {
     memoryPhases[idx] = { ...memoryPhases[idx], ...input } as Phase;
     return memoryPhases[idx];
   }
-  return updateById("phases", input.id, input, ["projectId", "phase", "startDate", "endDate", "responsible", "completionPercent", "status", "notes"], row => row as Phase);
+  return updateById(
+    "phases",
+    input.id,
+    input,
+    [
+      "projectId",
+      "phase",
+      "startDate",
+      "endDate",
+      "responsible",
+      "completionPercent",
+      "status",
+      "notes",
+    ],
+    row => row as Phase
+  );
 }
 
 export async function deletePhase(id: string) {
@@ -454,18 +845,32 @@ export async function deletePhase(id: string) {
 
 export async function listAbsences() {
   const result = await query('SELECT * FROM "absences" ORDER BY "startDate"');
-  return result ? result.rows as Absence[] : memoryAbsences;
+  return result ? (result.rows as Absence[]) : memoryAbsences;
 }
 
-export async function createAbsence(input: Omit<Absence, "id"> & { id?: string }) {
-  const absence: Absence = { ...input, id: input.id || createEntityId("abs") } as Absence;
+export async function createAbsence(
+  input: Omit<Absence, "id"> & { id?: string }
+) {
+  const absence: Absence = {
+    ...input,
+    id: input.id || createEntityId("abs"),
+  } as Absence;
   if (!hasDatabase()) {
     memoryAbsences.push(absence);
     return absence;
   }
   const result = await query(
     'INSERT INTO "absences" ("id", "resourceId", "type", "startDate", "endDate", "daysCount", "approved", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-    [absence.id, absence.resourceId, absence.type, absence.startDate, absence.endDate, absence.daysCount ?? null, absence.approved, absence.notes],
+    [
+      absence.id,
+      absence.resourceId,
+      absence.type,
+      absence.startDate,
+      absence.endDate,
+      absence.daysCount ?? null,
+      absence.approved,
+      absence.notes,
+    ]
   );
   return result!.rows[0] as Absence;
 }
@@ -477,7 +882,21 @@ export async function updateAbsence(input: Partial<Absence> & { id: string }) {
     memoryAbsences[idx] = { ...memoryAbsences[idx], ...input } as Absence;
     return memoryAbsences[idx];
   }
-  return updateById("absences", input.id, input, ["resourceId", "type", "startDate", "endDate", "daysCount", "approved", "notes"], row => row as Absence);
+  return updateById(
+    "absences",
+    input.id,
+    input,
+    [
+      "resourceId",
+      "type",
+      "startDate",
+      "endDate",
+      "daysCount",
+      "approved",
+      "notes",
+    ],
+    row => row as Absence
+  );
 }
 
 export async function deleteAbsence(id: string) {
@@ -493,7 +912,9 @@ export async function deleteAbsence(id: string) {
 }
 
 export async function listAllocations() {
-  const result = await query('SELECT * FROM "allocations" ORDER BY "startDate"');
+  const result = await query(
+    'SELECT * FROM "allocations" ORDER BY "startDate"'
+  );
   return result ? result.rows.map(toAllocation) : memoryAllocations;
 }
 
@@ -512,28 +933,70 @@ async function generateAvailableAllocationId() {
   return `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export async function createAllocation(input: Omit<Allocation, "id"> & { id?: string }) {
-  const allocation: Allocation = { ...input, id: input.id || await generateAvailableAllocationId() } as Allocation;
+export async function createAllocation(
+  input: Omit<Allocation, "id"> & { id?: string }
+) {
+  const allocation: Allocation = {
+    ...input,
+    id: input.id || (await generateAvailableAllocationId()),
+  } as Allocation;
   if (!hasDatabase()) {
     memoryAllocations.push(allocation);
     return allocation;
   }
   const result = await query(
     'INSERT INTO "allocations" ("id", "resourceId", "projectId", "phaseId", "front", "startDate", "endDate", "hoursPerDay", "allocationType", "status", "notes") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
-    [allocation.id, allocation.resourceId, allocation.projectId, allocation.phaseId || null, allocation.front, allocation.startDate, allocation.endDate, allocation.hoursPerDay, allocation.allocationType, allocation.status, allocation.notes],
+    [
+      allocation.id,
+      allocation.resourceId,
+      allocation.projectId,
+      allocation.phaseId || null,
+      allocation.front,
+      allocation.startDate,
+      allocation.endDate,
+      allocation.hoursPerDay,
+      allocation.allocationType,
+      allocation.status,
+      allocation.notes,
+    ]
   );
   return toAllocation(result!.rows[0]);
 }
 
-export async function updateAllocation(input: Partial<Allocation> & { id: string }) {
+export async function updateAllocation(
+  input: Partial<Allocation> & { id: string }
+) {
   if (!hasDatabase()) {
     const idx = memoryAllocations.findIndex(a => a.id === input.id);
     if (idx === -1) throw new Error("Allocation not found");
-    memoryAllocations[idx] = { ...memoryAllocations[idx], ...input } as Allocation;
+    memoryAllocations[idx] = {
+      ...memoryAllocations[idx],
+      ...input,
+    } as Allocation;
     return memoryAllocations[idx];
   }
-  const next = { ...input, phaseId: input.phaseId === "" ? null : input.phaseId };
-  return updateById("allocations", input.id, next, ["resourceId", "projectId", "phaseId", "front", "startDate", "endDate", "hoursPerDay", "allocationType", "status", "notes"], toAllocation);
+  const next = {
+    ...input,
+    phaseId: input.phaseId === "" ? null : input.phaseId,
+  };
+  return updateById(
+    "allocations",
+    input.id,
+    next,
+    [
+      "resourceId",
+      "projectId",
+      "phaseId",
+      "front",
+      "startDate",
+      "endDate",
+      "hoursPerDay",
+      "allocationType",
+      "status",
+      "notes",
+    ],
+    toAllocation
+  );
 }
 
 export async function deleteAllocation(id: string) {
@@ -550,7 +1013,9 @@ export async function deleteAllocation(id: string) {
 
 export async function getLookups() {
   await seedLookupsIfNeeded();
-  const result = await query('SELECT * FROM "lookups" ORDER BY "category", "value"');
+  const result = await query(
+    'SELECT * FROM "lookups" ORDER BY "category", "value"'
+  );
   return result ? rowsByCategory(result.rows) : memoryLookups;
 }
 
@@ -562,7 +1027,7 @@ export async function addLookup(category: LookupCategory, value: string) {
   }
   const result = await query(
     'INSERT INTO "lookups" ("id", "category", "value", "active") VALUES ($1,$2,$3,$4) RETURNING *',
-    [item.id, category, item.value, item.active],
+    [item.id, category, item.value, item.active]
   );
   return toLookup(result!.rows[0]);
 }
@@ -579,7 +1044,13 @@ export async function updateLookup(input: LookupItem) {
     }
     throw new Error("Lookup item not found");
   }
-  return updateById("lookups", input.id, { ...input }, ["value", "active"], toLookup);
+  return updateById(
+    "lookups",
+    input.id,
+    { ...input },
+    ["value", "active"],
+    toLookup
+  );
 }
 
 export async function deleteLookup(id: string) {
@@ -601,22 +1072,36 @@ export async function deleteLookup(id: string) {
 export async function listAppUsers() {
   await seedAppUsersIfNeeded();
   const result = await query('SELECT * FROM "app_users" ORDER BY "name"');
-  return result ? result.rows.map(toAppUser) : withBootstrapAdmin(memoryAppUsers).map(user => ({
-    ...user,
-    permissions: normalizePermissions(user.permissions, user.role),
-  }));
+  return result
+    ? result.rows.map(toAppUser)
+    : withBootstrapAdmin(memoryAppUsers).map(user => ({
+        ...user,
+        permissions: normalizePermissions(user.permissions, user.role),
+      }));
 }
 
 export async function getAppUserByEmail(email: string) {
   await seedAppUsersIfNeeded();
-  const result = await query('SELECT * FROM "app_users" WHERE lower("email") = lower($1)', [email]);
+  const result = await query(
+    'SELECT * FROM "app_users" WHERE lower("email") = lower($1)',
+    [email]
+  );
   const normalized = email.trim().toLowerCase();
   if (result) return result.rows[0] ? toAppUser(result.rows[0]) : null;
-  const user = withBootstrapAdmin(memoryAppUsers).find(u => u.email.toLowerCase() === normalized);
-  return user ? { ...user, permissions: normalizePermissions(user.permissions, user.role) } : null;
+  const user = withBootstrapAdmin(memoryAppUsers).find(
+    u => u.email.toLowerCase() === normalized
+  );
+  return user
+    ? {
+        ...user,
+        permissions: normalizePermissions(user.permissions, user.role),
+      }
+    : null;
 }
 
-export async function createAppUser(input: Omit<AppUser, "id" | "active"> & { id?: string; active?: boolean }) {
+export async function createAppUser(
+  input: Omit<AppUser, "id" | "active"> & { id?: string; active?: boolean }
+) {
   const appUser: AppUser = {
     id: input.id || generateUserId(),
     name: input.name,
@@ -633,7 +1118,16 @@ export async function createAppUser(input: Omit<AppUser, "id" | "active"> & { id
   }
   const result = await query(
     'INSERT INTO "app_users" ("id", "name", "email", "role", "permissions", "active", "resourceId", "teamFronts") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-    [appUser.id, appUser.name, appUser.email, appUser.role, JSON.stringify(appUser.permissions), appUser.active, appUser.resourceId || "", JSON.stringify(appUser.teamFronts || [])],
+    [
+      appUser.id,
+      appUser.name,
+      appUser.email,
+      appUser.role,
+      JSON.stringify(appUser.permissions),
+      appUser.active,
+      appUser.resourceId || "",
+      JSON.stringify(appUser.teamFronts || []),
+    ]
   );
   return toAppUser(result!.rows[0]);
 }
@@ -643,7 +1137,10 @@ export async function updateAppUser(input: Partial<AppUser> & { id: string }) {
     const idx = memoryAppUsers.findIndex(u => u.id === input.id);
     if (idx === -1) throw new Error("User not found");
     const next = { ...memoryAppUsers[idx], ...input } as AppUser;
-    next.permissions = normalizePermissions(input.permissions || next.permissions, next.role);
+    next.permissions = normalizePermissions(
+      input.permissions || next.permissions,
+      next.role
+    );
     memoryAppUsers[idx] = next;
     return next;
   }
@@ -652,11 +1149,29 @@ export async function updateAppUser(input: Partial<AppUser> & { id: string }) {
     const currentUsers = await listAppUsers();
     const current = currentUsers.find(user => user.id === input.id);
     const role = (input.role || current?.role || "viewer") as UserRole;
-    next.permissions = normalizePermissions(input.permissions || current?.permissions, role);
+    next.permissions = normalizePermissions(
+      input.permissions || current?.permissions,
+      role
+    );
   }
   if (next.permissions) next.permissions = JSON.stringify(next.permissions);
-  if (Array.isArray(input.teamFronts)) next.teamFronts = JSON.stringify(input.teamFronts);
-  return updateById("app_users", input.id, next, ["name", "email", "role", "permissions", "active", "resourceId", "teamFronts"], toAppUser);
+  if (Array.isArray(input.teamFronts))
+    next.teamFronts = JSON.stringify(input.teamFronts);
+  return updateById(
+    "app_users",
+    input.id,
+    next,
+    [
+      "name",
+      "email",
+      "role",
+      "permissions",
+      "active",
+      "resourceId",
+      "teamFronts",
+    ],
+    toAppUser
+  );
 }
 
 export async function deleteAppUser(id: string) {

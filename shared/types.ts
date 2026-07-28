@@ -170,11 +170,24 @@ export interface Project {
   logoUrl?: string;
   client: string;
   manager: string;
+  projectCode?: string;
+  clientManager?: string;
+  seidorExecutive?: string;
+  sponsor?: string;
   status: ProjectStatus;
   startDate: string; // ISO date
   endDate: string; // ISO date
   fronts: ResourceFront[]; // frentes necessárias no projeto
   notes: string;
+}
+
+export interface ProjectCostCode {
+  id: string;
+  projectId: string;
+  code: string;
+  description: string;
+  active: boolean;
+  isPrimary: boolean;
 }
 
 export type GpChecklistStatus =

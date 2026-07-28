@@ -1506,6 +1506,10 @@ export const appRouter = router({
           logoUrl: z.string().default(""),
           client: z.string(),
           manager: z.string(),
+          projectCode: z.string().max(255).default(""),
+          clientManager: z.string().max(255).default(""),
+          seidorExecutive: z.string().max(255).default(""),
+          sponsor: z.string().max(255).default(""),
           status: z.string().default("Planejado"),
           startDate: z.string(),
           endDate: z.string(),
@@ -1529,6 +1533,10 @@ export const appRouter = router({
           logoUrl: z.string().optional(),
           client: z.string().optional(),
           manager: z.string().optional(),
+          projectCode: z.string().max(255).optional(),
+          clientManager: z.string().max(255).optional(),
+          seidorExecutive: z.string().max(255).optional(),
+          sponsor: z.string().max(255).optional(),
           status: z.string().optional(),
           startDate: z.string().optional(),
           endDate: z.string().optional(),
@@ -1569,6 +1577,10 @@ export const appRouter = router({
               logoUrl: z.string().default(""),
               client: z.string(),
               manager: z.string().default(""),
+              projectCode: z.string().max(255).default(""),
+              clientManager: z.string().max(255).default(""),
+              seidorExecutive: z.string().max(255).default(""),
+              sponsor: z.string().max(255).default(""),
               status: z.string().default("Planejado"),
               startDate: z.string(),
               endDate: z.string(),
@@ -1583,6 +1595,10 @@ export const appRouter = router({
                 logoUrl: z.string().default(""),
                 client: z.string(),
                 manager: z.string().default(""),
+                projectCode: z.string().max(255).default(""),
+                clientManager: z.string().max(255).default(""),
+                seidorExecutive: z.string().max(255).default(""),
+                sponsor: z.string().max(255).default(""),
                 status: z.string().default("Planejado"),
                 startDate: z.string(),
                 endDate: z.string(),
@@ -1611,6 +1627,42 @@ export const appRouter = router({
         }
         return { count: created.length, items: created };
       }),
+    costCodes: router({
+      list: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+          return store.listProjectCostCodes(input.projectId);
+        }),
+      create: projectsModifyProcedure
+        .input(
+          z.object({
+            projectId: z.string().min(1),
+            code: z.string().trim().min(1).max(128),
+            description: z.string().trim().max(512).default(""),
+            active: z.boolean().default(true),
+            isPrimary: z.boolean().default(false),
+          })
+        )
+        .mutation(({ input }) => store.createProjectCostCode(input)),
+      update: projectsModifyProcedure
+        .input(
+          z.object({
+            id: z.string().min(1),
+            code: z.string().trim().min(1).max(128).optional(),
+            description: z.string().trim().max(512).optional(),
+            active: z.boolean().optional(),
+            isPrimary: z.boolean().optional(),
+          })
+        )
+        .mutation(({ input }) => {
+          const { id, ...data } = input;
+          return store.updateProjectCostCode(id, data);
+        }),
+      delete: projectsModifyProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(({ input }) => store.deleteProjectCostCode(input.id)),
+    }),
   }),
 
   // ===== TRILHA DO GP =====
