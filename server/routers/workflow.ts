@@ -29,7 +29,11 @@ import * as projectAccess from "../projectAccess";
 import * as approvalStore from "../approvalStore";
 import { deliveryMasterRouter } from "./deliveryMaster";
 import { sapLibraryRouter } from "./sapLibrary";
-import { getKnowledgeContext } from "../sapLibraryStore";
+import {
+  assertRegisteredScopeItems,
+  getKnowledgeContext,
+  listScopes as listRegisteredScopes,
+} from "../sapLibraryStore";
 import * as deliveryPublisher from "../deliveryPublisher";
 
 const bdcqStandardsEditorProcedure = protectedProcedure.use(
@@ -2283,6 +2287,7 @@ export const workflowRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        await assertRegisteredScopeItems([input.code || input.name]);
         const id = nanoid();
         const created = await wdb.createScopeItem({
           id,
@@ -2304,7 +2309,13 @@ export const workflowRouter = router({
           data: z.record(z.string(), z.any()),
         })
       )
-      .mutation(({ input }) => wdb.updateScopeItem(input.id, input.data)),
+      .mutation(async ({ input }) => {
+        if (input.data.code || input.data.name)
+          await assertRegisteredScopeItems([
+            input.data.code || input.data.name,
+          ]);
+        return wdb.updateScopeItem(input.id, input.data);
+      }),
     delete: workflowEntityProcedure("scope_items", true)
       .input(z.object({ id: z.string() }))
       .mutation(({ input }) => wdb.deleteScopeItem(input.id)),
@@ -2325,6 +2336,9 @@ export const workflowRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        await assertRegisteredScopeItems(
+          input.items.map(item => item.code || item.name)
+        );
         const currentScopeItems = await wdb.listScopeItems(input.projectId);
         const scopeKey = (item: {
           module?: string;
@@ -2405,34 +2419,13 @@ export const workflowRouter = router({
         ];
       }),
       options: protectedProcedure.query(async () => {
-        const projects = await plannerStore.listProjects();
-        const scopeByProject = await Promise.all(
-          projects.map(project => wdb.listScopeItems(project.id))
-        );
-        const unique = new Map<
-          string,
-          { key: string; code: string; name: string; module: string }
-        >();
-        for (const item of scopeByProject.flat()) {
-          if (item.active === 0) continue;
-          const key = String(item.code || item.name || "").trim();
-          if (!key) continue;
-          const module = String(item.module || "Geral").trim() || "Geral";
-          const identity = `${module.toLocaleLowerCase("pt-BR")}:${key.toLocaleLowerCase("pt-BR")}`;
-          if (!unique.has(identity))
-            unique.set(identity, {
-              key,
-              code: String(item.code || ""),
-              name: String(item.name || key),
-              module,
-            });
-        }
-        return [...unique.values()].sort((a, b) =>
-          `${a.module} ${a.code} ${a.name}`.localeCompare(
-            `${b.module} ${b.code} ${b.name}`,
-            "pt-BR"
-          )
-        );
+        const scopes = await listRegisteredScopes({ search: "", limit: 500 });
+        return scopes.map((scope: any) => ({
+          key: scope.code,
+          code: scope.code,
+          name: scope.name,
+          module: scope.module || "Geral",
+        }));
       }),
       create: adminProcedure
         .input(
@@ -2463,15 +2456,16 @@ export const workflowRouter = router({
             sourceRelease: z.string().trim().max(64).default(""),
           })
         )
-        .mutation(({ ctx, input }) =>
-          wdb.createBdcqTemplate({
+        .mutation(async ({ ctx, input }) => {
+          await assertRegisteredScopeItems(input.scopeItemKeys);
+          return wdb.createBdcqTemplate({
             id: nanoid(),
             ...input,
             category: input.category || "",
             active: input.active ?? 1,
             createdBy: ctx.appUser.name || ctx.appUser.email,
-          })
-        ),
+          });
+        }),
       update: bdcqStandardsEditorProcedure
         .input(
           z.object({
@@ -2504,6 +2498,8 @@ export const workflowRouter = router({
           })
         )
         .mutation(async ({ ctx, input }) => {
+          if (input.data.scopeItemKeys)
+            await assertRegisteredScopeItems(input.data.scopeItemKeys);
           const builtIn = BDCQ_TEMPLATES.find(item => item.id === input.id);
           if (builtIn) {
             const custom = await wdb.listBdcqTemplateLibrary();
@@ -2550,15 +2546,18 @@ export const workflowRouter = router({
               .max(5000),
           })
         )
-        .mutation(({ ctx, input }) =>
-          wdb.replaceBdcqTemplateLibrary(
+        .mutation(async ({ ctx, input }) => {
+          await assertRegisteredScopeItems(
+            input.items.flatMap(item => item.scopeItemKeys)
+          );
+          return wdb.replaceBdcqTemplateLibrary(
             input.items.map(item => ({
               id: nanoid(),
               ...item,
               createdBy: ctx.appUser.name || ctx.appUser.email,
             }))
-          )
-        ),
+          );
+        }),
       delete: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteBdcqTemplate(input.id)),
@@ -3523,13 +3522,14 @@ export const workflowRouter = router({
         }),
       create: adminProcedure
         .input(workshopTemplateDataSchema)
-        .mutation(({ ctx, input }) =>
-          wdb.createWorkshopTemplate({
+        .mutation(async ({ ctx, input }) => {
+          await assertRegisteredScopeItems(input.scopeItemKeys);
+          return wdb.createWorkshopTemplate({
             id: nanoid(),
             ...input,
             createdBy: ctx.appUser.name || ctx.appUser.email,
-          })
-        ),
+          });
+        }),
       update: adminProcedure
         .input(
           z.object({
@@ -3537,9 +3537,11 @@ export const workflowRouter = router({
             data: workshopTemplateDataSchema.partial(),
           })
         )
-        .mutation(({ input }) =>
-          wdb.updateWorkshopTemplate(input.id, input.data)
-        ),
+        .mutation(async ({ input }) => {
+          if (input.data.scopeItemKeys)
+            await assertRegisteredScopeItems(input.data.scopeItemKeys);
+          return wdb.updateWorkshopTemplate(input.id, input.data);
+        }),
       delete: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteWorkshopTemplate(input.id)),
@@ -4821,13 +4823,14 @@ Retorne APENAS um JSON array com objetos no formato:
             active: z.boolean().default(true),
           })
         )
-        .mutation(({ ctx, input }) =>
-          wdb.createConfigurationTemplate({
+        .mutation(async ({ ctx, input }) => {
+          await assertRegisteredScopeItems(input.scopeItemKeys);
+          return wdb.createConfigurationTemplate({
             id: nanoid(),
             ...input,
             createdBy: ctx.appUser.name || ctx.appUser.email,
-          })
-        ),
+          });
+        }),
       update: adminProcedure
         .input(
           z.object({
@@ -4847,9 +4850,11 @@ Retorne APENAS um JSON array com objetos no formato:
             }),
           })
         )
-        .mutation(({ input }) =>
-          wdb.updateConfigurationTemplate(input.id, input.data)
-        ),
+        .mutation(async ({ input }) => {
+          if (input.data.scopeItemKeys)
+            await assertRegisteredScopeItems(input.data.scopeItemKeys);
+          return wdb.updateConfigurationTemplate(input.id, input.data);
+        }),
       delete: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(({ input }) => wdb.deleteConfigurationTemplate(input.id)),

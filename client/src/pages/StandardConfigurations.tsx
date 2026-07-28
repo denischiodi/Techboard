@@ -184,8 +184,14 @@ export default function StandardConfigurations() {
     trpc.activities.templates.options.useQuery(undefined, { enabled: isAdmin });
   const { data: bdcqTemplates = [] } =
     trpc.workflow.bdcq.templates.list.useQuery();
-  const { data: bdcqOptions = [] } =
-    trpc.workflow.bdcq.templates.options.useQuery();
+  const { data: registeredScopes = [] } =
+    trpc.workflow.sapLibrary.scopes.useQuery({ search: "", limit: 500 });
+  const bdcqOptions = (registeredScopes as any[]).map(scope => ({
+    key: scope.code,
+    code: scope.code,
+    name: scope.name,
+    module: scope.module || "Geral",
+  }));
   const { data: configurationTemplates = [] } =
     trpc.workflow.configurations.templates.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
@@ -295,16 +301,38 @@ export default function StandardConfigurations() {
   ]
     .filter(Boolean)
     .sort();
-  const bdcqFilterOptions = useMemo(() => ({
-    modules: [...new Set<string>((bdcqTemplates as any[]).flatMap(template => template.modules || []))].filter(Boolean).sort(),
-    scopes: [...new Set<string>((bdcqTemplates as any[]).flatMap(template => template.scopeItemKeys || []))].filter(Boolean).sort(),
-    levels: [...new Set<string>((bdcqTemplates as any[]).map(template => template.level).filter(Boolean))].sort(),
-  }), [bdcqTemplates]);
+  const bdcqFilterOptions = useMemo(
+    () => ({
+      modules: [
+        ...new Set<string>(
+          (bdcqTemplates as any[]).flatMap(template => template.modules || [])
+        ),
+      ]
+        .filter(Boolean)
+        .sort(),
+      scopes: [
+        ...new Set<string>(
+          (bdcqTemplates as any[]).flatMap(
+            template => template.scopeItemKeys || []
+          )
+        ),
+      ]
+        .filter(Boolean)
+        .sort(),
+      levels: [
+        ...new Set<string>(
+          (bdcqTemplates as any[])
+            .map(template => template.level)
+            .filter(Boolean)
+        ),
+      ].sort(),
+    }),
+    [bdcqTemplates]
+  );
   const filteredBdcq = useMemo(
     () =>
       bdcqTemplates.filter((template: any) => {
-        const matchesText =
-        [
+        const matchesText = [
           template.question,
           template.questionOriginal,
           template.category,
@@ -321,12 +349,23 @@ export default function StandardConfigurations() {
           .includes(bdcqSearch.toLocaleLowerCase("pt-BR"));
         const modules = template.modules || [];
         const scopes = template.scopeItemKeys || [];
-        return matchesText
-          && (!bdcqModuleFilters.length || bdcqModuleFilters.some(value => modules.includes(value)))
-          && (!bdcqScopeFilters.length || bdcqScopeFilters.some(value => scopes.includes(value)))
-          && (!bdcqLevelFilters.length || bdcqLevelFilters.includes(template.level));
+        return (
+          matchesText &&
+          (!bdcqModuleFilters.length ||
+            bdcqModuleFilters.some(value => modules.includes(value))) &&
+          (!bdcqScopeFilters.length ||
+            bdcqScopeFilters.some(value => scopes.includes(value))) &&
+          (!bdcqLevelFilters.length ||
+            bdcqLevelFilters.includes(template.level))
+        );
       }),
-    [bdcqTemplates, bdcqSearch, bdcqModuleFilters, bdcqScopeFilters, bdcqLevelFilters]
+    [
+      bdcqTemplates,
+      bdcqSearch,
+      bdcqModuleFilters,
+      bdcqScopeFilters,
+      bdcqLevelFilters,
+    ]
   );
   const BDCQ_PAGE_SIZE = 100;
   const pagedBdcq = filteredBdcq.slice(
@@ -821,7 +860,9 @@ export default function StandardConfigurations() {
                 setBdcqPage(0);
               }}
             />
-            {(bdcqModuleFilters.length > 0 || bdcqScopeFilters.length > 0 || bdcqLevelFilters.length > 0) && (
+            {(bdcqModuleFilters.length > 0 ||
+              bdcqScopeFilters.length > 0 ||
+              bdcqLevelFilters.length > 0) && (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -1889,14 +1930,49 @@ function SapScopeLibrary() {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
   const [releaseCode, setReleaseCode] = useState("2608_BR");
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [scopeForm, setScopeForm] = useState({
+    code: "",
+    name: "",
+    summary: "",
+    module: "",
+    processArea: "",
+    wordFile: undefined as File | undefined,
+  });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const { data: releases = [] } = trpc.workflow.sapLibrary.releases.useQuery();
+  const { data: releases = [] } = trpc.workflow.sapLibrary.releases.useQuery(
+    undefined,
+    {
+      refetchInterval: query =>
+        (query.state.data as any[] | undefined)?.some(item =>
+          ["uploaded", "processing"].includes(item.status)
+        )
+          ? 3000
+          : false,
+    }
+  );
   const { data: scopes = [], isLoading } =
     trpc.workflow.sapLibrary.scopes.useQuery({ search, limit: 300 });
   const prepare = trpc.workflow.sapLibrary.prepareUpload.useMutation();
   const uploadChunk = trpc.workflow.sapLibrary.uploadChunk.useMutation();
   const register = trpc.workflow.sapLibrary.registerUpload.useMutation();
+  const createScope = trpc.workflow.sapLibrary.createScope.useMutation({
+    onSuccess: async () => {
+      await utils.workflow.sapLibrary.scopes.invalidate();
+      setScopeOpen(false);
+      setScopeForm({
+        code: "",
+        name: "",
+        summary: "",
+        module: "",
+        processArea: "",
+        wordFile: undefined,
+      });
+      toast.success("Scope item cadastrado com documento Word");
+    },
+    onError: error => toast.error(error.message),
+  });
   const activate = trpc.workflow.sapLibrary.activate.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -1992,6 +2068,27 @@ function SapScopeLibrary() {
       setUploadProgress(0);
     }
   };
+  const fileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  const saveScope = async () => {
+    if (!scopeForm.wordFile)
+      return toast.error("Anexe o documento Word do scope item");
+    createScope.mutate({
+      code: scopeForm.code,
+      name: scopeForm.name,
+      summary: scopeForm.summary,
+      module: scopeForm.module,
+      processArea: scopeForm.processArea,
+      fileName: scopeForm.wordFile.name,
+      contentType: scopeForm.wordFile.type,
+      fileData: await fileAsDataUrl(scopeForm.wordFile),
+    });
+  };
   const statusLabel: Record<string, string> = {
     uploaded: "Recebido",
     processing: "Processando",
@@ -2042,6 +2139,12 @@ function SapScopeLibrary() {
           </label>
         </CardContent>
       </Card>
+      <div className="flex justify-end">
+        <Button onClick={() => setScopeOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Novo scope item
+        </Button>
+      </div>
       <div className="grid gap-3 lg:grid-cols-2">
         {(releases as any[]).map(release => (
           <Card key={release.id}>
@@ -2130,19 +2233,163 @@ function SapScopeLibrary() {
           <SapScopeCard key={scope.id} scope={scope} />
         ))}
         {!isLoading && !scopes.length && (
-          <Empty label="Nenhum scope item disponível na release ativa." />
+          <Empty label="Nenhum scope item cadastrado ou disponível na release ativa." />
         )}
       </div>
+      <Dialog open={scopeOpen} onOpenChange={setScopeOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Cadastrar scope item</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Código</Label>
+              <Input
+                value={scopeForm.code}
+                onChange={event =>
+                  setScopeForm(form => ({
+                    ...form,
+                    code: event.target.value
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9_-]/g, ""),
+                  }))
+                }
+                placeholder="Ex.: 2EJ"
+              />
+            </div>
+            <div>
+              <Label>Nome</Label>
+              <Input
+                value={scopeForm.name}
+                onChange={event =>
+                  setScopeForm(form => ({
+                    ...form,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Módulo</Label>
+              <Input
+                value={scopeForm.module}
+                onChange={event =>
+                  setScopeForm(form => ({
+                    ...form,
+                    module: event.target.value,
+                  }))
+                }
+                placeholder="Ex.: PP"
+              />
+            </div>
+            <div>
+              <Label>Área de processo</Label>
+              <Input
+                value={scopeForm.processArea}
+                onChange={event =>
+                  setScopeForm(form => ({
+                    ...form,
+                    processArea: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Resumo</Label>
+              <Textarea
+                value={scopeForm.summary}
+                onChange={event =>
+                  setScopeForm(form => ({
+                    ...form,
+                    summary: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Documento Word obrigatório</Label>
+              <Input
+                type="file"
+                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={event =>
+                  setScopeForm(form => ({
+                    ...form,
+                    wordFile: event.target.files?.[0],
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScopeOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={
+                !scopeForm.code ||
+                !scopeForm.name ||
+                !scopeForm.wordFile ||
+                createScope.isPending
+              }
+              onClick={() => void saveScope()}
+            >
+              {createScope.isPending ? "Salvando..." : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function SapScopeCard({ scope }: { scope: any }) {
+  const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    name: scope.name || "",
+    summary: scope.summary || "",
+    module: scope.module || "",
+    processArea: scope.processArea || "",
+  });
   const { data: assets = [] } = trpc.workflow.sapLibrary.assets.useQuery(
     { scopeId: scope.id },
     { enabled: expanded }
   );
+  const update = trpc.workflow.sapLibrary.updateScope.useMutation({
+    onSuccess: async () => {
+      await utils.workflow.sapLibrary.scopes.invalidate();
+      setEditing(false);
+      toast.success("Scope item atualizado");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const addWord = trpc.workflow.sapLibrary.addWordAsset.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.workflow.sapLibrary.assets.invalidate({ scopeId: scope.id }),
+        utils.workflow.sapLibrary.scopes.invalidate(),
+      ]);
+      setExpanded(true);
+      toast.success("Documento Word anexado");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const uploadWord = async (file?: File) => {
+    if (!file) return;
+    const fileData = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    addWord.mutate({
+      scopeId: scope.id,
+      fileName: file.name,
+      contentType: file.type,
+      fileData,
+    });
+  };
   return (
     <Card>
       <CardContent className="p-4">
@@ -2151,21 +2398,47 @@ function SapScopeCard({ scope }: { scope: any }) {
           <strong>{scope.name}</strong>
           <Badge variant="outline">{scope.primaryLanguage}</Badge>
           <Badge variant="secondary">{scope.assetCount} arquivo(s)</Badge>
+          {!Number(scope.wordAssetCount) && (
+            <Badge variant="destructive">Word obrigatório pendente</Badge>
+          )}
           {scope.reviewStatus !== "approved" && (
             <Badge className="bg-amber-100 text-amber-900">
               Revisão necessária
             </Badge>
           )}
-          {Number(scope.assetCount) > 0 && (
+          <div className="ml-auto flex gap-2">
+            <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted">
+              <Upload className="mr-2 h-4 w-4" />
+              Anexar Word
+              <input
+                className="hidden"
+                type="file"
+                accept=".doc,.docx"
+                disabled={addWord.isPending}
+                onChange={event => {
+                  void uploadWord(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
             <Button
-              className="ml-auto"
               size="sm"
               variant="outline"
-              onClick={() => setExpanded(value => !value)}
+              onClick={() => setEditing(true)}
             >
-              {expanded ? "Ocultar arquivos" : "Ver arquivos"}
+              <Pencil className="mr-2 h-4 w-4" />
+              Editar
             </Button>
-          )}
+            {Number(scope.assetCount) > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setExpanded(value => !value)}
+              >
+                {expanded ? "Ocultar arquivos" : "Ver arquivos"}
+              </Button>
+            )}
+          </div>
         </div>
         {scope.summary && (
           <p className="mt-2 text-sm text-muted-foreground">{scope.summary}</p>
@@ -2196,6 +2469,68 @@ function SapScopeCard({ scope }: { scope: any }) {
             )}
           </div>
         )}
+        <Dialog open={editing} onOpenChange={setEditing}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar {scope.code}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label>Nome</Label>
+                <Input
+                  value={form.name}
+                  onChange={event =>
+                    setForm(value => ({ ...value, name: event.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Módulo</Label>
+                <Input
+                  value={form.module}
+                  onChange={event =>
+                    setForm(value => ({ ...value, module: event.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Área de processo</Label>
+                <Input
+                  value={form.processArea}
+                  onChange={event =>
+                    setForm(value => ({
+                      ...value,
+                      processArea: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Resumo</Label>
+                <Textarea
+                  value={form.summary}
+                  onChange={event =>
+                    setForm(value => ({
+                      ...value,
+                      summary: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditing(false)}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={!form.name || update.isPending}
+                onClick={() => update.mutate({ id: scope.id, data: form })}
+              >
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
@@ -2214,7 +2549,9 @@ function MultiValueFilter({
 }) {
   const [search, setSearch] = useState("");
   const visibleOptions = options.filter(option =>
-    option.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR"))
+    option
+      .toLocaleLowerCase("pt-BR")
+      .includes(search.toLocaleLowerCase("pt-BR"))
   );
   const toggleValue = (value: string) =>
     onChange(
