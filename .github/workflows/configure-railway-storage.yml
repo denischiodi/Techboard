@@ -23,16 +23,17 @@ jobs:
 
       - name: Ensure persistent volume
         run: |
-          volumes="$(railway volume list \
+          volumes="$(railway \
+            --project "$RAILWAY_PROJECT_ID" \
             --service "$RAILWAY_SERVICE_ID" \
             --environment "$RAILWAY_ENVIRONMENT_ID" \
-            --json)"
+            volume list --json)"
           if printf '%s' "$volumes" | grep -q '"id"'; then
             echo "Persistent volume already attached."
           else
-            railway volume add \
+            railway \
+              --project "$RAILWAY_PROJECT_ID" \
               --service "$RAILWAY_SERVICE_ID" \
               --environment "$RAILWAY_ENVIRONMENT_ID" \
-              --mount-path /data \
-              --json
+              volume add --mount-path /data --json
           fi
