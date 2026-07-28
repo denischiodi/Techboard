@@ -393,6 +393,19 @@ export async function processRelease(releaseId: string) {
         releaseId,
       ])
     ).rows[0];
+    // A reimportação precisa ser repetível. Uma tentativa interrompida pode deixar
+    // catálogo, assets e chunks parciais; remova-os na ordem das dependências antes
+    // de reconstruir a release a partir do ZIP persistido.
+    await pool.query(
+      'DELETE FROM "sap_knowledge_chunks" WHERE "releaseId"=$1',
+      [releaseId]
+    );
+    await pool.query('DELETE FROM "sap_scope_assets" WHERE "releaseId"=$1', [
+      releaseId,
+    ]);
+    await pool.query('DELETE FROM "sap_scope_catalog" WHERE "releaseId"=$1', [
+      releaseId,
+    ]);
     // O parser central reconhece o diretório do ZIP sem extrair arquivos no servidor.
     // A leitura usa o utilitário nativo disponível na imagem de produção.
     const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
@@ -497,11 +510,17 @@ export async function processRelease(releaseId: string) {
             buffer,
             "application/octet-stream"
           );
-          await pool.query(
+          const insertedAsset = await pool.query(
             `INSERT INTO "sap_scope_assets"
              ("id","releaseId","scopeId","scopeCode","fileName","assetType","language","sizeBytes","checksum","storageKey","url","extractedText")
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-             ON CONFLICT ("releaseId","checksum") DO NOTHING`,
+             ON CONFLICT ("releaseId","checksum") DO UPDATE
+             SET "scopeId"=EXCLUDED."scopeId","scopeCode"=EXCLUDED."scopeCode",
+                 "fileName"=EXCLUDED."fileName","assetType"=EXCLUDED."assetType",
+                 "language"=EXCLUDED."language","sizeBytes"=EXCLUDED."sizeBytes",
+                 "storageKey"=EXCLUDED."storageKey","url"=EXCLUDED."url",
+                 "extractedText"=EXCLUDED."extractedText"
+             RETURNING "id"`,
             [
               assetId,
               releaseId,
@@ -517,6 +536,7 @@ export async function processRelease(releaseId: string) {
               extractedText,
             ]
           );
+          const persistedAssetId = insertedAsset.rows[0]?.id || assetId;
           if (extractedText) {
             const chunks = extractedText.match(/[\s\S]{1,3500}(?:\s|$)/g) || [];
             for (let index = 0; index < Math.min(chunks.length, 30); index++) {
@@ -527,7 +547,7 @@ export async function processRelease(releaseId: string) {
                   `sapk_${nanoid(20)}`,
                   releaseId,
                   code,
-                  assetId,
+                  persistedAssetId,
                   index,
                   chunks[index],
                   languageFromName(name),
