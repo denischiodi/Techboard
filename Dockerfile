@@ -36,6 +36,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/server/data ./server/data
 COPY --from=builder /app/techeduca ./techeduca
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

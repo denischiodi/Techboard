@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Activity, CalendarClock, ClipboardList, Database, FileArchive, Pencil, Plus, RefreshCw, Search, Settings2, Upload } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Activity, CalendarClock, ClipboardList, Database, Download, FileArchive, Pencil, Plus, RefreshCw, Search, Settings2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { ActivityPriority, ActivityTemplate, ActivityTemplateOwnerRole, ActivityTemplateRecurrence } from "../../../shared/types";
 import DeliveryTemplateCatalog, { type DeliveryType } from "./DeliveryTemplateCatalog";
@@ -50,6 +51,7 @@ export default function StandardConfigurations() {
   const [bdcqOpen, setBdcqOpen] = useState(false);
   const [bdcqForm, setBdcqForm] = useState<BdcqForm>(emptyBdcq);
   const [bdcqSearch, setBdcqSearch] = useState("");
+  const [bdcqPage, setBdcqPage] = useState(0);
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [configurationForm, setConfigurationForm] = useState<ConfigurationForm>(emptyConfiguration);
   const [configurationSearch, setConfigurationSearch] = useState("");
@@ -62,12 +64,15 @@ export default function StandardConfigurations() {
   const refreshBdcq = async () => { await utils.workflow.bdcq.templates.invalidate(); };
   const createBdcq = trpc.workflow.bdcq.templates.create.useMutation({ onSuccess: async () => { await refreshBdcq(); setBdcqOpen(false); toast.success("Pergunta padrão criada"); }, onError: error => toast.error(error.message) });
   const updateBdcq = trpc.workflow.bdcq.templates.update.useMutation({ onSuccess: async () => { await refreshBdcq(); setBdcqOpen(false); toast.success("Pergunta padrão atualizada"); }, onError: error => toast.error(error.message) });
+  const importBdcq = trpc.workflow.bdcq.templates.importLayout.useMutation({ onSuccess: async data => { await refreshBdcq(); toast.success(`${data.imported} perguntas importadas; ${data.removed} personalizadas anteriores removidas`); }, onError: error => toast.error(error.message) });
   const refreshConfigurations = async () => { await utils.workflow.configurations.templates.invalidate(); };
   const createConfiguration = trpc.workflow.configurations.templates.create.useMutation({ onSuccess: async () => { await refreshConfigurations(); setConfigurationOpen(false); toast.success("Modelo de configuração criado"); }, onError: error => toast.error(error.message) });
   const updateConfiguration = trpc.workflow.configurations.templates.update.useMutation({ onSuccess: async () => { await refreshConfigurations(); setConfigurationOpen(false); toast.success("Modelo de configuração atualizado"); }, onError: error => toast.error(error.message) });
 
   const moduleOptions = [...new Set([...(lookups?.fronts || []).filter(item => item.active).map(item => item.value), ...bdcqOptions.map(item => item.module)])].filter(Boolean).sort();
-  const filteredBdcq = useMemo(() => bdcqTemplates.filter(template => [template.question, template.category, ...(template.modules || []), ...(template.scopeItemKeys || [])].join(" ").toLocaleLowerCase("pt-BR").includes(bdcqSearch.toLocaleLowerCase("pt-BR"))), [bdcqTemplates, bdcqSearch]);
+  const filteredBdcq = useMemo(() => bdcqTemplates.filter((template: any) => [template.question, template.questionOriginal, template.category, template.sapId, template.level, template.area, template.topic, template.source, ...(template.modules || []), ...(template.scopeItemKeys || [])].join(" ").toLocaleLowerCase("pt-BR").includes(bdcqSearch.toLocaleLowerCase("pt-BR"))), [bdcqTemplates, bdcqSearch]);
+  const BDCQ_PAGE_SIZE = 100;
+  const pagedBdcq = filteredBdcq.slice(bdcqPage * BDCQ_PAGE_SIZE, (bdcqPage + 1) * BDCQ_PAGE_SIZE);
   const filteredConfigurations = useMemo(() => configurationTemplates.filter(template => [template.description, template.category, ...(template.modules || []), ...(template.scopeItemKeys || [])].join(" ").toLocaleLowerCase("pt-BR").includes(configurationSearch.toLocaleLowerCase("pt-BR"))), [configurationTemplates, configurationSearch]);
   const toggle = (values: string[], value: string) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 
@@ -86,6 +91,69 @@ export default function StandardConfigurations() {
   const saveBdcq = () => {
     const data = { question: bdcqForm.question, category: bdcqForm.category, modules: bdcqForm.modules, scopeItemKeys: bdcqForm.scopeItemKeys, required: bdcqForm.required, active: bdcqForm.active };
     if (bdcqForm.id) updateBdcq.mutate({ id: bdcqForm.id, data }); else createBdcq.mutate(data);
+  };
+  const exportBdcqLayout = async () => {
+    const XLSX = await import("xlsx");
+    const rows = bdcqTemplates.map((template: any) => ({
+      "Pergunta (PT-BR)": template.question,
+      "Pergunta original": template.questionOriginal || "",
+      Processo: template.process || "",
+      Módulo: (template.modules || []).join(";"),
+      "Scope Items": (template.scopeItemKeys || []).join(";"),
+      "SAP ID": template.sapId || "",
+      "Referência SSCUI": template.sscuiReference || "",
+      Área: template.area || "",
+      Tópico: template.topic || "",
+      "Definição do tópico": template.topicDefinition || "",
+      Level: template.level || "L3",
+      Solução: template.solution || "",
+      Obrigatória: template.required ? "Sim" : "Não",
+      Ativa: template.active === 0 ? "Não" : "Sim",
+      Fonte: template.source || (template.builtIn ? "Standard SAP" : "Personalizado"),
+      "Arquivo fonte": template.sourceFile || "",
+      "Release fonte": template.sourceRelease || "",
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    sheet["!cols"] = [60, 60, 24, 14, 34, 14, 38, 24, 24, 60, 10, 28, 12, 10, 18, 42, 16].map(wch => ({ wch }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "BDCQ");
+    XLSX.writeFile(workbook, `bdcq-catalogo-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  const importBdcqLayout = async (file?: File) => {
+    if (!file) return;
+    try {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+      const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+      const pick = (row: Record<string, unknown>, names: string[]) => String(Object.entries(row).find(([key]) => names.includes(normalize(key)))?.[1] || "").trim();
+      const list = (value: string) => [...new Set(value.split(/[;,\n]+/).map(item => item.trim()).filter(Boolean))];
+      const items = rows.map(row => ({
+        question: pick(row, ["pergunta (pt-br)", "pergunta", "question"]),
+        questionOriginal: pick(row, ["pergunta original", "question original"]),
+        process: pick(row, ["processo", "process"]),
+        modules: list(pick(row, ["modulo", "module", "processo sap"])),
+        scopeItemKeys: list(pick(row, ["scope items", "scope item", "scope ref", "scope ref."])),
+        sapId: pick(row, ["sap id", "expert configuration id"]),
+        sscuiReference: pick(row, ["referencia sscui", "sscui reference", "configuration activity"]),
+        area: pick(row, ["area", "process area"]),
+        topic: pick(row, ["topico", "topic"]),
+        topicDefinition: pick(row, ["definicao do topico", "topic definition"]),
+        category: pick(row, ["categoria", "category", "topico", "topic"]),
+        level: pick(row, ["level", "nivel"]) || "L3",
+        solution: pick(row, ["solucao", "solution", "systems"]),
+        required: /^sim|yes|true|1$/i.test(pick(row, ["obrigatoria", "required"])),
+        active: /^nao|no|false|0$/i.test(pick(row, ["ativa", "active"])) ? 0 : 1,
+        source: pick(row, ["fonte", "source"]) || "Importado",
+        sourceFile: pick(row, ["arquivo fonte", "source file"]) || file.name,
+        sourceRelease: pick(row, ["release fonte", "source release"]),
+      })).filter(item => item.question).map(item => ({ ...item, modules: item.modules.length ? item.modules : ["SAP"] }));
+      if (!items.length) throw new Error("Nenhuma pergunta encontrada no layout BDCQ.");
+      importBdcq.mutate({ items });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível importar o BDCQ");
+    }
   };
   const openConfiguration = (template?: any) => { setConfigurationForm(template ? { id: template.id, description: template.description, category: template.category || "Configuração", modules: template.modules || [], scopeItemKeys: template.scopeItemKeys || [], active: template.active !== false && template.active !== 0 } : emptyConfiguration()); setConfigurationOpen(true); };
   const saveConfiguration = () => { const { id, ...data } = configurationForm; if (id) updateConfiguration.mutate({ id, data }); else createConfiguration.mutate(data); };
@@ -135,8 +203,10 @@ export default function StandardConfigurations() {
         <div className="grid gap-3 lg:grid-cols-2">{activityTemplates.map(template => <Card key={template.id} className={!template.active ? "opacity-60" : ""}><CardHeader className="pb-2"><div className="flex items-start justify-between gap-3"><CardTitle className="text-base">{template.title}</CardTitle><Switch checked={template.active} onCheckedChange={active => setActivityActive.mutate({ id: template.id, active })} /></div></CardHeader><CardContent className="space-y-3"><p className="line-clamp-2 text-sm text-muted-foreground">{template.description || "Sem descrição"}</p><div className="flex flex-wrap gap-1.5"><Badge>{template.priority}</Badge><Badge variant="secondary">Fase {template.gpPhase || "Prepare"}</Badge><Badge variant={template.required ? "default" : "outline"}>{template.required ? "Obrigatória" : "Opcional"}</Badge><Badge variant="outline">{template.recurrence === "none" ? `${template.dueOffsetDays} dias após início` : template.recurrence === "weekly" ? `Semanal · ${weekdays.find(day => day.value === template.weekday)?.label}` : `Mensal · dia ${template.monthDay}`}</Badge><Badge variant="secondary">{roleLabels[template.ownerRole]}</Badge><Badge variant="outline">{template.appliesToAllProjects ? "Todos os projetos" : `${template.projects.length} projetos`}</Badge></div><Button variant="outline" size="sm" onClick={() => openActivity(template)}><Pencil className="mr-2 h-3.5 w-3.5" />Editar</Button></CardContent></Card>)}{activityTemplates.length === 0 && <Empty label="Nenhuma atividade padrão cadastrada." />}</div>
       </TabsContent>
       <TabsContent value="bdcq" className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Buscar pergunta, módulo ou scope item" value={bdcqSearch} onChange={event => setBdcqSearch(event.target.value)} /></div><Button onClick={() => openBdcq()}><Plus className="mr-2 h-4 w-4" />Nova pergunta padrão</Button></div>
-        <div className="space-y-2">{filteredBdcq.map((template: any) => <Card key={template.id} className={template.active === 0 ? "opacity-60" : ""}><CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="font-medium">{template.question}</p><div className="mt-2 flex flex-wrap gap-1.5"><Badge variant={template.required ? "default" : "secondary"}>{template.required ? "Obrigatória" : "Opcional"}</Badge>{template.category && <Badge variant="secondary">{template.category}</Badge>}{!template.modules?.length && !template.scopeItemKeys?.length && <Badge variant="outline">Pergunta geral</Badge>}{template.modules?.map((module: string) => <Badge key={module} variant="outline">{module}</Badge>)}{template.scopeItemKeys?.map((key: string) => <Badge key={key} className="bg-blue-50 text-blue-800">Scope: {key}</Badge>)}</div></div><Button variant="outline" size="sm" onClick={() => openBdcq(template)}><Pencil className="mr-2 h-3.5 w-3.5" />Editar</Button></CardContent></Card>)}{filteredBdcq.length === 0 && <Empty label="Nenhuma pergunta encontrada." />}</div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"><span className="font-semibold">Biblioteca Standard SAP.</span> As perguntas oficiais preservam SAP ID, Level, módulo, scope item e arquivo de origem. L2 é informação preparada pelo cliente; L3 é detalhamento conduzido no Fit-to-Standard.</div>
+        <div className="flex flex-col gap-2 lg:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Buscar pergunta, SAP ID, módulo, scope item, área ou tópico" value={bdcqSearch} onChange={event => { setBdcqSearch(event.target.value); setBdcqPage(0); }} /></div><Button variant="outline" onClick={() => void exportBdcqLayout()}><Download className="mr-2 h-4 w-4" />Exportar BDCQ</Button><Button variant="outline" asChild disabled={importBdcq.isPending}><label className="cursor-pointer"><Upload className="mr-2 h-4 w-4" />{importBdcq.isPending ? "Importando..." : "Importar BDCQ"}<input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={event => { void importBdcqLayout(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label></Button><Button onClick={() => openBdcq()}><Plus className="mr-2 h-4 w-4" />Nova pergunta</Button></div>
+        <div className="overflow-hidden rounded-lg border"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead className="min-w-[380px]">Pergunta em português</TableHead><TableHead>Módulo</TableHead><TableHead>SAP ID</TableHead><TableHead>Level</TableHead><TableHead className="min-w-[180px]">Área / tópico</TableHead><TableHead className="min-w-[180px]">Scope items</TableHead><TableHead>Origem</TableHead><TableHead className="w-20"></TableHead></TableRow></TableHeader><TableBody>{pagedBdcq.map((template: any) => <TableRow key={template.id} className={template.active === 0 ? "opacity-60" : ""}><TableCell><p className="font-medium">{template.question}</p>{template.questionOriginal && template.questionOriginal !== template.question && <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">Ver texto original</summary><p className="mt-1">{template.questionOriginal}</p></details>}</TableCell><TableCell>{(template.modules || []).map((module: string) => <Badge key={module} variant="outline" className="mr-1">{module}</Badge>)}</TableCell><TableCell className="font-mono text-xs">{template.sapId || "—"}</TableCell><TableCell><Badge variant={template.level === "L2" ? "default" : "secondary"}>{template.level || "—"}</Badge></TableCell><TableCell className="text-sm"><p>{template.area || "—"}</p>{template.topic && <p className="text-xs text-muted-foreground">{template.topic}</p>}</TableCell><TableCell className="text-xs">{(template.scopeItemKeys || []).length ? template.scopeItemKeys.join(", ") : "Geral do módulo"}</TableCell><TableCell><Badge className={template.source === "Standard SAP" ? "bg-blue-100 text-blue-900" : ""} variant="outline">{template.source || (template.builtIn ? "Standard SAP" : "Personalizado")}</Badge>{template.sourceRelease && <p className="mt-1 text-xs text-muted-foreground">{template.sourceRelease}</p>}</TableCell><TableCell>{!template.builtIn && <Button variant="ghost" size="icon" onClick={() => openBdcq(template)} title="Editar"><Pencil className="h-4 w-4" /></Button>}</TableCell></TableRow>)}{!pagedBdcq.length && <TableRow><TableCell colSpan={8}><Empty label="Nenhuma pergunta encontrada." /></TableCell></TableRow>}</TableBody></Table></div></div>
+        <div className="flex items-center justify-between text-sm text-muted-foreground"><span>{filteredBdcq.length} pergunta(s) · página {bdcqPage + 1} de {Math.max(1, Math.ceil(filteredBdcq.length / BDCQ_PAGE_SIZE))}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={bdcqPage === 0} onClick={() => setBdcqPage(page => Math.max(0, page - 1))}>Anterior</Button><Button variant="outline" size="sm" disabled={(bdcqPage + 1) * BDCQ_PAGE_SIZE >= filteredBdcq.length} onClick={() => setBdcqPage(page => page + 1)}>Próxima</Button></div></div>
       </TabsContent>
       <TabsContent value="configurations" className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Buscar modelo, módulo ou scope item" value={configurationSearch} onChange={event => setConfigurationSearch(event.target.value)} /></div><Button onClick={() => openConfiguration()}><Plus className="mr-2 h-4 w-4" />Novo modelo</Button></div>
@@ -240,13 +310,13 @@ function SapScopeLibrary() {
     },
     onError: error => toast.error(error.message),
   });
-  const uploadZip = async (file?: File) => {
+  const uploadZip = async (file?: File, targetReleaseCode = releaseCode) => {
     if (!file) return;
     if (!/\.zip$/i.test(file.name)) return toast.error("Selecione um arquivo ZIP");
     setUploading(true);
     setUploadProgress(0);
     try {
-      const target = await prepare.mutateAsync({ releaseCode, fileName: file.name });
+      const target = await prepare.mutateAsync({ releaseCode: targetReleaseCode, fileName: file.name });
       const chunkSize = target.localUpload ? 2 * 1024 * 1024 : 8 * 1024 * 1024;
       const totalParts = Math.ceil(file.size / chunkSize);
       for (let part = 0; part < totalParts; part++) {
@@ -262,24 +332,27 @@ function SapScopeLibrary() {
             signature: target.localUpload.signature,
             part,
             totalParts,
+            offset: part * chunkSize,
+            totalSize: file.size,
             dataBase64: btoa(binary),
           });
         } else {
-          const separator = target.uploadUrl.includes("?") ? "&" : "?";
-          const response = await fetch(`${target.uploadUrl}${separator}part=${part}&totalParts=${totalParts}`, {
+          const response = await fetch(target.uploadUrl, {
             method: "PUT",
-            headers: { "Content-Type": "application/octet-stream" },
-            body: chunk,
+            headers: { "Content-Type": file.type || "application/zip" },
+            body: file,
           });
           if (!response.ok) {
             const detail = await response.text().catch(() => "");
-            throw new Error(`Falha no envio da parte ${part + 1}/${totalParts} (${response.status})${detail ? `: ${detail}` : ""}`);
+            throw new Error(`Falha no envio do ZIP (${response.status})${detail ? `: ${detail}` : ""}`);
           }
+          setUploadProgress(100);
+          break;
         }
         setUploadProgress(Math.round(((part + 1) / totalParts) * 100));
       }
       await register.mutateAsync({
-        releaseCode,
+        releaseCode: targetReleaseCode,
         country: "BR",
         fileName: file.name,
         storageKey: target.key,
@@ -318,7 +391,14 @@ function SapScopeLibrary() {
         <p className="mt-2 text-xs text-muted-foreground">{release.fileName} · {Math.round(Number(release.sizeBytes) / 1024 / 1024)} MB</p>
         {release.summary && <p className="mt-1 text-xs text-muted-foreground">{release.summary.scopeItems || 0} scope items · {release.summary.files || 0} documentos</p>}
         {release.lastError && <p className="mt-1 text-sm text-destructive">{release.lastError}</p>}</div>
-        <div className="flex gap-2">{release.status === "ready" && <Button size="sm" onClick={() => activate.mutate({ id: release.id })}>Ativar</Button>}{release.status === "failed" && <Button size="sm" variant="outline" onClick={() => retry.mutate({ id: release.id })}>Reprocessar</Button>}</div>
+        <div className="flex gap-2">{release.status === "ready" && <Button size="sm" onClick={() => activate.mutate({ id: release.id })}>Ativar</Button>}{release.status === "failed" && (
+          release.lastError?.includes("não está mais disponível") || release.lastError?.includes("ENOENT")
+            ? <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground">
+                <Upload className="mr-2 h-4 w-4" />Enviar ZIP novamente
+                <input type="file" accept=".zip,application/zip" className="hidden" disabled={uploading} onChange={event => { void uploadZip(event.target.files?.[0], release.releaseCode); event.currentTarget.value = ""; }} />
+              </label>
+            : <Button size="sm" variant="outline" onClick={() => retry.mutate({ id: release.id })}>Reprocessar</Button>
+        )}</div>
       </CardContent></Card>)}
       {!releases.length && <Empty label="Nenhuma release SAP importada." />}
     </div>
