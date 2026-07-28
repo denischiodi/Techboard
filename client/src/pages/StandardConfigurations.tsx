@@ -2168,7 +2168,11 @@ function SapScopeLibrary() {
                 {release.summary && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     {release.summary.scopeItems || 0} scope items ·{" "}
-                    {release.summary.files || 0} documentos
+                    {release.status === "processing"
+                      ? `${release.summary.processed || 0} de ${
+                          release.summary.discovered || 0
+                        } documentos processados`
+                      : `${release.summary.files || 0} documentos`}
                   </p>
                 )}
                 {release.lastError && (
@@ -2184,6 +2188,16 @@ function SapScopeLibrary() {
                     onClick={() => activate.mutate({ id: release.id })}
                   >
                     Ativar
+                  </Button>
+                )}
+                {["uploaded", "processing"].includes(release.status) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={retry.isPending}
+                    onClick={() => retry.mutate({ id: release.id })}
+                  >
+                    Retomar
                   </Button>
                 )}
                 {release.status === "failed" && (
