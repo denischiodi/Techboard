@@ -4,11 +4,15 @@ import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { ENV } from "./env";
-import { localStoragePath, verifyLocalUploadToken } from "../storage";
+import {
+  localStoragePath,
+  usesLocalStorage,
+  verifyLocalUploadToken,
+} from "../storage";
 
 export function registerStorageProxy(app: Express) {
   app.put("/api/local-storage-upload", async (req, res) => {
-    if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+    if (!usesLocalStorage()) {
       res.status(404).send("Upload local desativado");
       return;
     }
@@ -67,7 +71,7 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+    if (usesLocalStorage()) {
       try {
         const path = localStoragePath(key);
         await stat(path);

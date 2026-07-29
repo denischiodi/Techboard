@@ -10,12 +10,10 @@ export const ENV = {
   emailFrom: process.env.EMAIL_FROM ?? "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailDeliveryMode: process.env.EMAIL_DELIVERY_MODE ?? "provider",
-  forgeApiUrl:
-    process.env.BUILT_IN_FORGE_API_URL ??
-    process.env.OPENAI_BASE_URL ??
-    (process.env.OPENAI_API_KEY ? "https://api.openai.com" : ""),
-  forgeApiKey:
-    process.env.BUILT_IN_FORGE_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+  // Forge storage is a separate service. Never reuse the OpenAI API
+  // credentials here: the OpenAI API does not expose Forge presign routes.
+  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
+  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
 };
 
 export function validateRuntimeEnv() {
