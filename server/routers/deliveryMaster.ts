@@ -98,7 +98,7 @@ function assertTemplateManager(
     throw new TRPCError({
       code: "FORBIDDEN",
       message:
-        "Padrões gerais e da Trilha do GP são administrados pelo perfil administrador",
+        "Padrões gerais, do processo funcional e da Trilha do GP são administrados pelo perfil administrador",
     });
   }
   const owned = new Set((appUser.teamFronts || []).map(normalizeModule));

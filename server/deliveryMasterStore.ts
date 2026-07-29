@@ -3,6 +3,7 @@ import { getPgPool } from "./db";
 
 export const DELIVERY_TYPES = [
   "activity",
+  "functional_activity",
   "bdcq",
   "workshop",
   "dcd",
@@ -329,6 +330,7 @@ export async function updateItem(id: string, patch: Record<string, unknown>) {
 
 const PREFIX: Record<string, string> = {
   activity: "ATV",
+  functional_activity: "ATF",
   bdcq: "BDCQ",
   workshop: "WS",
   dcd: "DCD",

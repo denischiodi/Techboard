@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 const deliveryTypes = [
   "activity",
+  "functional_activity",
   "bdcq",
   "workshop",
   "dcd",
@@ -56,6 +57,7 @@ export type DeliveryType = (typeof deliveryTypes)[number];
 
 const typeLabels: Record<DeliveryType, string> = {
   activity: "Atividade do GP",
+  functional_activity: "Atividade do consultor funcional",
   bdcq: "BDCQ",
   workshop: "Workshop",
   dcd: "DCD",
@@ -80,6 +82,7 @@ const ownerRoles = [
 ];
 const defaultStages: Record<DeliveryType, string> = {
   activity: "preparation",
+  functional_activity: "governance",
   bdcq: "bdcq",
   workshop: "workshops",
   dcd: "dcd",
@@ -1167,7 +1170,7 @@ export default function DeliveryTemplateCatalog({
               {isTechnicalLead && (
                 <p className="text-xs font-medium text-blue-700">
                   Você publica diretamente padrões dos seus módulos: {managedModules.join(", ") || "nenhum módulo atribuído"}.
-                  Padrões gerais e da Trilha do GP são mantidos pelo administrador.
+                  Padrões gerais, do processo funcional e da Trilha do GP são mantidos pelo administrador.
                 </p>
               )}
             </section>
