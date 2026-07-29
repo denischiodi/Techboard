@@ -8,7 +8,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -25,17 +29,42 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { LogOut, PanelLeft, Lock, KeyRound, Mail, Bell, CheckCircle2, ChevronDown, Grid2X2 } from "lucide-react";
+import {
+  LogOut,
+  PanelLeft,
+  Lock,
+  KeyRound,
+  Mail,
+  Bell,
+  CheckCircle2,
+  ChevronDown,
+  Grid2X2,
+  BookOpenCheck,
+  CircleHelp,
+} from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
+import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
-import { canAccessPath, canAccessProduct, canViewMenuItem, productForPath, PRODUCTS, type ProductId } from "@/lib/productCatalog";
+import {
+  canAccessPath,
+  canAccessProduct,
+  canViewMenuItem,
+  productForPath,
+  PRODUCTS,
+  type ProductId,
+} from "@/lib/productCatalog";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
 import { ProductLogo } from "@/components/ProductLogo";
 import { useProjectContext } from "@/hooks/useProjectContext";
 
-const menuItems = PRODUCTS.flatMap(product => product.menus.map(item => ({ ...item, productId: product.id, permKey: item.permission })));
+const menuItems = PRODUCTS.flatMap(product =>
+  product.menus.map(item => ({
+    ...item,
+    productId: product.id,
+    permKey: item.permission,
+  }))
+);
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
@@ -58,7 +87,7 @@ export default function DashboardLayout({
   }, [sidebarWidth]);
 
   if (loading) {
-    return <DashboardLayoutSkeleton />
+    return <DashboardLayoutSkeleton />;
   }
 
   if (!user) {
@@ -89,7 +118,7 @@ export function EmailCodeLogin() {
   const [displayCode, setDisplayCode] = useState<string | null>(null);
 
   const requestCode = trpc.auth.requestCode.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       setCodeSent(true);
       if (data.code) {
         setDisplayCode(data.code);
@@ -128,18 +157,30 @@ export function EmailCodeLogin() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
       <div className="w-full max-w-md rounded-lg border bg-background p-8 shadow-sm">
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
-          <img src={assetPath("/techboard-logo.png")} alt="TechBoard" className="h-12 w-auto object-contain" />
+          <img
+            src={assetPath("/techboard-logo.png")}
+            alt="TechBoard"
+            className="h-12 w-auto object-contain"
+          />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Acesse o TechBoard</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Acesse o TechBoard
+            </h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Informe seu e-mail cadastrado. Se ele estiver ativo em Gestão de Acesso, enviaremos um código para entrar.
+              Informe seu e-mail cadastrado. Se ele estiver ativo em Gestão de
+              Acesso, enviaremos um código para entrar.
             </p>
           </div>
         </div>
 
-        <form className="space-y-4" onSubmit={codeSent ? submitCode : submitEmail}>
+        <form
+          className="space-y-4"
+          onSubmit={codeSent ? submitCode : submitEmail}
+        >
           <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="login-email">E-mail</label>
+            <label className="text-sm font-medium" htmlFor="login-email">
+              E-mail
+            </label>
             <div className="relative">
               <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -157,21 +198,31 @@ export function EmailCodeLogin() {
 
           {displayCode ? (
             <div className="rounded-md border border-green-200 bg-green-50 p-3 text-center">
-              <p className="text-xs font-medium text-green-700 mb-1">Código de acesso (modo dev)</p>
-              <p className="text-2xl font-bold tracking-[0.3em] text-green-900">{displayCode}</p>
-              <p className="text-xs text-green-600 mt-1">Já preenchido automaticamente — clique Entrar</p>
+              <p className="text-xs font-medium text-green-700 mb-1">
+                Código de acesso (modo dev)
+              </p>
+              <p className="text-2xl font-bold tracking-[0.3em] text-green-900">
+                {displayCode}
+              </p>
+              <p className="text-xs text-green-600 mt-1">
+                Já preenchido automaticamente — clique Entrar
+              </p>
             </div>
           ) : null}
 
           {codeSent ? (
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="login-code">Código recebido</label>
+              <label className="text-sm font-medium" htmlFor="login-code">
+                Código recebido
+              </label>
               <div className="relative">
                 <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="login-code"
                   value={code}
-                  onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onChange={event =>
+                    setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
                   placeholder="000000"
                   className="pl-9 tracking-[0.35em]"
                   inputMode="numeric"
@@ -184,9 +235,18 @@ export function EmailCodeLogin() {
           <Button
             type="submit"
             className="w-full"
-            disabled={requestCode.isPending || verifyCode.isPending || !email || (codeSent && code.length !== 6)}
+            disabled={
+              requestCode.isPending ||
+              verifyCode.isPending ||
+              !email ||
+              (codeSent && code.length !== 6)
+            }
           >
-            {codeSent ? "Entrar" : requestCode.isPending ? "Enviando..." : "Enviar código"}
+            {codeSent
+              ? "Entrar"
+              : requestCode.isPending
+                ? "Enviando..."
+                : "Enviar código"}
           </Button>
 
           {codeSent ? (
@@ -223,77 +283,181 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const pathname = location.split(/[?#]/, 1)[0];
   const activeProduct = productForPath(location);
-  const activeMenuItem = menuItems.filter(item => pathname === item.path || pathname.startsWith(`${item.path}/`)).sort((a, b) => b.path.length - a.path.length)[0];
+  const activeMenuItem = menuItems
+    .filter(
+      item => pathname === item.path || pathname.startsWith(`${item.path}/`)
+    )
+    .sort((a, b) => b.path.length - a.path.length)[0];
   const isMobile = useIsMobile();
   const { withProject } = useProjectContext();
-  const [expandedProducts, setExpandedProducts] = useState<Partial<Record<ProductId, boolean>>>(() => (
-    activeProduct ? { [activeProduct.id]: true } : {}
-  ));
+  const [expandedProducts, setExpandedProducts] = useState<
+    Partial<Record<ProductId, boolean>>
+  >(() => (activeProduct ? { [activeProduct.id]: true } : {}));
 
   // Fetch user permissions based on email
-  const { data: appUser, isLoading: permLoading } = trpc.access.getByEmail.useQuery(
-    { email: user?.email || '' },
-    { enabled: !!user?.email }
-  );
+  const { data: appUser, isLoading: permLoading } =
+    trpc.access.getByEmail.useQuery(
+      { email: user?.email || "" },
+      { enabled: !!user?.email }
+    );
 
-  const basePermissions = appUser?.permissions || (user as any)?.permissions || DEFAULT_PERMISSIONS.viewer;
-  const userPermissions = appUser?.role === "technical_lead"
-    ? {
-        ...basePermissions,
-        products: { ...basePermissions.products, admin: true },
-        actions: {
-          ...basePermissions.actions,
-          "admin.standards": { view: true, create: true, modify: true },
-        },
-      }
-    : basePermissions;
+  const basePermissions =
+    appUser?.permissions ||
+    (user as any)?.permissions ||
+    DEFAULT_PERMISSIONS.viewer;
+  const userPermissions =
+    appUser?.role === "technical_lead"
+      ? {
+          ...basePermissions,
+          products: { ...basePermissions.products, admin: true },
+          actions: {
+            ...basePermissions.actions,
+            "admin.standards": { view: true, create: true, modify: true },
+          },
+        }
+      : basePermissions;
   const notificationsQuery = trpc.activities.notifications.useQuery(undefined, {
     enabled: Boolean(appUser?.permissions.activities),
     refetchInterval: 60_000,
   });
   const notificationActivitiesQuery = trpc.activities.list.useQuery(undefined, {
-    enabled: Boolean(appUser?.permissions.activities && notificationsQuery.data?.length),
+    enabled: Boolean(
+      appUser?.permissions.activities && notificationsQuery.data?.length
+    ),
     refetchOnWindowFocus: false,
   });
-  const markNotificationsRead = trpc.activities.markNotificationsRead.useMutation({
-    onSuccess: () => notificationsQuery.refetch(),
-  });
+  const markNotificationsRead =
+    trpc.activities.markNotificationsRead.useMutation({
+      onSuccess: () => notificationsQuery.refetch(),
+    });
   const notifications = notificationsQuery.data || [];
-  const unreadNotifications = notifications.filter(notification => !notification.readAt);
+  const unreadNotifications = notifications.filter(
+    notification => !notification.readAt
+  );
   const completeFromNotification = trpc.activities.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([notificationsQuery.refetch(), notificationActivitiesQuery.refetch()]);
+      await Promise.all([
+        notificationsQuery.refetch(),
+        notificationActivitiesQuery.refetch(),
+      ]);
       toast.success("Atividade concluída");
     },
-    onError: error => toast.error(error.message || "Não foi possível concluir a atividade"),
+    onError: error =>
+      toast.error(error.message || "Não foi possível concluir a atividade"),
   });
 
   const notificationButton = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative" aria-label={`${unreadNotifications.length} notificações não lidas`}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label={`${unreadNotifications.length} notificações não lidas`}
+        >
           <Bell className="h-4 w-4" />
-          {unreadNotifications.length > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">{unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}</span>}
+          {unreadNotifications.length > 0 && (
+            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
+              {unreadNotifications.length > 9
+                ? "9+"
+                : unreadNotifications.length}
+            </span>
+          )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-96 w-80 overflow-y-auto">
-        <div className="flex items-center justify-between px-2 py-1.5"><span className="text-sm font-semibold">Notificações</span>{unreadNotifications.length > 0 && <Button variant="ghost" size="sm" onClick={() => markNotificationsRead.mutate({})}>Marcar lidas</Button>}</div>
+      <DropdownMenuContent
+        align="end"
+        className="max-h-96 w-80 overflow-y-auto"
+      >
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <span className="text-sm font-semibold">Notificações</span>
+          {unreadNotifications.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => markNotificationsRead.mutate({})}
+            >
+              Marcar lidas
+            </Button>
+          )}
+        </div>
         {notifications.slice(0, 20).map(notification => {
-          const activity = notificationActivitiesQuery.data?.find(item => item.id === notification.activityId);
-          return <DropdownMenuItem key={notification.id} className={`block cursor-pointer whitespace-normal ${notification.readAt ? "opacity-60" : "bg-muted/50"}`} onClick={() => { markNotificationsRead.mutate({ id: notification.id }); setLocation(`/techtask/my-work?view=mine&activityId=${encodeURIComponent(notification.activityId)}${activity?.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`); }}><div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{notification.title}</p><p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{notification.message}</p>{activity && <p className="mt-1 text-[11px] text-muted-foreground">{activity.projectName || "Operação interna"} · {activity.priority} · {activity.dueDate || "Sem prazo"}</p>}</div>{activity && activity.status !== "Concluída" && <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Concluir atividade" disabled={completeFromNotification.isPending} onClick={event => { event.preventDefault(); event.stopPropagation(); completeFromNotification.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { status: "Concluída" } }); markNotificationsRead.mutate({ id: notification.id }); }}><CheckCircle2 className="h-4 w-4 text-emerald-600" /></Button>}</div></DropdownMenuItem>;
+          const activity = notificationActivitiesQuery.data?.find(
+            item => item.id === notification.activityId
+          );
+          return (
+            <DropdownMenuItem
+              key={notification.id}
+              className={`block cursor-pointer whitespace-normal ${notification.readAt ? "opacity-60" : "bg-muted/50"}`}
+              onClick={() => {
+                markNotificationsRead.mutate({ id: notification.id });
+                setLocation(
+                  `/techtask/my-work?view=mine&activityId=${encodeURIComponent(notification.activityId)}${activity?.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`
+                );
+              }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{notification.title}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                    {notification.message}
+                  </p>
+                  {activity && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {activity.projectName || "Operação interna"} ·{" "}
+                      {activity.priority} · {activity.dueDate || "Sem prazo"}
+                    </p>
+                  )}
+                </div>
+                {activity && activity.status !== "Concluída" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    title="Concluir atividade"
+                    disabled={completeFromNotification.isPending}
+                    onClick={event => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      completeFromNotification.mutate({
+                        id: activity.id,
+                        expectedUpdatedAt: activity.updatedAt,
+                        data: { status: "Concluída" },
+                      });
+                      markNotificationsRead.mutate({ id: notification.id });
+                    }}
+                  >
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  </Button>
+                )}
+              </div>
+            </DropdownMenuItem>
+          );
         })}
-        {notifications.length === 0 && <p className="p-4 text-center text-sm text-muted-foreground">Nenhuma notificação.</p>}
+        {notifications.length === 0 && (
+          <p className="p-4 text-center text-sm text-muted-foreground">
+            Nenhuma notificação.
+          </p>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 
-  const visibleProducts = PRODUCTS
-    .filter(product => canAccessProduct(product, userPermissions))
-    .map(product => ({ ...product, visibleMenus: product.menus.filter(item => canViewMenuItem(item, userPermissions)) }))
+  const visibleProducts = PRODUCTS.filter(product =>
+    canAccessProduct(product, userPermissions)
+  )
+    .map(product => ({
+      ...product,
+      visibleMenus: product.menus.filter(item =>
+        canViewMenuItem(item, userPermissions)
+      ),
+    }))
     .filter(product => product.visibleMenus.length > 0);
 
   // Check if current page is blocked
-  const isBlocked = pathname !== "/" && !canAccessPath(pathname, userPermissions);
+  const isBlocked =
+    pathname !== "/" && !canAccessPath(pathname, userPermissions);
 
   // Auto-redirect to first allowed page when blocked
   useEffect(() => {
@@ -367,8 +531,12 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex min-w-0 flex-1 items-center">
-                  <button onClick={() => navigateFromSidebar("/")} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 hover:bg-accent">
-                    <Grid2X2 className="h-5 w-5 shrink-0" /><span className="truncate font-semibold">Portal Tech</span>
+                  <button
+                    onClick={() => navigateFromSidebar("/")}
+                    className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1 hover:bg-accent"
+                  >
+                    <Grid2X2 className="h-5 w-5 shrink-0" />
+                    <span className="truncate font-semibold">Portal Tech</span>
                   </button>
                 </div>
               ) : null}
@@ -377,40 +545,92 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             <div className="px-2 pb-2">
-              <Button variant="ghost" className="w-full justify-start gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2" onClick={() => navigateFromSidebar("/")} title="Todas as ferramentas">
-                <Grid2X2 className="h-4 w-4" /><span className="group-data-[collapsible=icon]:hidden">Todas as ferramentas</span>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+                onClick={() => navigateFromSidebar("/")}
+                title="Todas as ferramentas"
+              >
+                <Grid2X2 className="h-4 w-4" />
+                <span className="group-data-[collapsible=icon]:hidden">
+                  Todas as ferramentas
+                </span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2"
+                onClick={() => {
+                  window.location.href = "/techdemais/techeduca/";
+                }}
+                title="Central de treinamento"
+              >
+                <BookOpenCheck className="h-4 w-4" />
+                <span className="group-data-[collapsible=icon]:hidden">
+                  Central de treinamento
+                </span>
               </Button>
             </div>
             <div className="space-y-1 px-2 pb-3">
               {visibleProducts.map(product => {
                 const ProductIcon = product.icon;
-                const open = isCollapsed || Boolean(expandedProducts[product.id]);
+                const open =
+                  isCollapsed || Boolean(expandedProducts[product.id]);
                 return (
-                  <Collapsible key={product.id} open={open} onOpenChange={value => setExpandedProducts(current => ({ ...current, [product.id]: value }))}>
+                  <Collapsible
+                    key={product.id}
+                    open={open}
+                    onOpenChange={value =>
+                      setExpandedProducts(current => ({
+                        ...current,
+                        [product.id]: value,
+                      }))
+                    }
+                  >
                     <CollapsibleTrigger asChild>
                       <Button
-                        variant={activeProduct?.id === product.id ? "secondary" : "ghost"}
+                        variant={
+                          activeProduct?.id === product.id
+                            ? "secondary"
+                            : "ghost"
+                        }
                         className="h-10 w-full justify-start gap-2 px-2 font-semibold group-data-[collapsible=icon]:justify-center"
                         title={product.name}
                       >
                         <ProductIcon className="h-4 w-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">{product.name}</span>
-                        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${open ? "rotate-180" : ""}`} />
+                        <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
+                          {product.name}
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${open ? "rotate-180" : ""}`}
+                        />
                       </Button>
                     </CollapsibleTrigger>
                     <CollapsibleContent className="group-data-[collapsible=icon]:hidden">
                       <SidebarMenu className="mt-1 border-l pl-3">
                         {product.visibleMenus.map(item => {
-                          const isActive = pathname === item.path || (item.path !== product.homePath && pathname.startsWith(`${item.path}/`));
-                          const label = appUser?.role === 'consultant' && item.path === '/techboard/resources'
-                            ? 'Meu Cadastro'
-                            : appUser?.role === 'consultant' && item.path === '/techboard/absences'
-                            ? 'Minhas Férias'
-                            : item.label;
+                          const isActive =
+                            pathname === item.path ||
+                            (item.path !== product.homePath &&
+                              pathname.startsWith(`${item.path}/`));
+                          const label =
+                            appUser?.role === "consultant" &&
+                            item.path === "/techboard/resources"
+                              ? "Meu Cadastro"
+                              : appUser?.role === "consultant" &&
+                                  item.path === "/techboard/absences"
+                                ? "Minhas Férias"
+                                : item.label;
                           return (
                             <SidebarMenuItem key={item.path}>
-                              <SidebarMenuButton isActive={isActive} onClick={() => navigateFromSidebar(item.path)} tooltip={label} className="h-9 font-normal">
-                                <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : ""}`} />
+                              <SidebarMenuButton
+                                isActive={isActive}
+                                onClick={() => navigateFromSidebar(item.path)}
+                                tooltip={label}
+                                className="h-9 font-normal"
+                              >
+                                <item.icon
+                                  className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                                />
                                 <span>{label}</span>
                               </SidebarMenuButton>
                             </SidebarMenuItem>
@@ -472,28 +692,68 @@ function DashboardLayoutContent({
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
                 <div className="flex flex-col gap-1">
-                  {activeProduct && <ProductLogo product={activeProduct} compact className="h-8 w-24 rounded-lg" imageClassName="p-1" />}
+                  {activeProduct && (
+                    <ProductLogo
+                      product={activeProduct}
+                      compact
+                      className="h-8 w-24 rounded-lg"
+                      imageClassName="p-1"
+                    />
+                  )}
                   <span className="tracking-tight text-foreground">
                     {activeMenuItem?.label ?? "Menu"}
                   </span>
                 </div>
               </div>
             </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Ajuda desta tela"
+                onClick={() => {
+                  window.location.href = `/techdemais/techeduca/?route=${encodeURIComponent(pathname)}`;
+                }}
+              >
+                <CircleHelp className="h-4 w-4" />
+              </Button>
+              {appUser?.permissions.activities && notificationButton}
+            </div>
+          </div>
+        )}
+        {!isMobile && (
+          <div className="flex h-12 items-center justify-end gap-1 border-b px-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                window.location.href = `/techdemais/techeduca/?route=${encodeURIComponent(pathname)}`;
+              }}
+            >
+              <CircleHelp className="mr-2 h-4 w-4" />
+              Ajuda desta tela
+            </Button>
             {appUser?.permissions.activities && notificationButton}
           </div>
         )}
-        {!isMobile && appUser?.permissions.activities && <div className="flex h-12 items-center justify-end border-b px-4">{notificationButton}</div>}
         <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-4">
           {isBlocked ? (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
               <Lock className="h-16 w-16 text-muted-foreground/50" />
-              <h2 className="text-xl font-semibold text-muted-foreground">Acesso Restrito</h2>
+              <h2 className="text-xl font-semibold text-muted-foreground">
+                Acesso Restrito
+              </h2>
               <p className="text-sm text-muted-foreground text-center max-w-md">
-                Você não tem permissão para acessar esta página. Entre em contato com o administrador para solicitar acesso.
+                Você não tem permissão para acessar esta página. Entre em
+                contato com o administrador para solicitar acesso.
               </p>
-              <Button variant="outline" onClick={() => setLocation('/')}>Voltar ao Dashboard</Button>
+              <Button variant="outline" onClick={() => setLocation("/")}>
+                Voltar ao Dashboard
+              </Button>
             </div>
-          ) : children}
+          ) : (
+            children
+          )}
         </main>
       </SidebarInset>
     </>
