@@ -24,6 +24,303 @@ export type TrainingCourseSeed = {
   modules: TrainingModuleSeed[];
 };
 
+const VALIDATIONS_BY_ROUTE: Record<string, string[]> = {
+  "/": [
+    "A sessão precisa estar válida; código expirado, já utilizado ou associado a outro e-mail não autentica o usuário.",
+    "O usuário deve estar ativo e possuir ao menos permissão de visualização para que produtos, indicadores e resultados sejam exibidos.",
+    "Projeto e período selecionados limitam os dados consultados; resultados fora desse contexto não são considerados erro de pesquisa.",
+  ],
+  "/techboard": [
+    "Os indicadores consideram somente registros visíveis ao usuário e compatíveis com o período e os filtros ativos.",
+    "Sobrealocação existe quando as horas planejadas superam a capacidade disponível após considerar férias e ausências.",
+    "Alertas só desaparecem quando o cadastro ou a alocação que os originou deixa de atender à condição de exceção.",
+  ],
+  "/techboard/resources": [
+    "Nome, situação e dados funcionais obrigatórios devem ser informados; e-mail, quando preenchido, precisa ter formato válido.",
+    "Vínculos de grupo, frente, contrato, férias e saída precisam usar opções ativas dos cadastros gerais.",
+    "A importação valida cabeçalhos, tipos, datas, valores permitidos e duplicidades antes de confirmar cada linha.",
+    "A exclusão é bloqueada quando o recurso possui usuário, alocação, ausência ou outro histórico dependente.",
+  ],
+  "/techboard/projects": [
+    "Nome, cliente, período e responsáveis obrigatórios devem estar preenchidos, e a data final não pode anteceder a inicial.",
+    "Gestores, patrocinadores, frentes e OIs precisam existir e estar compatíveis com o projeto.",
+    "Marcos devem permanecer dentro de uma sequência cronológica coerente; regenerar o cronograma pode substituir ajustes ainda não consolidados.",
+    "A exclusão é bloqueada enquanto existirem fases, alocações, entregáveis ou demais dependências do projeto.",
+  ],
+  "/techboard/absences": [
+    "Recurso, tipo, início e fim são obrigatórios, e a data final não pode anteceder a inicial.",
+    "Períodos coincidentes para o mesmo recurso são sinalizados para evitar redução duplicada de capacidade.",
+    "A importação valida identificação do recurso, tipo de ausência, formato das datas e consistência do período linha a linha.",
+    "Alterar ou excluir uma ausência recalcula a disponibilidade e pode mudar alertas e sobrealocações no Planner.",
+  ],
+  "/techboard/planner": [
+    "Recurso, projeto, período, horas e situação da alocação são validados antes de salvar.",
+    "A data final não pode anteceder a inicial; fase ou marco selecionado deve pertencer ao mesmo projeto.",
+    "Horas negativas ou inválidas são recusadas; horas acima da capacidade geram sobrealocação e exigem confirmação ou correção conforme a permissão.",
+    "Arrastar ou redimensionar executa as mesmas validações do formulário e pode ser recusado quando cria período inválido ou conflito protegido.",
+    "Ausências, data de saída e limites do projeto são recalculados após cada alteração.",
+  ],
+  "/techboard/org-chart": [
+    "A estrutura exibe apenas recursos, grupos, frentes e projetos visíveis e corretamente vinculados.",
+    "Itens sem liderança, gestor, grupo ou alocação válida aparecem incompletos até a correção do cadastro de origem.",
+  ],
+  "/techlead": [
+    "Indicadores são calculados somente com projetos e equipes permitidos ao usuário e dentro dos filtros selecionados.",
+    "Atalhos respeitam a permissão da tela de destino; visualizar um indicador não concede permissão para modificar sua origem.",
+  ],
+  "/techlead/teams": [
+    "A composição depende de recursos ativos, frentes existentes e alocações vigentes no projeto.",
+    "Capacidade e situação são recalculadas a partir do TechBoard; inconsistências devem ser corrigidas no cadastro ou Planner de origem.",
+  ],
+  "/techlead/gp-track": [
+    "Projeto, fase, atividade, responsável, papel e status precisam ser compatíveis com a Trilha do GP aplicada.",
+    "Prazos inválidos ou anteriores a dependências obrigatórias são sinalizados antes da conclusão.",
+    "Atividades obrigatórias sem evidência, responsável ou requisito previsto não podem ser concluídas quando o modelo exigir esses dados.",
+    "Modelos Word aceitam somente arquivos e tamanhos permitidos; substituir ou remover modelo exige permissão administrativa.",
+  ],
+  "/techmove": [
+    "O funil considera a etapa e o status efetivos de cada projeto permitido ao usuário.",
+    "Alertas permanecem ativos enquanto entregáveis, responsáveis, prazos ou aprovações obrigatórias estiverem pendentes.",
+  ],
+  "/techmove/projects": [
+    "Somente etapas pertencentes ao projeto ativo podem ser atualizadas.",
+    "Entregáveis bloqueados por padrão, dependência ou aprovação não aceitam conclusão até que a condição seja atendida.",
+    "Incorporar versão anterior exige confirmação e evita sobrescrever silenciosamente conteúdo já produzido.",
+    "O relatório consolidado inclui apenas dados persistidos e visíveis no momento da geração.",
+  ],
+  "/techmove/scope-items": [
+    "Código, nome, processo, módulo e demais campos obrigatórios são validados na criação e na importação.",
+    "O importador verifica tipo do arquivo, cabeçalhos, linhas vazias, códigos repetidos e valores inválidos antes da confirmação.",
+    "Itens já relacionados a BDCQ, workshops, configurações ou modelos não podem ser excluídos sem resolver as dependências.",
+  ],
+  "/techmove/bdcq": [
+    "Pergunta, nível, módulo e identificação precisam ser válidos; perguntas L2 e L3 seguem responsabilidades e detalhamento diferentes.",
+    "Consultor e key user devem estar ativos e vinculados ao projeto para receber responsabilidade ou aprovar.",
+    "Envio para aprovação exige resposta e campos obrigatórios; anexos passam por validação de formato e tamanho.",
+    "Somente aprovadores autorizados podem aprovar ou rejeitar; rejeição exige justificativa e reabertura preserva o histórico.",
+    "Uma nova edição não apaga a versão anterior da resposta.",
+  ],
+  "/techmove/workshops": [
+    "Objetivo, data, duração, módulos e responsáveis obrigatórios devem estar preenchidos antes de salvar.",
+    "Horário, duração e agenda precisam formar um período válido; convidados devem possuir e-mail utilizável.",
+    "Transcrição automática exige mídia em formato e tamanho suportados; a ata só deve ser finalizada após revisão do conteúdo gerado.",
+    "Requisitos exigem descrição, critério de aceite, prioridade, categoria e responsável quando marcados como confirmados.",
+  ],
+  "/techmove/dcd": [
+    "A geração exige projeto, módulo e fontes mínimas disponíveis; ausência de BDCQ, escopo ou conteúdo relacionado é informada.",
+    "Conteúdo em cache só é reutilizado quando corresponde ao projeto, módulo e versão esperados.",
+    "Cada edição, refinamento, restauração ou geração cria uma versão rastreável; restaurar não apaga versões posteriores.",
+    "Aprovação em lote considera somente documentos elegíveis e não aprovados; documentos bloqueados ou incompletos são ignorados ou recusados.",
+    "Exportação e publicação de modelo validam conteúdo, arquivo Word, situação e permissão administrativa.",
+  ],
+  "/techmove/gaps": [
+    "Descrição, módulo, impacto, responsável e status obrigatórios são verificados antes de salvar.",
+    "Extração por IA apresenta sugestões para seleção; nenhum gap deve ser persistido sem confirmação do usuário.",
+    "Atualização em lote só afeta itens selecionados e elegíveis para a transição de status.",
+    "Exclusão pode ser bloqueada por dependências e exige confirmação para preservar rastreabilidade.",
+  ],
+  "/techmove/configurations": [
+    "Categoria, descrição, responsável, status e dependências obrigatórias precisam ser válidos.",
+    "Geração por BDCQ ou DCD usa somente fontes elegíveis do projeto e evita duplicações identificáveis.",
+    "Dependências devem apontar para registros existentes; conclusão pode ser impedida enquanto pré-requisitos estiverem pendentes.",
+    "Prompt personalizado é validado antes de ativar; restaurar retorna ao modelo padrão publicado.",
+  ],
+  "/techmove/tests": [
+    "Cenário exige código, tipo, processo, módulo, descrição e responsável válidos; códigos repetidos são sinalizados.",
+    "Cada etapa E2E deve ter ordem, ação e resultado esperado; a execução deve registrar status e resultado obtido.",
+    "Evidências passam por validação de arquivo, e uma etapa não pode ser aprovada quando o resultado obrigatório estiver ausente.",
+    "Importação valida estrutura, valores permitidos e relacionamento entre cenário e etapas antes de persistir.",
+  ],
+  "/techmove/governance": [
+    "Uma política só pode ser ativada com tipo de entregável, aprovadores e regra de decisão válidos.",
+    "Na regra Todos, cada aprovador precisa decidir; em Mínimo N, o número deve ser maior que zero e não superar a quantidade de aprovadores.",
+    "A submissão exige versão elegível do entregável; rejeição exige justificativa e a correção cria nova versão quando aplicável.",
+    "A preparação só pode ser concluída quando todas as verificações obrigatórias estiverem atendidas; reabrir preserva decisões anteriores.",
+  ],
+  "/techmove/raid": [
+    "Issue e risco possuem campos e cálculos distintos; probabilidade é obrigatória para risco e o código de rastreamento não pode ser duplicado.",
+    "Título, categoria, severidade ou impacto, responsável, prazo e plano de ação são validados conforme o tipo.",
+    "Transições de status incompatíveis com pendências obrigatórias são recusadas.",
+    "Exclusão exige justificativa e confirmação e mantém o evento no histórico de auditoria.",
+  ],
+  "/techtask": [
+    "Indicadores consideram somente atividades visíveis, não arquivadas e compatíveis com projeto, responsável e filtros.",
+    "Atrasos, bloqueios e prioridades são derivados dos dados atuais; alterar a atividade de origem recalcula os alertas.",
+  ],
+  "/techtask/board": [
+    "Título, projeto ou contexto, prioridade, responsável e status são validados conforme o tipo de atividade.",
+    "Atividades integradas preservam código e origem; campos protegidos só podem ser alterados pelas permissões administrativas previstas.",
+    "Movimentar o cartão executa as mesmas validações da edição, inclusive checklist obrigatório, bloqueios e exigências de conclusão.",
+    "Importação valida colunas, valores permitidos, usuários, projetos e códigos duplicados antes de confirmar as linhas.",
+  ],
+  "/techtask/my-work": [
+    "Somente responsável ou participantes autorizados podem alterar a atividade; participação voluntária não substitui o responsável principal.",
+    "Checklist obrigatório deve ser concluído antes do encerramento, respeitando responsáveis e prazos dos itens.",
+    "Comentários, anexos, prazo e status são auditados; anexos passam por validação de formato e tamanho.",
+    "Desfazer restaura apenas a última alteração elegível e não remove eventos já consolidados na origem.",
+  ],
+  "/admin": [
+    "Indicadores administrativos são restritos a administradores e refletem vínculos inválidos, usuários inativos e projetos sem gestor.",
+    "O diagnóstico não corrige registros automaticamente; cada exceção precisa ser tratada no cadastro indicado.",
+  ],
+  "/admin/users": [
+    "E-mail deve ser válido e único; perfil, situação e vínculo com recurso precisam ser coerentes.",
+    "Permissões de visualizar, criar e modificar são independentes, mas criar ou modificar não deve existir sem acesso à tela correspondente.",
+    "Vínculos por projeto, grupos e funções específicas limitam o alcance dos dados mesmo quando a tela está liberada.",
+    "Inativação bloqueia novos acessos sem apagar histórico; exclusão é impedida quando existem vínculos ou registros auditáveis.",
+  ],
+  "/admin/registrations": [
+    "Nome e situação são obrigatórios e duplicidades no mesmo tipo de cadastro são recusadas ou sinalizadas.",
+    "A exclusão é bloqueada enquanto o valor estiver sendo usado por projetos, recursos, atividades, filtros ou modelos.",
+    "Inativar preserva o histórico e retira a opção de novos preenchimentos sem alterar registros antigos.",
+  ],
+  "/admin/standards": [
+    "Pacotes, modelos e anexos passam por validação de tipo, release, estrutura, tamanho, versão e duplicidade.",
+    "Somente versões processadas sem erro podem ser ativadas ou publicadas.",
+    "Reprocessamento e reconciliação preservam histórico e registram falhas; publicação automática exige modelo ativo e elegível.",
+    "Arquivamento é recuperável e não remove aplicações já realizadas nos projetos.",
+  ],
+};
+
+function validationRulesFor(route: string) {
+  return (
+    VALIDATIONS_BY_ROUTE[route] ?? [
+      "O sistema confirma sessão ativa, permissão para a ação e acesso ao projeto antes de processar a solicitação.",
+      "Campos obrigatórios, formatos, valores permitidos e relacionamentos são validados antes da gravação.",
+      "Ações com dependências, perda de informação ou mudança de estado exigem confirmação e podem ser bloqueadas.",
+    ]
+  );
+}
+
+const AUTOMATIONS_BY_ROUTE: Record<string, string[]> = {
+  "/": [
+    "Ao autenticar, o Portal carrega perfil, grupos, permissões por produto e tela e vínculos de projeto para montar a navegação.",
+    "A troca de projeto atualiza o contexto usado pelos módulos integrados e pelos resultados da pesquisa.",
+  ],
+  "/techboard": [
+    "Indicadores e alertas são recalculados a partir de recursos, projetos, ausências e alocações.",
+    "Ao abrir um alerta de capacidade, o sistema leva o contexto do recurso ou projeto para o Planner.",
+  ],
+  "/techboard/resources": [
+    "Capacidade, grupo, frentes, contrato, férias e saída passam a alimentar Planner, organograma e indicadores.",
+    "Quando o recurso é vinculado a um usuário, esse vínculo é reutilizado em responsáveis, participantes e regras de acesso.",
+  ],
+  "/techboard/projects": [
+    "O projeto criado torna-se disponível para alocações, trilhas, entregáveis, atividades e vínculos de acesso.",
+    "Ao gerar fases e marcos, o sistema monta o cronograma-base; aplicar o gerente replica a responsabilidade nas fases elegíveis.",
+  ],
+  "/techboard/absences": [
+    "Salvar, editar ou excluir uma ausência recalcula a capacidade do recurso no período.",
+    "O novo saldo aparece no Planner e pode criar ou remover alertas de disponibilidade e sobrealocação.",
+  ],
+  "/techboard/planner": [
+    "Salvar ou mover uma alocação atualiza carga, disponibilidade, ociosidade e sobrealocação.",
+    "Quando a alocação referencia fase ou marco, o sistema mantém o vínculo para navegação e análise do projeto.",
+  ],
+  "/techboard/org-chart": [
+    "A árvore é montada automaticamente a partir de diretoria, lideranças, grupos, frentes, projetos e alocações vigentes.",
+  ],
+  "/techlead": [
+    "Os indicadores consolidam equipes, atividades e estados dos projetos e oferecem atalhos para o registro que exige ação.",
+  ],
+  "/techlead/teams": [
+    "A composição do time e a distribuição por frente são derivadas dos cadastros e alocações do TechBoard.",
+  ],
+  "/techlead/gp-track": [
+    "Aplicar um padrão cria as atividades da Trilha do GP com fase, workstream, papel, recorrência e requisitos definidos no modelo.",
+    "Evidências, responsáveis, prazos e status alimentam o acompanhamento de liderança e podem originar atividades integradas.",
+  ],
+  "/techmove": [
+    "O funil posiciona o projeto conforme o estado de suas etapas e consolida pendências, alertas e entregáveis.",
+  ],
+  "/techmove/projects": [
+    "Padrões publicados automaticamente criam entregáveis elegíveis na Trilha Mestre sem duplicar aplicações já registradas.",
+    "Alterações de responsável e status atualizam o acompanhamento da jornada e podem refletir no TechTask.",
+    "O relatório consolidado reúne os dados atuais das etapas e entregáveis em um único PDF.",
+  ],
+  "/techmove/scope-items": [
+    "Ao importar o DDA, cada linha válida cria ou atualiza um Scope Item do projeto; linhas sem correspondência na release SAP ficam pendentes para reprocessamento.",
+    "Depois da importação, o sistema identifica os módulos efetivamente processados e cria automaticamente as perguntas BDCQ dos modelos padrão e administrativos aplicáveis.",
+    "As perguntas automáticas são relacionadas aos Scope Items compatíveis por código ou nome e não são duplicadas quando a mesma pergunta já existe no módulo.",
+    "Quando uma release SAP posterior resolve um item pendente, o reprocessamento cria ou atualiza o Scope Item e registra a resolução no histórico da importação.",
+    "Os Scope Items importados passam a ser usados na seleção de BDCQ, workshops, configurações e demais modelos do projeto.",
+  ],
+  "/techmove/bdcq": [
+    "Aplicar a biblioteca cria somente perguntas compatíveis com módulos e Scope Items do projeto e ignora duplicidades por módulo e texto.",
+    "Responder novamente preserva a resposta anterior no histórico antes de gravar a nova versão.",
+    "Ao concluir as perguntas de um módulo, o sistema verifica a completude e pode gerar a notificação prevista para o fluxo.",
+    "Perguntas, respostas e responsáveis alimentam DCD, configurações, relatórios e governança.",
+  ],
+  "/techmove/workshops": [
+    "Aplicar padrões cria apenas workshops ativos compatíveis com projeto, módulos e Scope Items e evita reaplicar o mesmo modelo.",
+    "A transcrição transforma o áudio em texto-base; a geração de ata estrutura esse conteúdo para revisão.",
+    "Requisitos confirmados na ata são registrados como requisitos do cliente e passam a alimentar desenho, gaps e acompanhamento.",
+  ],
+  "/techmove/dcd": [
+    "A geração consolida Scope Items, perguntas e respostas BDCQ, requisitos, workshops, atas e gaps do módulo selecionado.",
+    "Cada geração, edição, refinamento ou restauração cria uma versão e registra contexto, motivo, autor e arquivos gerados.",
+    "A exportação gera artefatos Word e PDF; conteúdo aprovado fica disponível para governança e extrações posteriores.",
+    "A extração de DCD pode sugerir gaps e configurações, mas a persistência depende da seleção ou confirmação do usuário.",
+  ],
+  "/techmove/gaps": [
+    "A extração por IA analisa o DCD e apresenta candidatos com módulo, descrição e impacto para revisão.",
+    "Gaps confirmados alimentam indicadores, decisões, atividades e o contexto de futuras gerações do DCD.",
+  ],
+  "/techmove/configurations": [
+    "Gerar a partir do BDCQ transforma respostas elegíveis em itens de configuração vinculados à pergunta de origem.",
+    "Extrair do DCD propõe configurações com base no documento selecionado; aplicar modelos cruza módulos e Scope Items ativos.",
+    "Aplicações repetidas são comparadas por modelo, módulo e Scope Items para evitar duplicação.",
+  ],
+  "/techmove/tests": [
+    "A importação cria cenários e respectivas etapas E2E mantendo o relacionamento e a ordem informados.",
+    "Execuções atualizam o estado do cenário e consolidam resultados e evidências para acompanhamento e governança.",
+  ],
+  "/techmove/governance": [
+    "Ao submeter, o sistema congela a referência da versão avaliada e cria as decisões pendentes para os aprovadores.",
+    "As decisões são consolidadas conforme Qualquer um, Todos ou Mínimo N; rejeição devolve o item para correção sem apagar o histórico.",
+  ],
+  "/techmove/raid": [
+    "O sistema gera o código de rastreamento e registra alterações de status e decisões no histórico.",
+    "Responsável, prazo, severidade, probabilidade e impacto alimentam alertas e indicadores do projeto.",
+  ],
+  "/techtask": [
+    "Atividades originadas em outros módulos são consolidadas com código, origem, projeto, etapa, responsável e estado atual.",
+  ],
+  "/techtask/board": [
+    "Entregáveis e ações integradas podem criar ou sincronizar cartões mantendo o vínculo com o registro de origem.",
+    "Mover um cartão atualiza o status e recalcula indicadores, prioridades, atrasos e bloqueios.",
+    "Visões salvas reaplicam automaticamente filtros, agrupamentos e escopo definidos pelo usuário.",
+  ],
+  "/techtask/my-work": [
+    "Comentários, anexos, checklist e participação são incorporados ao histórico da atividade.",
+    "Abrir a origem navega para o registro integrado que criou a atividade; desfazer restaura a última mudança elegível.",
+  ],
+  "/admin": [
+    "O diagnóstico cruza usuários, recursos, projetos, perfis e serviços para listar inconsistências funcionais.",
+  ],
+  "/admin/users": [
+    "Salvar permissões recompõe imediatamente os produtos, telas e ações disponíveis na próxima verificação de sessão.",
+    "Inativar preserva autoria e histórico, mas impede novos acessos; vínculos por projeto limitam automaticamente o alcance dos dados.",
+  ],
+  "/admin/registrations": [
+    "Novos valores ativos passam a aparecer nas listas e filtros dos módulos consumidores.",
+    "Inativação remove a opção de novos registros sem alterar os dados históricos que já a utilizam.",
+  ],
+  "/admin/standards": [
+    "Processar um pacote SAP atualiza a biblioteca da release e pode reprocessar imports DDA que estavam pendentes por código desconhecido.",
+    "Publicar um padrão o torna elegível para aplicação automática ou manual nos projetos conforme módulo, Scope Item, papel e recorrência.",
+    "Reprocessamento, reconciliação, versionamento e arquivamento geram histórico editorial e operacional recuperável.",
+  ],
+};
+
+function automationsFor(route: string) {
+  return (
+    AUTOMATIONS_BY_ROUTE[route] ?? [
+      "Após salvar, o sistema atualiza os registros relacionados, indicadores e histórico conforme as integrações da tela.",
+    ]
+  );
+}
+
 const lesson = (
   id: string,
   title: string,
@@ -48,6 +345,17 @@ const lesson = (
     rules.length
       ? `## Regras e cuidados\n${rules.map(rule => `- ${rule}`).join("\n")}`
       : "",
+    `## Validações realizadas pelo sistema\n${validationRulesFor(route)
+      .map(
+        (validation, index) =>
+          `${index + 1}. **Validação ${index + 1}:** ${validation}`
+      )
+      .join("\n")}`,
+    `## O que o sistema faz automaticamente\n${automationsFor(route)
+      .map((automation, index) => `${index + 1}. ${automation}`)
+      .join("\n")}`,
+    `## Como confirmar a automação\nApós concluir o procedimento, verifique o registro criado ou atualizado, o histórico da operação e os módulos relacionados citados acima. Quando houver processamento parcial, consulte os itens ignorados ou pendentes antes de repetir a ação.`,
+    `## Quando a etapa é bloqueada\nA operação não avança quando uma validação obrigatória falha. Corrija o campo ou a dependência indicada, salve novamente e confirme se o status, o histórico e os módulos relacionados foram atualizados.`,
     `## Resultado esperado\nA operação é concluída e as informações relacionadas são atualizadas no sistema.`,
     `## Em caso de erro\nConfirme suas permissões, os campos obrigatórios e o projeto selecionado. Se o problema continuar, registre a mensagem exibida e procure o administrador funcional.`,
   ]
