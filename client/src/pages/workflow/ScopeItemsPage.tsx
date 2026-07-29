@@ -28,7 +28,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Upload, Trash2, Search } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  History,
+  Plus,
+  Upload,
+  Trash2,
+  Search,
+} from "lucide-react";
 import { useWorkflowProject } from "./useWorkflowProject";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { parseDdaWorkbook } from "../../../../shared/ddaImport";
@@ -53,6 +61,8 @@ export default function ScopeItemsPage() {
       offset: page * PAGE_SIZE,
       limit: PAGE_SIZE + 1,
     });
+  const { data: importHistory = [], refetch: refetchImportHistory } =
+    trpc.workflow.scopeItems.importHistory.useQuery({ projectId: PROJECT_ID });
   const hasNextPage = pageItems.length > PAGE_SIZE;
   const items = pageItems.slice(0, PAGE_SIZE);
   const { data: lookups } = trpc.settings.getLookups.useQuery();
@@ -84,10 +94,15 @@ export default function ScopeItemsPage() {
   });
   const bulkMut = trpc.workflow.scopeItems.bulkCreate.useMutation({
     onSuccess: result => {
-      refetch();
-      toast.success(
-        `${result.items.length} scope item(s) importado(s) · ${result.bdcqAdded} pergunta(s) BDCQ adicionada(s) · ${result.bdcqUpdated} atualizada(s)`
-      );
+      void Promise.all([refetch(), refetchImportHistory()]);
+      const processed = result.created + result.updated;
+      if (result.pending) {
+        toast.warning(
+          `${processed} processado(s) e ${result.pending} pendente(s) para reprocessamento`
+        );
+      } else {
+        toast.success(`${processed} scope item(s) processado(s)`);
+      }
     },
   });
 
@@ -123,6 +138,7 @@ export default function ScopeItemsPage() {
         );
       await bulkMut.mutateAsync({
         projectId: PROJECT_ID,
+        fileName: file.name,
         items: parsed.map(item => ({
           name: item.name,
           module: item.module || "Geral",
@@ -235,6 +251,86 @@ export default function ScopeItemsPage() {
           </Table>
         </CardContent>
       </Card>
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-muted-foreground" />
+            <h2 className="font-semibold">Histórico de importações do DDA</h2>
+          </div>
+          {(importHistory as any[]).length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma importação registrada.
+            </p>
+          ) : (
+            (importHistory as any[]).map(batch => (
+              <details key={batch.id} className="rounded-md border p-3">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {Number(batch.pending) > 0 ? (
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    )}
+                    <span className="font-medium">{batch.fileName}</span>
+                    <Badge variant="outline">{batch.total} linha(s)</Badge>
+                    <Badge className="bg-emerald-100 text-emerald-900">
+                      {batch.created} criado(s)
+                    </Badge>
+                    <Badge className="bg-blue-100 text-blue-900">
+                      {batch.updated} atualizado(s)
+                    </Badge>
+                    {Number(batch.pending) > 0 && (
+                      <Badge className="bg-amber-100 text-amber-900">
+                        {batch.pending} pendente(s)
+                      </Badge>
+                    )}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {batch.createdAt
+                        ? new Date(batch.createdAt).toLocaleString("pt-BR")
+                        : ""}
+                    </span>
+                  </div>
+                </summary>
+                <div className="mt-3 space-y-2 border-t pt-3">
+                  {(batch.items || []).map((item: any) => (
+                    <div
+                      key={item.id}
+                      className="flex flex-col gap-1 rounded-md bg-muted/40 p-2 text-sm sm:flex-row sm:items-center"
+                    >
+                      <span className="font-mono font-medium">
+                        {item.code || "Sem código"}
+                      </span>
+                      <Badge variant="outline">
+                        {item.status === "pending"
+                          ? "Pendente"
+                          : item.status === "discarded"
+                            ? "Descartado"
+                            : item.result === "created"
+                              ? "Criado"
+                              : "Atualizado"}
+                      </Badge>
+                      {item.errorMessage && (
+                        <span className="text-amber-800">
+                          {item.errorMessage}
+                        </span>
+                      )}
+                      {item.resolvedAt && item.attempts > 1 && (
+                        <span className="text-xs text-emerald-700">
+                          Resolvido automaticamente em{" "}
+                          {new Date(item.resolvedAt).toLocaleString("pt-BR")}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground sm:ml-auto">
+                        {item.attempts} tentativa(s)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))
+          )}
+        </CardContent>
+      </Card>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">Página {page + 1}</p>
         <div className="flex gap-2">
@@ -259,6 +355,9 @@ export default function ScopeItemsPage() {
           <DialogHeader>
             <DialogTitle>Novo Scope Item</DialogTitle>
           </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            O cadastro administrativo não exige anexo.
+          </p>
           <div className="grid gap-3">
             <div>
               <Label>Nome *</Label>

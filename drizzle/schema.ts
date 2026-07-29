@@ -332,6 +332,41 @@ export const scopeItems = mysqlTable("scope_items", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const ddaImportBatches = mysqlTable("dda_import_batches", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("processing"),
+  total: int("total").notNull().default(0),
+  created: int("created").notNull().default(0),
+  updated: int("updated").notNull().default(0),
+  pending: int("pending").notNull().default(0),
+  importedBy: varchar("importedBy", { length: 64 }).notNull().default(""),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const ddaImportItems = mysqlTable("dda_import_items", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  batchId: varchar("batchId", { length: 64 }).notNull(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  code: varchar("code", { length: 128 }).notNull().default(""),
+  normalizedCode: varchar("normalizedCode", { length: 128 })
+    .notNull()
+    .default(""),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  result: varchar("result", { length: 32 }).notNull().default(""),
+  errorCode: varchar("errorCode", { length: 64 }).notNull().default(""),
+  errorMessage: text("errorMessage").notNull().default(""),
+  payload: json("payload").$type<Record<string, unknown>>().default({}),
+  attempts: int("attempts").notNull().default(0),
+  scopeItemId: varchar("scopeItemId", { length: 64 }).notNull().default(""),
+  resolvedAt: timestamp("resolvedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 /**
  * BDCQ Questions - perguntas do Business Driven Configuration Questionnaire
  */

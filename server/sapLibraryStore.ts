@@ -7,6 +7,7 @@ import {
   storageGetSignedUrl,
   storagePut,
 } from "./storage";
+import { reprocessDdaImportsForRelease } from "./ddaImportStore";
 
 const MANUAL_RELEASE_CODE = "__MANUAL_BR__";
 
@@ -607,7 +608,7 @@ export async function resumePendingSapImports() {
 export async function activateRelease(id: string, userId: string) {
   const pool = getPgPool();
   if (!pool) return { id };
-  return pool.query("BEGIN").then(async () => {
+  const release = await pool.query("BEGIN").then(async () => {
     try {
       await pool.query(
         'UPDATE "sap_content_releases" SET "status"=\'archived\' WHERE "status"=\'active\''
@@ -626,6 +627,8 @@ export async function activateRelease(id: string, userId: string) {
       throw error;
     }
   });
+  const reprocessed = await reprocessDdaImportsForRelease(id);
+  return { ...release, ddaReprocessed: reprocessed };
 }
 
 export async function getKnowledgeContext(scopeCodes: string[]) {

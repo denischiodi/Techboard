@@ -4,8 +4,15 @@ import { parseDdaWorkbook } from "../shared/ddaImport";
 
 function workbookBuffer(sheetName: string, rows: unknown[][]) {
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), sheetName);
-  return XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet(rows),
+    sheetName
+  );
+  return XLSX.write(workbook, {
+    type: "array",
+    bookType: "xlsx",
+  }) as ArrayBuffer;
 }
 
 function parse(fileName: string, sheetName: string, rows: unknown[][]) {
@@ -20,10 +27,50 @@ describe("parseDdaWorkbook", () => {
     const items = parse("DDA Export.xlsx", "DDA Capabilities", [
       ["SAP Cloud ERP - Digital Discovery Assessment (DDA) Export"],
       ["Assessment: Example"],
-      ["LOB", "BA", "Code", "Name", "Priority", "Phase", "Countries", "Solution Scenario ID", "Release"],
-      ["Finance", "Financial Operations", "43D", "Integration with External Tax Calculation Engines", "High", "First", "br", "SolS-013", "2602"],
-      ["Procurement", "Operational Procurement", "18J", "Requisitioning", "Medium", "First", "br", "SolS-013", "2602"],
-      ["Procurement", "Invoice Management", "18J", "Requisitioning", "Medium", "First", "br", "SolS-013", "2602"],
+      [
+        "LOB",
+        "BA",
+        "Code",
+        "Name",
+        "Priority",
+        "Phase",
+        "Countries",
+        "Solution Scenario ID",
+        "Release",
+      ],
+      [
+        "Finance",
+        "Financial Operations",
+        "43D",
+        "Integration with External Tax Calculation Engines",
+        "High",
+        "First",
+        "br",
+        "SolS-013",
+        "2602",
+      ],
+      [
+        "Procurement",
+        "Operational Procurement",
+        "18J",
+        "Requisitioning",
+        "Medium",
+        "First",
+        "br",
+        "SolS-013",
+        "2602",
+      ],
+      [
+        "Procurement",
+        "Invoice Management",
+        "18J",
+        "Requisitioning",
+        "Medium",
+        "First",
+        "br",
+        "SolS-013",
+        "2602",
+      ],
     ]);
 
     expect(items).toHaveLength(2);
@@ -34,15 +81,47 @@ describe("parseDdaWorkbook", () => {
       priority: "Alta",
       status: "First",
     });
-    expect(items.find(item => item.code === "18J")?.processArea).toContain("Operational Procurement");
+    expect(items.find(item => item.code === "18J")?.processArea).toContain(
+      "Operational Procurement"
+    );
     expect(new Set(items.map(item => item.code)).size).toBe(items.length);
   });
 
   it("keeps importing the curated Portuguese Scope Items model", () => {
     const items = parse("DDA.xlsx", "Scope Items", [
-      ["Código", "Scope Item", "Módulo", "LOB SAP", "Processo", "Prioridade", "Fit-to-Standard", "User Story", "Status"],
-      ["1NJ", "Gestão de Responsabilidades", "Platform", "Application Platform", "Governança", "Alta", "", "", ""],
-      ["1FD", "Capacitação de Usuários", "Platform", "Data Mgmt", "Treinamento", "Alta", "", "", ""],
+      [
+        "Código",
+        "Scope Item",
+        "Módulo",
+        "LOB SAP",
+        "Processo",
+        "Prioridade",
+        "Fit-to-Standard",
+        "User Story",
+        "Status",
+      ],
+      [
+        "1NJ",
+        "Gestão de Responsabilidades",
+        "Platform",
+        "Application Platform",
+        "Governança",
+        "Alta",
+        "",
+        "",
+        "",
+      ],
+      [
+        "1FD",
+        "Capacitação de Usuários",
+        "Platform",
+        "Data Mgmt",
+        "Treinamento",
+        "Alta",
+        "",
+        "",
+        "",
+      ],
     ]);
 
     expect(items).toHaveLength(2);
@@ -54,5 +133,20 @@ describe("parseDdaWorkbook", () => {
       processArea: "Governança",
       priority: "Alta",
     });
+  });
+
+  it("preserves rows without a code for server-side validation", () => {
+    const items = parse("DDA.xlsx", "Scope Items", [
+      ["Código", "Scope Item", "Módulo"],
+      ["", "Item ainda não catalogado", "Finance"],
+      ["", "Outro item sem código", "Sales"],
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items.map(item => item.code)).toEqual(["", ""]);
+    expect(items.map(item => item.name)).toEqual([
+      "Item ainda não catalogado",
+      "Outro item sem código",
+    ]);
   });
 });

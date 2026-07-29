@@ -35,6 +35,7 @@ import {
   listScopes as listRegisteredScopes,
 } from "../sapLibraryStore";
 import * as deliveryPublisher from "../deliveryPublisher";
+import { importDdaBatch, listDdaImportBatches } from "../ddaImportStore";
 
 const bdcqStandardsEditorProcedure = protectedProcedure.use(
   async ({ ctx, next }) => {
@@ -2517,10 +2518,14 @@ export const workflowRouter = router({
     delete: workflowEntityProcedure("scope_items", true)
       .input(z.object({ id: z.string() }))
       .mutation(({ input }) => wdb.deleteScopeItem(input.id)),
+    importHistory: workflowProjectProcedure(false, "viewProject")
+      .input(z.object({ projectId: z.string() }))
+      .query(({ input }) => listDdaImportBatches(input.projectId)),
     bulkCreate: workflowProjectProcedure(true)
       .input(
         z.object({
           projectId: z.string(),
+          fileName: z.string().trim().max(512).optional(),
           items: z.array(
             z.object({
               module: z.string(),
@@ -2533,61 +2538,22 @@ export const workflowRouter = router({
           ),
         })
       )
-      .mutation(async ({ input }) => {
-        await assertRegisteredScopeItems(
-          input.items.map(item => item.code || item.name)
-        );
-        const currentScopeItems = await wdb.listScopeItems(input.projectId);
-        const scopeKey = (item: {
-          module?: string;
-          code?: string;
-          name?: string;
-        }) =>
-          [
-            String(item.module || "")
-              .trim()
-              .toLocaleUpperCase("pt-BR"),
-            String(item.code || item.name || "")
-              .trim()
-              .toLocaleLowerCase("pt-BR"),
-          ].join("|");
-        const currentByKey = new Map(
-          currentScopeItems.map((item: any) => [scopeKey(item), item])
-        );
-        const results = [];
-        for (const item of input.items) {
-          const current = currentByKey.get(scopeKey(item));
-          if (current) {
-            await wdb.updateScopeItem(current.id, {
-              module: item.module,
-              name: item.name,
-              code: item.code || "",
-              processArea: item.processArea || "",
-              description: item.description,
-              active: item.active ?? 1,
-            });
-            results.push({ ...current, ...item, id: current.id });
-            continue;
-          }
-          const id = nanoid();
-          await wdb.createScopeItem({
-            id,
-            projectId: input.projectId,
-            module: item.module,
-            name: item.name,
-            code: item.code || "",
-            processArea: item.processArea || "",
-            description: item.description,
-            active: item.active ?? 1,
-          });
-          results.push({ id, ...item });
-          currentByKey.set(scopeKey(item), { id, ...item });
-        }
-        const bdcqSync = await ensureBdcqTemplates(input.projectId, [
-          ...new Set(input.items.map(item => item.module)),
-        ]);
+      .mutation(async ({ ctx, input }) => {
+        const result = await importDdaBatch({
+          projectId: input.projectId,
+          fileName: input.fileName || "Cadastro administrativo sem anexo",
+          importedBy: ctx.appUser.id,
+          items: input.items,
+        });
+        const bdcqSync = result.modules.length
+          ? await ensureBdcqTemplates(input.projectId, result.modules)
+          : { added: 0, updated: 0 };
         return {
-          items: results,
+          batchId: result.batchId,
+          created: result.created,
+          updated: result.updated,
+          pending: result.pending,
+          total: result.total,
           bdcqAdded: bdcqSync.added,
           bdcqUpdated: bdcqSync.updated,
         };
