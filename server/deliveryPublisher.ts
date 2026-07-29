@@ -51,7 +51,7 @@ function typeToTarget(type: string) {
   if (type === "configuration") return "configuration";
   if (type === "gap") return "gap";
   if (["unit_test", "cycle_1", "cycle_2"].includes(type)) return "test_case";
-  if (type === "activity") return "gp_activity";
+  if (type === "activity") return "delivery_item";
   return "delivery_item";
 }
 
@@ -338,45 +338,48 @@ async function materializeOperational(template: any, project: any, occurrence: a
     const creator = users.find(user => user.active && [user.name, user.email].some(value => normalize(value) === managerName))
       || users.find(user => user.active && user.role === "admin");
     if (!creator) throw new Error("Projeto sem GP ou administrador ativo para criar a atividade");
-    const sourceKey = `${template.id}:${project.id}:${occurrence.key}`;
-    const pool = getPgPool();
-    const checklistId = `gpc_${nanoid(20)}`;
-    const checklistKey = `delivery-template-${template.id}-${occurrence.key}`.slice(0, 900);
-    await pool?.query(
-      `INSERT INTO "gp_checklist_items"
-        ("id","projectId","templateVersion","itemKey","phase","workstream","title","description",
-         "ownerRole","itemType","sortOrder","status","responsible","dueDate","notes")
-       VALUES ($1,$2::varchar,'CENTRAL',$3,$4,$5,$6,$7,$8,'Atividade',
-        COALESCE((SELECT MAX("sortOrder")+1 FROM "gp_checklist_items" WHERE "projectId"=$2::varchar),0),
-        'Pendente','',$9,$10)
-       ON CONFLICT ("projectId","templateVersion","itemKey") DO UPDATE SET
-        "title"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."title" ELSE "gp_checklist_items"."title" END,
-        "description"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."description" ELSE "gp_checklist_items"."description" END,
-        "phase"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."phase" ELSE "gp_checklist_items"."phase" END,
-        "workstream"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."workstream" ELSE "gp_checklist_items"."workstream" END,
-        "ownerRole"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."ownerRole" ELSE "gp_checklist_items"."ownerRole" END,
-        "dueDate"=CASE WHEN "gp_checklist_items"."status"='Pendente' THEN EXCLUDED."dueDate" ELSE "gp_checklist_items"."dueDate" END,
-        "updatedAt"=now()`,
-      [checklistId, project.id, checklistKey, template.phase, module || "Geral",
-        template.title, template.description || "", template.ownerRole,
-        occurrence.dueDate || dueDate(project.startDate, template.dueOffsetDays),
-        template.instructions || ""],
+    const scopeItems: any[] = await workflowDb.listScopeItems(project.id);
+    const modules = [
+      ...new Set(scopeItems.map(item => item.module).filter(Boolean)),
+    ] as string[];
+    await deliveryStore.applyTrail(
+      project.id,
+      modules,
+      scopeItems.map(item => ({
+        id: item.id,
+        key: item.code || item.id,
+        module: item.module,
+      })),
+      project.startDate || "",
+      [occurrence.key]
     );
+    const deliveryItem: any = (await deliveryStore.listItems(project.id)).find(
+      item =>
+        item.templateId === template.id &&
+        item.occurrenceKey === occurrence.key
+    );
+    if (!deliveryItem)
+      throw new Error("A atividade padrão não foi materializada na Trilha");
+    const sourceKey = deliveryItem.id;
     const current: any = await activityStore.findBySource("delivery_template", sourceKey);
     if (current?.status === "Concluída" || current?.archivedAt)
-      return { id: current.id, state: "preserved" };
-    const row: any = await activityStore.upsertSourceActivity({
+      return { id: deliveryItem.id, state: "preserved" };
+    await activityStore.upsertSourceActivity({
       scope: "project", projectId: project.id, title: template.title,
       description: [template.description, template.instructions].filter(Boolean).join("\n"),
       status: current?.status || "A fazer", priority: payload.priority || "Média",
       assigneeUserId: current?.assigneeUserId || creator.id, creatorUserId: creator.id,
       participantUserIds: current?.participantUserIds || [creator.id],
-      dueDate: occurrence.dueDate || dueDate(project.startDate, template.dueOffsetDays),
+      dueDate: deliveryItem.dueDate || occurrence.dueDate || dueDate(project.startDate, template.dueOffsetDays),
       sourceType: "delivery_template", sourceKey,
-      sourceUrl: `/techboard/techlead/gp-track?projectId=${encodeURIComponent(project.id)}&phase=${encodeURIComponent(template.phase)}`,
+      sourceUrl:
+        typeof deliveryItem.payload?.helpUrl === "string" &&
+        deliveryItem.payload.helpUrl
+          ? deliveryItem.payload.helpUrl
+          : `/techmove/trail?projectId=${encodeURIComponent(project.id)}&stage=${encodeURIComponent(template.stage)}`,
       sourceResolved: false,
     } as any);
-    return { id: row?.id || current?.id, state: current ? "updated" : "created" };
+    return { id: deliveryItem.id, state: current ? "updated" : "created" };
   }
 
   const scopeItems: any[] = await workflowDb.listScopeItems(project.id);

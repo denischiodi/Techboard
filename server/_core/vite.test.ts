@@ -2,16 +2,14 @@ import { describe, expect, it } from "vitest";
 import { getLegacyAppRedirect } from "./vite";
 
 describe("getLegacyAppRedirect", () => {
-  it("preserva query string ao redirecionar o Kanban legado", () => {
+  it("preserves the TechTask route and query parameters", () => {
     expect(
-      getLegacyAppRedirect(
-        "/techtask/board",
-        "/techtask/board?projectId=p12"
-      )
+      getLegacyAppRedirect("/techtask/board", "/techtask/board?projectId=p12")
     ).toBe("/techboard/techtask/board?projectId=p12");
   });
 
-  it("não redireciona rotas que já usam o prefixo da aplicação", () => {
+  it("does not redirect unrelated or already canonical routes", () => {
+    expect(getLegacyAppRedirect("/api/trpc", "/api/trpc")).toBeNull();
     expect(
       getLegacyAppRedirect(
         "/techboard/techtask/board",

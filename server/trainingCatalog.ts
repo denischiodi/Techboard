@@ -1110,6 +1110,143 @@ export const TRAINING_CATALOG: TrainingCourseSeed[] = [
     ],
   },
   {
+    id: "training-functional-consultant",
+    title: "Manual do Consultor Funcional",
+    description:
+      "Processo operacional completo do consultor funcional, do handover ao encerramento.",
+    category: "TechMove",
+    color: "#1d4ed8",
+    modules: [
+      {
+        id: "functional-consultant-process",
+        title: "Execução ponta a ponta",
+        description:
+          "Atividades, documentos, controles, aprovações e integração com o Kanban.",
+        lessons: [
+          {
+            id: "consultor-functional-manual",
+            title: "O que fazer em cada fase do projeto",
+            summary:
+              "Guia detalhado para executar e comprovar todas as responsabilidades do consultor funcional.",
+            route: "/techmove/trail",
+            keywords: [
+              "consultor funcional",
+              "SAP Activate",
+              "DDA",
+              "BDCQ",
+              "DCD",
+              "SMD",
+              "testes",
+              "cutover",
+              "go-live",
+            ],
+            audiences: ["Consultor", "Gestor", "Líder técnico"],
+            content: `## Objetivo
+Orientar o consultor funcional em todas as fases, documentos, aprovações e controles do projeto.
+
+## Passo a passo
+## Como utilizar este manual
+Consulte esta orientação antes de iniciar o projeto e volte a ela sempre que uma atividade for liberada na Trilha. Toda atividade possui tarefa correspondente no Kanban. Atualize responsável, prazo e status no Kanban ou na Trilha, registre a evidência exigida e mantenha a rastreabilidade entre decisão, documento e entrega.
+
+## 1. Discover — entendimento do contrato e handover
+1. Leia integralmente a proposta comercial e técnica.
+2. Identifique escopo contratado, exclusões, premissas, responsabilidades, cronograma, módulos, integrações e entregáveis.
+3. Registre dúvidas, riscos e inconsistências antes do início das sessões com o cliente.
+4. Participe do handover comercial para delivery e confirme as decisões com o gerente do projeto.
+
+**Entregáveis:** resumo funcional da proposta, matriz contratado × não contratado, registro inicial de riscos e ata de handover.
+
+## 2. Prepare — DDA, escopo, BDCQ e workshops
+1. Receba e controle a versão vigente do DDA.
+2. Identifique os Scope Items e concilie proposta, DDA e escopo SAP.
+3. Mapeie dependências com dados, integrações, segurança, relatórios e demais módulos.
+4. Baixe o BDCQ aplicável à release.
+5. Filtre as perguntas L2 destinadas ao cliente e separe as perguntas L3 conduzidas pelo consultor.
+6. Defina responsáveis e prazos, envie o BDCQ e acompanhe pendências até a aprovação.
+7. Monte o plano de workshops, agenda, roteiro Fit-to-Standard, participantes, ambiente e massa de demonstração.
+
+**Entregáveis:** DDA controlado, lista de Scope Items, matriz Proposta × DDA × Scope Item, mapa de dependências, BDCQ L2, lista L3, controle de pendências e plano de workshops.
+
+## 3. Explore — workshops, requisitos, DCD, gaps e SMD
+1. Execute workshops Fit-to-Standard por cenário.
+2. Grave a sessão somente com autorização, gere a transcrição e revise seu conteúdo.
+3. Produza a ata, registre decisões, responsáveis e prazos e obtenha aprovação.
+4. Levante requisitos, regras de negócio, histórias de usuário e critérios de aceite.
+5. Classifique cada necessidade como Fit, configuração, gap ou fora do escopo.
+6. Consolide proposta, DDA, BDCQ, atas e requisitos no DCD.
+7. Descreva processo TO-BE, configurações, integrações, dados, segurança e critérios de teste.
+8. Revise e obtenha a aprovação formal do DCD.
+9. Consolide a Fit-Gap List e avalie primeiro alternativas Standard e Clean Core.
+10. Para cada mudança necessária, estime esforço, aprove o gap/Change Request e elabore o SMD.
+11. O SMD deve registrar desenho da mudança, impactos, dependências, testes, dados, segurança, cutover, versão e aprovações.
+
+**Entregáveis:** gravações autorizadas, transcrições, atas aprovadas, catálogo de requisitos, histórias de usuário, matriz Fit-to-Standard, DCD aprovado, Fit-Gap List, estimativas, Change Request e SMD aprovado.
+
+## 4. Realize — backlog, configuração, desenvolvimento e testes
+1. Converta DCD, BDCQ e SMD aprovados em backlog priorizado.
+2. Planeje sprints considerando dependências funcionais e técnicas.
+3. Execute as configurações aprovadas e registre parâmetros e transportes.
+4. Elabore especificações funcionais dos gaps e apoie a construção técnica.
+5. Prepare massa e casos de teste unitário, execute-os e anexe evidências.
+6. Prepare roteiros end-to-end e acompanhe os testes integrados.
+7. Apoie o UAT e obtenha o aceite do cliente.
+8. Registre, classifique e priorize defeitos; apoie a causa-raiz, correção, reteste e regressão.
+9. Prepare treinamento, base de conhecimento e handover para suporte.
+
+**Entregáveis:** backlog e plano de sprints, workbook de configuração, log de transportes, especificações funcionais, casos e evidências de teste, registro de defeitos, aceite UAT, materiais de treinamento e plano de suporte.
+
+## 5. Deploy — readiness, cutover e go-live
+1. Consolide prontidão, riscos, pendências e recomendação funcional.
+2. Participe do Go/No-Go e formalize a decisão.
+3. Execute o runbook e as atividades funcionais do cutover.
+4. Valide cargas, reconciliações, interfaces e transportes.
+5. Execute smoke tests em produção e registre evidências.
+6. Obtenha o aceite formal do início da operação.
+
+**Entregáveis:** checklist de prontidão, ata Go/No-Go, runbook executado, reconciliações, evidências de smoke test e aceite do go-live.
+
+## 6. Run — hypercare e encerramento
+1. Monitore processos críticos e incidentes durante o hypercare.
+2. Classifique incidentes P1 a P4 e coordene solução ou workaround.
+3. Execute retestes e documente causa-raiz.
+4. Atualize base de conhecimento, DCD e SMD para a versão as built.
+5. Consolide configurações, transportes, testes e rastreabilidade.
+6. Transfira pendências ao suporte, registre lições aprendidas e obtenha o aceite final.
+
+**Entregáveis:** relatório de hypercare, soluções e causa-raiz, handover, DCD/SMD finais, pacote de evidências, lições aprendidas e termo de encerramento.
+
+## Regras obrigatórias de controle
+- Não conclua uma atividade sem a evidência indicada na tarefa.
+- Não avance um Quality Gate com dependências obrigatórias abertas.
+- Não encerre um gap quando o SMD for necessário e ainda não estiver aprovado.
+- Um SMD aprovado precisa possuir versão e link do documento.
+- Registre no Kanban responsável, prazo, andamento, bloqueios e conclusão.
+- Decisões do cliente devem estar formalizadas em ata, aprovação ou documento controlado.
+- Personalizações do projeto devem ser registradas na Trilha; os padrões permanecem administrados centralmente em Configurações do Tech.
+
+## Validações realizadas pelo sistema
+O TechMove verifica evidências obrigatórias, dependências, responsável alocado, aprovação do SMD e situação dos Quality Gates.
+
+## O que o sistema faz automaticamente
+A atividade padrão é publicada na Trilha e vinculada ao Kanban. Alterações de status, prazo e responsável permanecem sincronizadas.
+
+## Como confirmar a automação
+Confira a atividade na Trilha do projeto e sua tarefa correspondente no Kanban, incluindo o link para esta orientação.
+
+## Quando a etapa é bloqueada
+Corrija as evidências, dependências, aprovações ou dados obrigatórios informados na mensagem do sistema antes de tentar concluir novamente.
+
+## Resultado esperado
+O consultor executa o processo completo com documentos controlados, rastreabilidade e aprovações formais.
+
+## Em caso de erro
+Confirme o projeto selecionado, sua alocação, suas permissões e os campos obrigatórios. Persistindo o problema, registre a mensagem apresentada e acione o administrador funcional.`,
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: "training-help",
     title: "Solução de problemas e perguntas frequentes",
     description: "Orientações rápidas para erros e dúvidas recorrentes.",

@@ -1090,6 +1090,15 @@ export async function listGaps(
 export async function createGap(data: typeof gaps.$inferInsert) {
   return insertRow("gaps", data, ["modules", "attachments"]);
 }
+export async function getGap(id: string) {
+  const pool = getPgPool();
+  if (!pool) return undefined;
+  const result = await pool.query(
+    'SELECT * FROM "gaps" WHERE "id"=$1 AND "archivedAt" IS NULL',
+    [id]
+  );
+  return result.rows[0] as typeof gaps.$inferSelect | undefined;
+}
 export async function updateGap(
   id: string,
   data: Partial<typeof gaps.$inferInsert>
@@ -1109,6 +1118,12 @@ export async function updateGap(
       "technicalHours",
       "attachments",
       "resolution",
+      "smdStatus",
+      "smdVersion",
+      "smdUrl",
+      "smdChangeRequest",
+      "smdNotes",
+      "smdApprovedAt",
       "status",
     ],
     ["modules", "attachments"]

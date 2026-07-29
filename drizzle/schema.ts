@@ -788,6 +788,18 @@ export const gaps = mysqlTable("gaps", {
   technicalHours: int("technicalHours").notNull().default(0),
   attachments: json("attachments").$type<string[]>().default([]),
   resolution: text("resolution"),
+  smdStatus: varchar("smdStatus", { length: 64 })
+    .notNull()
+    .default("Não necessário"),
+  smdVersion: int("smdVersion").notNull().default(0),
+  smdUrl: text("smdUrl"),
+  smdChangeRequest: varchar("smdChangeRequest", { length: 128 })
+    .notNull()
+    .default(""),
+  smdNotes: text("smdNotes"),
+  smdApprovedAt: varchar("smdApprovedAt", { length: 10 })
+    .notNull()
+    .default(""),
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),

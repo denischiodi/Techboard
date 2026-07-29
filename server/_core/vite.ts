@@ -37,13 +37,16 @@ function registerLegacyAppRedirects(app: Express) {
 }
 
 export async function setupVite(app: Express, server: Server) {
-  const dynamicImport = new Function("specifier", "return import(specifier)") as <T>(
-    specifier: string,
-  ) => Promise<T>;
-  const { createServer: createViteServer } = await dynamicImport<typeof import("vite")>("vite");
-  const { default: viteConfig } = await dynamicImport<typeof import("../../vite.config")>(
-    "../../vite.config",
-  );
+  const dynamicImport = new Function(
+    "specifier",
+    "return import(specifier)"
+  ) as <T>(specifier: string) => Promise<T>;
+  const { createServer: createViteServer } =
+    await dynamicImport<typeof import("vite")>("vite");
+  const { default: viteConfig } =
+    await dynamicImport<typeof import("../../vite.config")>(
+      "../../vite.config"
+    );
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
@@ -75,17 +78,20 @@ export async function setupVite(app: Express, server: Server) {
       "client",
       "index.html"
     );
-    fs.promises.readFile(clientTemplate, "utf-8").then(async (template) => {
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`
-      );
-      const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
-    }).catch((e) => {
-      vite.ssrFixStacktrace(e as Error);
-      next(e);
-    });
+    fs.promises
+      .readFile(clientTemplate, "utf-8")
+      .then(async template => {
+        template = template.replace(
+          `src="/src/main.tsx"`,
+          `src="/src/main.tsx?v=${nanoid()}"`
+        );
+        const page = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      })
+      .catch(e => {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      });
   });
 }
 

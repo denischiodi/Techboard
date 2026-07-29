@@ -378,7 +378,11 @@
       (async () => {
         try {
           const { user } = await api("/api/me"); state.user = user; $("#userName").textContent = user.name; $("#userRole").textContent = user.role; $("#avatar").textContent = initials(user.name); await loadCatalog();
-          const route = new URLSearchParams(location.search).get("route"); if (route) { const exact = lessons().find(item => item.routePath === route); if (exact) openLesson(exact.id); }
+          const params = new URLSearchParams(location.search);
+          const lessonId = params.get("lesson");
+          const route = params.get("route");
+          if (lessonId) openLesson(lessonId);
+          else if (route) { const exact = lessons().find(item => item.routePath === route); if (exact) openLesson(exact.id); }
           $("#loading").classList.add("hidden"); $("#app").classList.remove("hidden"); render();
         } catch (error) {
           $("#loading").innerHTML = `<div style="max-width:520px;padding:24px;text-align:center"><h1>Acesso pelo Portal Tech</h1><p>Entre no Portal Tech para usar a Central de treinamento com a mesma sessão.</p><a class="btn primary" href="/">Ir para o Portal Tech</a></div>`;

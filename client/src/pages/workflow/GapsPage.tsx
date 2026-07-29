@@ -98,6 +98,19 @@ type GapForm = {
   abapHours: number;
   technicalHours: number;
   resolution: string;
+  smdStatus:
+    | "Não necessário"
+    | "Pendente"
+    | "Em elaboração"
+    | "Em revisão"
+    | "Aguardando aprovação"
+    | "Aprovado"
+    | "Rejeitado";
+  smdVersion: number;
+  smdUrl: string;
+  smdChangeRequest: string;
+  smdNotes: string;
+  smdApprovedAt: string;
   attachments: string[];
   status: GapStatus;
 };
@@ -110,6 +123,12 @@ const EMPTY_FORM: GapForm = {
   abapHours: 0,
   technicalHours: 0,
   resolution: "",
+  smdStatus: "Não necessário",
+  smdVersion: 0,
+  smdUrl: "",
+  smdChangeRequest: "",
+  smdNotes: "",
+  smdApprovedAt: "",
   attachments: [],
   status: "Aberto",
 };
@@ -154,7 +173,9 @@ function GapCardContent({ gap }: { gap: any }) {
         {gap.description}
       </p>
       <div className="mt-2 flex flex-wrap gap-1">
-        {gap.source === "delivery_template" && <Badge>Configurações do Tech · v{gap.templateVersion || 1}</Badge>}
+        {gap.source === "delivery_template" && (
+          <Badge>Configurações do Tech · v{gap.templateVersion || 1}</Badge>
+        )}
         {modules.length ? (
           modules.map((module: string) => (
             <Badge key={module} variant="outline" className="bg-background">
@@ -175,6 +196,13 @@ function GapCardContent({ gap }: { gap: any }) {
         >
           {gap.impact}
         </Badge>
+        {gap.smdStatus && gap.smdStatus !== "Não necessário" && (
+          <Badge
+            variant={gap.smdStatus === "Aprovado" ? "default" : "secondary"}
+          >
+            SMD · {gap.smdStatus}
+          </Badge>
+        )}
       </div>
       <div className="mt-3 grid gap-1.5 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
@@ -373,6 +401,12 @@ export default function GapsPage() {
       abapHours: Number(gap.abapHours || 0),
       technicalHours: Number(gap.technicalHours || 0),
       resolution: gap.resolution || "",
+      smdStatus: gap.smdStatus || "Não necessário",
+      smdVersion: Number(gap.smdVersion || 0),
+      smdUrl: gap.smdUrl || "",
+      smdChangeRequest: gap.smdChangeRequest || "",
+      smdNotes: gap.smdNotes || "",
+      smdApprovedAt: gap.smdApprovedAt || "",
       attachments: Array.isArray(gap.attachments) ? gap.attachments : [],
       status: gap.status || "Aberto",
     });
@@ -457,7 +491,11 @@ export default function GapsPage() {
 
   return (
     <div className="space-y-5 p-3 sm:p-6">
-      <GeneratedModelItems projectId={PROJECT_ID} types={["gap"]} title="Gaps padrão aplicados" />
+      <GeneratedModelItems
+        projectId={PROJECT_ID}
+        types={["gap"]}
+        title="Gaps padrão aplicados"
+      />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Gaps</h1>
@@ -955,6 +993,112 @@ function GapDialog({
               }
               placeholder="Registre a solução proposta, decisão de aceite ou próximos passos..."
             />
+          </div>
+          <div className="grid gap-4 rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+            <div>
+              <Label className="text-base">SMD — Documento de Mudança</Label>
+              <p className="text-xs text-muted-foreground">
+                Controle a elaboração e aprovação da mudança antes de liberar o
+                gap para construção.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-2">
+                <Label>Status do SMD</Label>
+                <Select
+                  value={form.smdStatus}
+                  onValueChange={(smdStatus: GapForm["smdStatus"]) =>
+                    setForm(current => ({
+                      ...current,
+                      smdStatus,
+                      smdApprovedAt:
+                        smdStatus === "Aprovado"
+                          ? current.smdApprovedAt ||
+                            new Date().toISOString().slice(0, 10)
+                          : "",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      "Não necessário",
+                      "Pendente",
+                      "Em elaboração",
+                      "Em revisão",
+                      "Aguardando aprovação",
+                      "Aprovado",
+                      "Rejeitado",
+                    ].map(status => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Versão</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.smdVersion}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      smdVersion: Math.max(0, Number(event.target.value) || 0),
+                    }))
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Change Request</Label>
+                <Input
+                  value={form.smdChangeRequest}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      smdChangeRequest: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: CR-001"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Link do SMD</Label>
+              <Input
+                value={form.smdUrl}
+                onChange={event =>
+                  setForm(current => ({
+                    ...current,
+                    smdUrl: event.target.value,
+                  }))
+                }
+                placeholder="Link do documento aprovado no repositório do projeto"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Impactos, critérios de aceite e observações</Label>
+              <Textarea
+                rows={4}
+                value={form.smdNotes}
+                onChange={event =>
+                  setForm(current => ({
+                    ...current,
+                    smdNotes: event.target.value,
+                  }))
+                }
+                placeholder="Registre desenho da mudança, impactos, dependências, testes e aprovações necessárias..."
+              />
+            </div>
+            {form.smdApprovedAt && (
+              <p className="text-xs text-emerald-700">
+                SMD aprovado em {form.smdApprovedAt}.
+              </p>
+            )}
           </div>
           <div className="grid gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">

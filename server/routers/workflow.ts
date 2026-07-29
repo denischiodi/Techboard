@@ -5105,10 +5105,44 @@ Retorne em formato markdown.`;
           technicalHours: z.number().int().min(0).max(100000).optional(),
           attachments: z.array(z.string()).max(50).optional(),
           resolution: z.string().optional(),
+          smdStatus: z.enum([
+            "Não necessário",
+            "Pendente",
+            "Em elaboração",
+            "Em revisão",
+            "Aguardando aprovação",
+            "Aprovado",
+            "Rejeitado",
+          ]).optional(),
+          smdVersion: z.number().int().min(0).max(10000).optional(),
+          smdUrl: z.string().max(2048).optional(),
+          smdChangeRequest: z.string().max(128).optional(),
+          smdNotes: z.string().max(20000).optional(),
+          smdApprovedAt: z.string().max(10).optional(),
           status: gapStatusSchema.optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
+        if (
+          input.smdStatus === "Aprovado" &&
+          ((input.smdVersion || 0) < 1 || !input.smdUrl?.trim())
+        )
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Para aprovar o SMD, informe uma versão e o link do documento aprovado.",
+          });
+        if (
+          ["Resolvido", "Aceito"].includes(input.status || "Aberto") &&
+          !["Não necessário", "Aprovado"].includes(
+            input.smdStatus || "Não necessário"
+          )
+        )
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "O gap só pode ser encerrado quando o SMD estiver aprovado ou marcado como não necessário.",
+          });
         const id = nanoid();
         const created = await wdb.createGap({
           id,
@@ -5123,6 +5157,12 @@ Retorne em formato markdown.`;
           technicalHours: input.technicalHours || 0,
           attachments: input.attachments || [],
           resolution: input.resolution,
+          smdStatus: input.smdStatus || "Não necessário",
+          smdVersion: input.smdVersion || 0,
+          smdUrl: input.smdUrl || "",
+          smdChangeRequest: input.smdChangeRequest || "",
+          smdNotes: input.smdNotes || "",
+          smdApprovedAt: input.smdApprovedAt || "",
           status: input.status || "Aberto",
         });
         await recordWorkflowAudit(
@@ -5150,12 +5190,56 @@ Retorne em formato markdown.`;
             technicalHours: z.number().int().min(0).max(100000).optional(),
             attachments: z.array(z.string()).max(50).optional(),
             resolution: z.string().optional(),
+            smdStatus: z.enum([
+              "Não necessário",
+              "Pendente",
+              "Em elaboração",
+              "Em revisão",
+              "Aguardando aprovação",
+              "Aprovado",
+              "Rejeitado",
+            ]).optional(),
+            smdVersion: z.number().int().min(0).max(10000).optional(),
+            smdUrl: z.string().max(2048).optional(),
+            smdChangeRequest: z.string().max(128).optional(),
+            smdNotes: z.string().max(20000).optional(),
+            smdApprovedAt: z.string().max(10).optional(),
             status: gapStatusSchema.optional(),
           }),
         })
       )
       .mutation(async ({ ctx, input }) => {
         await approvalStore.assertEntityEditable("gap", input.id);
+        const currentGap = await wdb.getGap(input.id);
+        if (!currentGap)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Gap não encontrado.",
+          });
+        const effectiveSmdStatus =
+          input.data.smdStatus ?? currentGap.smdStatus ?? "Não necessário";
+        const effectiveSmdVersion =
+          input.data.smdVersion ?? currentGap.smdVersion ?? 0;
+        const effectiveSmdUrl = input.data.smdUrl ?? currentGap.smdUrl ?? "";
+        const effectiveGapStatus = input.data.status ?? currentGap.status;
+        if (
+          effectiveSmdStatus === "Aprovado" &&
+          (effectiveSmdVersion < 1 || !effectiveSmdUrl.trim())
+        )
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Para aprovar o SMD, informe uma versão e o link do documento aprovado.",
+          });
+        if (
+          ["Resolvido", "Aceito"].includes(effectiveGapStatus) &&
+          !["Não necessário", "Aprovado"].includes(effectiveSmdStatus)
+        )
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "O gap só pode ser encerrado quando o SMD estiver aprovado ou marcado como não necessário.",
+          });
         const projectId = await wdb.getWorkflowEntityProjectId(
           "gaps",
           input.id

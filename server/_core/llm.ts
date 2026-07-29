@@ -19,7 +19,12 @@ export type FileContent = {
   type: "file_url";
   file_url: {
     url: string;
-    mime_type?: "audio/mpeg" | "audio/wav" | "application/pdf" | "audio/mp4" | "video/mp4" ;
+    mime_type?:
+      | "audio/mpeg"
+      | "audio/wav"
+      | "application/pdf"
+      | "audio/mp4"
+      | "video/mp4";
   };
 };
 
@@ -219,7 +224,9 @@ const resolveApiUrl = () =>
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+    throw new Error(
+      "Serviço de IA não configurado. Defina OPENAI_API_KEY ou BUILT_IN_FORGE_API_KEY."
+    );
   }
 };
 
@@ -312,9 +319,7 @@ const fetchWithBackoff = async (
         return response;
       }
 
-      const retryAfterMs = parseRetryAfter(
-        response.headers.get("retry-after")
-      );
+      const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
       try {
         await response.body?.cancel();
       } catch {
@@ -422,7 +427,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
 export async function invokeLLMStream(
   params: InvokeParams,
-  onDelta: (text: string) => void | Promise<void>,
+  onDelta: (text: string) => void | Promise<void>
 ): Promise<{ content: string; model?: string }> {
   assertApiKey();
   const normalizedResponseFormat = normalizeResponseFormat(params);
@@ -432,20 +437,31 @@ export async function invokeLLMStream(
   };
   if (params.model) payload.model = params.model;
   if (params.tools?.length) payload.tools = params.tools;
-  const normalizedToolChoice = normalizeToolChoice(params.toolChoice || params.tool_choice, params.tools);
+  const normalizedToolChoice = normalizeToolChoice(
+    params.toolChoice || params.tool_choice,
+    params.tools
+  );
   if (normalizedToolChoice) payload.tool_choice = normalizedToolChoice;
   const maxTokens = params.max_tokens ?? params.maxTokens;
   if (typeof maxTokens === "number") payload.max_tokens = maxTokens;
   if (params.thinking) payload.thinking = params.thinking;
   if (params.reasoning) payload.reasoning = params.reasoning;
-  if (normalizedResponseFormat) payload.response_format = normalizedResponseFormat;
+  if (normalizedResponseFormat)
+    payload.response_format = normalizedResponseFormat;
 
   const response = await fetchWithBackoff(resolveApiUrl(), {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${ENV.forgeApiKey}`, accept: "text/event-stream" },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${ENV.forgeApiKey}`,
+      accept: "text/event-stream",
+    },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`LLM stream failed: ${response.status} ${response.statusText} - ${await response.text()}`);
+  if (!response.ok)
+    throw new Error(
+      `LLM stream failed: ${response.status} ${response.statusText} - ${await response.text()}`
+    );
   if (!response.body) throw new Error("LLM stream returned no response body");
 
   const reader = response.body.getReader();
@@ -456,14 +472,20 @@ export async function invokeLLMStream(
   const consume = async (block: string) => {
     const parsed = parseLLMStreamBlock(block);
     model ||= parsed.model;
-    for (const delta of parsed.deltas) { content += delta; await onDelta(delta); }
+    for (const delta of parsed.deltas) {
+      content += delta;
+      await onDelta(delta);
+    }
   };
   while (true) {
     const { done, value } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done }).replace(/\r\n/g, "\n");
+    buffer += decoder
+      .decode(value || new Uint8Array(), { stream: !done })
+      .replace(/\r\n/g, "\n");
     let boundary: number;
     while ((boundary = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
       await consume(block);
     }
     if (done) break;
@@ -479,10 +501,20 @@ export function parseLLMStreamBlock(block: string) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
     if (!data || data === "[DONE]") continue;
-    const chunk = JSON.parse(data) as { model?: string; choices?: Array<{ delta?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+    const chunk = JSON.parse(data) as {
+      model?: string;
+      choices?: Array<{
+        delta?: { content?: string | Array<{ type?: string; text?: string }> };
+      }>;
+    };
     model ||= chunk.model;
     const deltaContent = chunk.choices?.[0]?.delta?.content;
-    const delta = typeof deltaContent === "string" ? deltaContent : Array.isArray(deltaContent) ? deltaContent.map(part => part.text || "").join("") : "";
+    const delta =
+      typeof deltaContent === "string"
+        ? deltaContent
+        : Array.isArray(deltaContent)
+          ? deltaContent.map(part => part.text || "").join("")
+          : "";
     if (delta) deltas.push(delta);
   }
   return { deltas, model };
@@ -503,9 +535,10 @@ export type ModelsResponse = {
 export async function listLLMModels(): Promise<ModelsResponse> {
   assertApiKey();
 
-  const url = ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/models`
-    : "https://forge.manus.im/v1/models";
+  const url =
+    ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+      ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/models`
+      : "https://forge.manus.im/v1/models";
 
   const response = await fetchWithBackoff(url, {
     headers: { authorization: `Bearer ${ENV.forgeApiKey}` },
