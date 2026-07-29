@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +31,10 @@ import { toast } from "sonner";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  FileText,
   History,
   Plus,
   Upload,
@@ -48,6 +52,7 @@ export default function ScopeItemsPage() {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [page, setPage] = useState(0);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     module: "",
@@ -120,6 +125,21 @@ export default function ScopeItemsPage() {
   const visibleItems = scopedFronts.length
     ? items.filter((item: any) => scopedFronts.includes(item.module))
     : items;
+  const visibleCodes = [
+    ...new Set(
+      visibleItems
+        .map((item: any) => String(item.code || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  const { data: masterScopeDetails = [] } =
+    trpc.workflow.sapLibrary.activeScopeDetails.useQuery(
+      { codes: visibleCodes },
+      { enabled: visibleCodes.length > 0 }
+    );
+  const masterScopeByCode = new Map(
+    (masterScopeDetails as any[]).map(scope => [scope.normalizedCode, scope])
+  );
   const filtered = visibleItems.filter(
     (i: any) =>
       i.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -210,7 +230,7 @@ export default function ScopeItemsPage() {
                 <TableHead>Nome</TableHead>
                 <TableHead>Módulo</TableHead>
                 <TableHead>Área de Processo</TableHead>
-                <TableHead className="w-[60px]"></TableHead>
+                <TableHead className="w-[230px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -225,27 +245,134 @@ export default function ScopeItemsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((item: any) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono text-xs">
-                      {item.code}
-                    </TableCell>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{item.module || "-"}</Badge>
-                    </TableCell>
-                    <TableCell>{item.processArea || "-"}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteMut.mutate({ id: item.id })}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filtered.map((item: any) => {
+                  const masterScope = masterScopeByCode.get(
+                    String(item.code || "")
+                      .trim()
+                      .toUpperCase()
+                  );
+                  const expanded = expandedItemId === item.id;
+                  return (
+                    <Fragment key={item.id}>
+                      <TableRow>
+                        <TableCell className="font-mono text-xs">
+                          {item.code}
+                        </TableCell>
+                        <TableCell>{item.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{item.module || "-"}</Badge>
+                        </TableCell>
+                        <TableCell>{item.processArea || "-"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-1">
+                            {masterScope && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="whitespace-nowrap"
+                                onClick={() =>
+                                  setExpandedItemId(expanded ? null : item.id)
+                                }
+                                aria-expanded={expanded}
+                              >
+                                {expanded ? (
+                                  <ChevronDown className="mr-1 h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="mr-1 h-4 w-4" />
+                                )}
+                                {expanded
+                                  ? "Ocultar detalhes"
+                                  : "Consultar cadastro"}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteMut.mutate({ id: item.id })}
+                              aria-label={`Excluir ${item.name}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {masterScope && expanded && (
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={5} className="p-0">
+                            <div className="space-y-4 border-l-4 border-primary/30 p-4 sm:p-5">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge>{masterScope.code}</Badge>
+                                    <h3 className="font-semibold">
+                                      {masterScope.name}
+                                    </h3>
+                                  </div>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Cadastro principal · Release{" "}
+                                    {masterScope.releaseCode}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {masterScope.module && (
+                                    <Badge variant="outline">
+                                      Módulo: {masterScope.module}
+                                    </Badge>
+                                  )}
+                                  {masterScope.processArea && (
+                                    <Badge variant="outline">
+                                      Área: {masterScope.processArea}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              {masterScope.summary && (
+                                <p className="max-w-5xl whitespace-pre-line text-sm text-muted-foreground">
+                                  {masterScope.summary}
+                                </p>
+                              )}
+                              <div>
+                                <h4 className="mb-2 text-sm font-medium">
+                                  Arquivos do cadastro principal
+                                </h4>
+                                {masterScope.assets.length ? (
+                                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                    {masterScope.assets.map((asset: any) => (
+                                      <a
+                                        key={asset.id}
+                                        href={asset.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex min-w-0 items-center gap-2 rounded-md border bg-background p-3 text-sm text-primary transition-colors hover:bg-muted"
+                                      >
+                                        <FileText className="h-4 w-4 shrink-0" />
+                                        <span className="min-w-0 flex-1 truncate">
+                                          {asset.fileName}
+                                        </span>
+                                        <Badge
+                                          variant="outline"
+                                          className="shrink-0"
+                                        >
+                                          {asset.language || asset.assetType}
+                                        </Badge>
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                                      </a>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">
+                                    Nenhum arquivo disponível para este scope
+                                    item.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })
               )}
             </TableBody>
           </Table>
