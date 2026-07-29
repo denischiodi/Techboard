@@ -34,6 +34,16 @@ function localStorageRoot() {
   return resolve(configuredRoot || join(tmpdir(), "techboard-storage"));
 }
 
+export function usesLocalStorage() {
+  return (
+    process.env.STORAGE_BACKEND === "local" ||
+    Boolean(process.env.LOCAL_STORAGE_DIR) ||
+    Boolean(process.env.RAILWAY_VOLUME_MOUNT_PATH) ||
+    !ENV.forgeApiUrl ||
+    !ENV.forgeApiKey
+  );
+}
+
 export function localStoragePath(relKey: string): string {
   const root = localStorageRoot();
   const path = resolve(root, normalizeKey(relKey));
@@ -67,7 +77,7 @@ export async function storagePresignPut(
   relKey: string,
 ): Promise<{ key: string; uploadUrl: string; url: string; localUpload?: { expires: number; signature: string } }> {
   const key = appendHashSuffix(normalizeKey(relKey));
-  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+  if (usesLocalStorage()) {
     const expires = Date.now() + 4 * 60 * 60_000;
     const signature = localUploadSignature(key, expires);
     return {
@@ -124,7 +134,7 @@ export async function storagePutLocalChunk(input: {
 }
 
 export async function storageValidateUpload(relKey: string, expectedSize: number) {
-  if (ENV.forgeApiUrl && ENV.forgeApiKey) return;
+  if (!usesLocalStorage()) return;
   const file = await stat(localStoragePath(relKey)).catch(() => null);
   if (!file) throw new Error("ZIP não encontrado após o envio");
   if (file.size !== expectedSize)
@@ -132,7 +142,7 @@ export async function storageValidateUpload(relKey: string, expectedSize: number
 }
 
 export async function storageRead(relKey: string): Promise<Buffer> {
-  if (!ENV.forgeApiUrl || !ENV.forgeApiKey)
+  if (usesLocalStorage())
     return readFile(localStoragePath(relKey));
   const url = await storageGetSignedUrl(relKey);
   const response = await fetch(url);
@@ -142,7 +152,7 @@ export async function storageRead(relKey: string): Promise<Buffer> {
 }
 
 export async function storageDeleteLocal(relKey: string) {
-  if (ENV.forgeApiUrl && ENV.forgeApiKey) return;
+  if (!usesLocalStorage()) return;
   await unlink(localStoragePath(relKey)).catch(() => undefined);
   await unlink(`${localStoragePath(relKey)}.uploading`).catch(() => undefined);
 }
@@ -153,7 +163,7 @@ export async function storagePut(
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
   const key = appendHashSuffix(normalizeKey(relKey));
-  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+  if (usesLocalStorage()) {
     const path = localStoragePath(key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, data);
@@ -202,7 +212,7 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
-  if (!ENV.forgeApiUrl || !ENV.forgeApiKey)
+  if (usesLocalStorage())
     return `local-file://${localStoragePath(relKey)}`;
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = normalizeKey(relKey);
