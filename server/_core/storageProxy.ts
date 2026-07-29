@@ -18,25 +18,35 @@ export function registerStorageProxy(app: Express) {
     }
     const key = typeof req.query.key === "string" ? req.query.key : "";
     const expires = Number(req.query.expires);
-    const signature = typeof req.query.signature === "string" ? req.query.signature : "";
+    const signature =
+      typeof req.query.signature === "string" ? req.query.signature : "";
     if (!key || !verifyLocalUploadToken(key, expires, signature)) {
       res.status(403).send("Autorização de upload inválida ou expirada");
       return;
     }
     const declaredSize = Number(req.headers["content-length"] || 0);
     const part = req.query.part === undefined ? null : Number(req.query.part);
-    const totalParts = req.query.totalParts === undefined ? null : Number(req.query.totalParts);
+    const totalParts =
+      req.query.totalParts === undefined ? null : Number(req.query.totalParts);
     const chunked = part !== null || totalParts !== null;
-    if (chunked && (
-      !Number.isInteger(part) || !Number.isInteger(totalParts) ||
-      (part as number) < 0 || (totalParts as number) < 1 || (part as number) >= (totalParts as number)
-    )) {
+    if (
+      chunked &&
+      (!Number.isInteger(part) ||
+        !Number.isInteger(totalParts) ||
+        (part as number) < 0 ||
+        (totalParts as number) < 1 ||
+        (part as number) >= (totalParts as number))
+    ) {
       res.status(400).send("Parte de upload inválida");
       return;
     }
     const requestLimit = chunked ? 16 * 1024 * 1024 : 2 * 1024 * 1024 * 1024;
     if (declaredSize > requestLimit) {
-      res.status(413).send(chunked ? "A parte excede 16 MB" : "O ZIP excede o limite de 2 GB");
+      res
+        .status(413)
+        .send(
+          chunked ? "A parte excede 16 MB" : "O ZIP excede o limite de 2 GB"
+        );
       return;
     }
     try {
@@ -47,20 +57,29 @@ export function registerStorageProxy(app: Express) {
       let received = 0;
       req.on("data", chunk => {
         received += chunk.length;
-        if (received > requestLimit) req.destroy(new Error("Parte acima do limite"));
+        if (received > requestLimit)
+          req.destroy(new Error("Parte acima do limite"));
       });
-      await pipeline(req, createWriteStream(writePath, { flags: chunked ? "a" : "wx" }));
-      if (chunked && part === (totalParts as number) - 1) await rename(writePath, path);
-      res.status(chunked && part !== (totalParts as number) - 1 ? 202 : 201).json({
-        key,
-        part,
-        totalParts,
-        complete: !chunked || part === (totalParts as number) - 1,
-        sizeBytes: received,
-      });
+      await pipeline(
+        req,
+        createWriteStream(writePath, { flags: chunked ? "a" : "wx" })
+      );
+      if (chunked && part === (totalParts as number) - 1)
+        await rename(writePath, path);
+      res
+        .status(chunked && part !== (totalParts as number) - 1 ? 202 : 201)
+        .json({
+          key,
+          part,
+          totalParts,
+          complete: !chunked || part === (totalParts as number) - 1,
+          sizeBytes: received,
+        });
     } catch (error: any) {
       console.error("[StorageProxy] local upload failed:", error);
-      res.status(error?.code === "EEXIST" ? 409 : 500).send("Falha ao armazenar o ZIP");
+      res
+        .status(error?.code === "EEXIST" ? 409 : 500)
+        .send("Falha ao armazenar o ZIP");
     }
   });
 
@@ -77,16 +96,22 @@ export function registerStorageProxy(app: Express) {
         await stat(path);
         res.set("Cache-Control", "private, max-age=300");
         res.sendFile(path);
+        return;
       } catch {
-        res.status(404).send("Arquivo não encontrado");
+        if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+          res.status(404).send("Arquivo não encontrado");
+          return;
+        }
+        console.info(
+          `[StorageProxy] arquivo ausente no volume local; tentando armazenamento legado: ${key}`
+        );
       }
-      return;
     }
 
     try {
       const forgeUrl = new URL(
         "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
+        ENV.forgeApiUrl.replace(/\/+$/, "") + "/"
       );
       forgeUrl.searchParams.set("path", key);
 
@@ -96,7 +121,9 @@ export function registerStorageProxy(app: Express) {
 
       if (!forgeResp.ok) {
         const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
+        console.error(
+          `[StorageProxy] forge error: ${forgeResp.status} ${body}`
+        );
         res.status(502).send("Storage backend error");
         return;
       }
