@@ -36,6 +36,10 @@ describe("training catalog", () => {
       expect(item.audiences.length).toBeGreaterThan(0);
       expect(item.content).toContain("## Objetivo");
       expect(item.content).toContain("## Passo a passo");
+      expect(item.content).toContain("## Validações realizadas pelo sistema");
+      expect(item.content).toContain("## O que o sistema faz automaticamente");
+      expect(item.content).toContain("## Como confirmar a automação");
+      expect(item.content).toContain("## Quando a etapa é bloqueada");
       expect(item.content).toContain("## Resultado esperado");
       expect(item.content).toContain("## Em caso de erro");
     }
