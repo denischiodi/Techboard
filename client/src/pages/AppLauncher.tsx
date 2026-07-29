@@ -20,6 +20,7 @@ import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle,
   ArrowRight,
+  BookOpenCheck,
   CheckCircle2,
   Clock3,
   FolderKanban,
@@ -525,7 +526,7 @@ export default function AppLauncher() {
             Acesse cada ambiente mantendo seu projeto atual.
           </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {PRODUCTS.map(product => {
             const allowed = canAccessProduct(product, permissions);
             return (
@@ -564,6 +565,31 @@ export default function AppLauncher() {
               </Card>
             );
           })}
+          <Card
+            className="group cursor-pointer overflow-hidden transition hover:-translate-y-0.5 hover:shadow-lg"
+            onClick={() => {
+              window.location.href = "/techdemais/techeduca/";
+            }}
+          >
+            <div className="h-1.5 bg-gradient-to-r from-lime-500 to-emerald-500" />
+            <CardContent className="flex min-h-40 flex-col justify-between p-4">
+              <div className="flex items-start justify-between gap-4">
+                <span className="rounded-xl bg-lime-100 p-3 text-lime-800">
+                  <BookOpenCheck className="h-6 w-6" />
+                </span>
+                <Badge variant="secondary">Consulta livre</Badge>
+              </div>
+              <div>
+                <h3 className="flex items-center gap-2 font-semibold">
+                  TechEduca+
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </h3>
+                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                  Treinamentos, procedimentos e ajuda contextual do sistema.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </section>
       <DashboardDrilldown
