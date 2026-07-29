@@ -40,7 +40,10 @@ export const sapLibraryRouter = router({
           .string()
           .trim()
           .max(512)
-          .refine(value => !value || /\.(doc|docx)$/i.test(value), "O arquivo deve ser Word")
+          .refine(
+            value => !value || /\.(doc|docx)$/i.test(value),
+            "O arquivo deve ser Word"
+          )
           .default(""),
         contentType: z.string().max(255).default(""),
         fileData: z.string().max(70_000_000).default(""),
@@ -101,6 +104,13 @@ export const sapLibraryRouter = router({
         buffer,
       });
     }),
+  activeScopeDetails: protectedProcedure
+    .input(
+      z.object({
+        codes: z.array(z.string().max(128)).max(100),
+      })
+    )
+    .query(({ input }) => library.listActiveScopeDetailsByCodes(input.codes)),
   prepareUpload: adminProcedure
     .input(
       z.object({

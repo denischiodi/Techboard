@@ -275,6 +275,54 @@ export async function listAssets(scopeId: string) {
   return result.rows;
 }
 
+export async function listActiveScopeDetailsByCodes(codes: string[]) {
+  const pool = getPgPool();
+  if (!pool) return [];
+  const normalizedCodes = [
+    ...new Set(codes.map(code => code.trim().toUpperCase()).filter(Boolean)),
+  ];
+  if (!normalizedCodes.length) return [];
+
+  const scopes = await pool.query(
+    `SELECT c."id",c."code",c."name",c."module",c."processArea",c."summary",
+            r."releaseCode"
+     FROM "sap_scope_catalog" c
+     INNER JOIN "sap_content_releases" r ON r."id"=c."releaseId"
+     WHERE r."id"=(
+       SELECT "id" FROM "sap_content_releases"
+       WHERE "status"='active'
+       ORDER BY "activatedAt" DESC
+       LIMIT 1
+     )
+     AND UPPER(TRIM(c."code"))=ANY($1::text[])
+     ORDER BY c."code"`,
+    [normalizedCodes]
+  );
+  if (!scopes.rows.length) return [];
+
+  const assets = await pool.query(
+    `SELECT "id","scopeId","scopeCode","fileName","assetType","language",
+            "contentType","sizeBytes","url"
+     FROM "sap_scope_assets"
+     WHERE "scopeId"=ANY($1::text[])
+     ORDER BY CASE "language" WHEN 'PT_BR' THEN 0 WHEN 'EN_BR' THEN 1 ELSE 2 END,
+              "fileName"`,
+    [scopes.rows.map(scope => scope.id)]
+  );
+  const assetsByScope = new Map<string, typeof assets.rows>();
+  for (const asset of assets.rows) {
+    const current = assetsByScope.get(asset.scopeId) || [];
+    current.push(asset);
+    assetsByScope.set(asset.scopeId, current);
+  }
+
+  return scopes.rows.map(scope => ({
+    ...scope,
+    normalizedCode: String(scope.code).trim().toUpperCase(),
+    assets: assetsByScope.get(scope.id) || [],
+  }));
+}
+
 export async function registerRelease(input: {
   releaseCode: string;
   country: string;
