@@ -7,6 +7,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   demoAuthEnabled: process.env.DEMO_AUTH_ENABLED === "true",
   emailAuthEnabled: process.env.EMAIL_AUTH_ENABLED !== "false",
+  activityEmailNotificationsEnabled:
+    process.env.ACTIVITY_EMAIL_NOTIFICATIONS_ENABLED !== "false",
   emailFrom: process.env.EMAIL_FROM ?? "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailDeliveryMode: process.env.EMAIL_DELIVERY_MODE ?? "provider",

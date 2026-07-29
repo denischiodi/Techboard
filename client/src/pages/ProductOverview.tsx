@@ -18,6 +18,8 @@ import { trpc } from "@/lib/trpc";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import {
   AnalyticsMetricCard,
   DashboardDrilldown,
@@ -48,6 +50,27 @@ export default function ProductOverview({
     enabled: isAdmin,
     retry: false,
   });
+  const emailNotificationSettings =
+    trpc.system.emailNotificationSettings.useQuery(undefined, {
+      enabled: isAdmin,
+      retry: false,
+    });
+  const utils = trpc.useUtils();
+  const updateEmailNotificationSettings =
+    trpc.system.updateEmailNotificationSettings.useMutation({
+      onSuccess: async data => {
+        await Promise.all([
+          utils.system.emailNotificationSettings.invalidate(),
+          utils.system.diagnostics.invalidate(),
+        ]);
+        toast.success(
+          data.enabled
+            ? "E-mails de notificação ativados"
+            : "E-mails de notificação desativados"
+        );
+      },
+      onError: error => toast.error(error.message),
+    });
   const usersQuery = trpc.access.list.useQuery(undefined, {
     enabled: isAdmin,
     retry: false,
@@ -307,6 +330,35 @@ export default function ProductOverview({
       )}
       {isAdmin && (
         <section className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                E-mails de notificação
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">
+                  Enviar notificações de atividades por e-mail
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Ao desativar, e-mails pendentes serão ignorados e não serão
+                  enviados posteriormente. O login por código não é afetado.
+                </p>
+              </div>
+              <Switch
+                aria-label="Enviar notificações de atividades por e-mail"
+                checked={emailNotificationSettings.data?.enabled ?? false}
+                disabled={
+                  emailNotificationSettings.isLoading ||
+                  updateEmailNotificationSettings.isPending
+                }
+                onCheckedChange={enabled =>
+                  updateEmailNotificationSettings.mutate({ enabled })
+                }
+              />
+            </CardContent>
+          </Card>
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="flex items-center gap-2 text-xl font-semibold">
