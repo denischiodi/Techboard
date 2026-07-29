@@ -288,15 +288,18 @@ export async function listActiveScopeDetailsByCodes(codes: string[]) {
             r."releaseCode"
      FROM "sap_scope_catalog" c
      INNER JOIN "sap_content_releases" r ON r."id"=c."releaseId"
-     WHERE r."id"=(
-       SELECT "id" FROM "sap_content_releases"
-       WHERE "status"='active'
-       ORDER BY "activatedAt" DESC
-       LIMIT 1
+     WHERE (
+       r."id"=(
+         SELECT "id" FROM "sap_content_releases"
+         WHERE "status"='active'
+         ORDER BY "activatedAt" DESC
+         LIMIT 1
+       )
+       OR r."releaseCode"=$2
      )
      AND UPPER(TRIM(c."code"))=ANY($1::text[])
-     ORDER BY c."code"`,
-    [normalizedCodes]
+     ORDER BY c."code", CASE WHEN r."releaseCode"=$2 THEN 1 ELSE 0 END`,
+    [normalizedCodes, MANUAL_RELEASE_CODE]
   );
   if (!scopes.rows.length) return [];
 
@@ -316,11 +319,42 @@ export async function listActiveScopeDetailsByCodes(codes: string[]) {
     assetsByScope.set(asset.scopeId, current);
   }
 
-  return scopes.rows.map(scope => ({
-    ...scope,
-    normalizedCode: String(scope.code).trim().toUpperCase(),
-    assets: assetsByScope.get(scope.id) || [],
-  }));
+  const detailsByCode = new Map<
+    string,
+    (typeof scopes.rows)[number] & {
+      normalizedCode: string;
+      assets: typeof assets.rows;
+      includesManualRegistry: boolean;
+    }
+  >();
+  for (const scope of scopes.rows) {
+    const normalizedCode = String(scope.code).trim().toUpperCase();
+    const current = detailsByCode.get(normalizedCode);
+    const scopeAssets = assetsByScope.get(scope.id) || [];
+    if (!current) {
+      detailsByCode.set(normalizedCode, {
+        ...scope,
+        releaseCode:
+          scope.releaseCode === MANUAL_RELEASE_CODE ? "" : scope.releaseCode,
+        normalizedCode,
+        assets: scopeAssets,
+        includesManualRegistry: scope.releaseCode === MANUAL_RELEASE_CODE,
+      });
+      continue;
+    }
+    current.assets.push(
+      ...scopeAssets.filter(
+        asset =>
+          !current.assets.some(
+            (currentAsset: { id: string }) => currentAsset.id === asset.id
+          )
+      )
+    );
+    current.includesManualRegistry ||=
+      scope.releaseCode === MANUAL_RELEASE_CODE;
+  }
+
+  return [...detailsByCode.values()];
 }
 
 export async function registerRelease(input: {

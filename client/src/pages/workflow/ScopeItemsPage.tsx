@@ -309,8 +309,10 @@ export default function ScopeItemsPage() {
                                     </h3>
                                   </div>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    Cadastro principal · Release{" "}
-                                    {masterScope.releaseCode}
+                                    Cadastro principal
+                                    {masterScope.releaseCode
+                                      ? ` · Release ${masterScope.releaseCode}`
+                                      : ""}
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">

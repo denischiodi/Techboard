@@ -78,6 +78,15 @@ describe("consulta do cadastro SAP da release ativa", () => {
             summary: "Resumo oficial",
             releaseCode: "2608_BR",
           },
+          {
+            id: "scope-manual",
+            code: "1NJ",
+            name: "Cadastro complementar",
+            module: "Platform",
+            processArea: "Governança",
+            summary: "Resumo manual",
+            releaseCode: "__MANUAL_BR__",
+          },
         ],
       })
       .mockResolvedValueOnce({
@@ -89,6 +98,13 @@ describe("consulta do cadastro SAP da release ativa", () => {
             language: "PT_BR",
             url: "/arquivo/1",
           },
+          {
+            id: "asset-manual",
+            scopeId: "scope-manual",
+            fileName: "1NJ_COMPLEMENTAR.docx",
+            language: "PT_BR",
+            url: "/arquivo/manual",
+          },
         ],
       });
 
@@ -97,19 +113,23 @@ describe("consulta do cadastro SAP da release ativa", () => {
     expect(query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining(`WHERE "status"='active'`),
-      [["1NJ"]]
+      [["1NJ"], "__MANUAL_BR__"]
     );
     expect(query).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining(`WHERE "scopeId"=ANY($1::text[])`),
-      [["scope-1"]]
+      [["scope-1", "scope-manual"]]
     );
     expect(result).toEqual([
       expect.objectContaining({
         id: "scope-1",
         normalizedCode: "1NJ",
         releaseCode: "2608_BR",
-        assets: [expect.objectContaining({ id: "asset-1" })],
+        includesManualRegistry: true,
+        assets: [
+          expect.objectContaining({ id: "asset-1" }),
+          expect.objectContaining({ id: "asset-manual" }),
+        ],
       }),
     ]);
   });
