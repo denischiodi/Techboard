@@ -513,7 +513,7 @@ async function syncWorkflowAssignments(
     );
   }
   for (const item of (deliveryItems as any[]).filter(
-    value => value.type === "activity"
+    value => value.type === "functional_activity"
   )) {
     activeKeys.add(`delivery_template:${item.id}`);
     const assignee =

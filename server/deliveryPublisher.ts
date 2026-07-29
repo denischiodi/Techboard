@@ -51,7 +51,8 @@ function typeToTarget(type: string) {
   if (type === "configuration") return "configuration";
   if (type === "gap") return "gap";
   if (["unit_test", "cycle_1", "cycle_2"].includes(type)) return "test_case";
-  if (type === "activity") return "delivery_item";
+  if (["activity", "functional_activity"].includes(type))
+    return "delivery_item";
   return "delivery_item";
 }
 
@@ -83,7 +84,7 @@ async function stageIsComplete(projectId: string, type: string, stage: string) {
     params.push(testType(type));
     sql = `SELECT COUNT(*)::int total, COUNT(*) FILTER (WHERE "status"='Aprovado')::int done
       FROM "workflow_test_cases" WHERE "projectId"=$1 AND "type"=$2 AND "archivedAt" IS NULL`;
-  } else if (type === "activity") {
+  } else if (["activity", "functional_activity"].includes(type)) {
     sql = `SELECT COUNT(*)::int total, COUNT(*) FILTER (WHERE "status"='Concluída')::int done
       FROM "activities" WHERE "projectId"=$1 AND "sourceType"='delivery_template' AND "archivedAt" IS NULL`;
   } else {
@@ -332,7 +333,7 @@ async function materializeOperational(template: any, project: any, occurrence: a
     return { id: row.id, state: "created" };
   }
 
-  if (template.type === "activity") {
+  if (template.type === "functional_activity") {
     const users = await plannerStore.listAppUsers();
     const managerName = normalize(project.manager);
     const creator = users.find(user => user.active && [user.name, user.email].some(value => normalize(value) === managerName))
@@ -428,7 +429,7 @@ async function publishTemplate(template: any, options: { confirmedProjectId?: st
         template, project.id, modules,
         scopeItems.map(item => ({ id: item.id, key: item.code || item.id, module: item.module })),
       );
-      if (template.type === "activity")
+      if (["activity", "functional_activity"].includes(template.type))
         occurrences = occurrences.map(occurrence => activityOccurrence(template, occurrence));
       if (!occurrences.length) {
         summary.outOfScope++;

@@ -689,7 +689,13 @@ export default function StandardConfigurations() {
           </TabsTrigger>
           <TabsTrigger
             className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight"
-            value="central-gp"
+            value="central-functional"
+          >
+            Processo do Consultor
+          </TabsTrigger>
+          <TabsTrigger
+            className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight"
+            value="activities"
           >
             Trilha do GP
           </TabsTrigger>
@@ -715,7 +721,11 @@ export default function StandardConfigurations() {
               ["risk", "issue", "cutover", "go_live", "closure"],
               "risk",
             ],
-            ["central-gp", ["activity"], "activity"],
+            [
+              "central-functional",
+              ["functional_activity"],
+              "functional_activity",
+            ],
           ] as Array<[string, DeliveryType[], DeliveryType]>
         ).map(([value, allowedTypes, defaultType]) => (
           <TabsContent key={value} value={value} className="space-y-4">
