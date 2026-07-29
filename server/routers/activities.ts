@@ -77,6 +77,18 @@ async function managedProject(user: AppUser, project: Project) {
   return Boolean(manager && [user.name, user.email, resource?.name, resource?.email].some(value => normalize(value) === manager));
 }
 
+async function technicalLeadProject(user: AppUser, project: Project) {
+  if (user.role !== "technical_lead") return false;
+  const leadModules = new Set((user.teamFronts || []).map(normalize).filter(Boolean));
+  if (!leadModules.size) return false;
+  const allocations = await plannerStore.listAllocations();
+  const projectModules = [
+    ...(project.fronts || []),
+    ...allocations.filter(allocation => allocation.projectId === project.id).map(allocation => allocation.front),
+  ];
+  return projectModules.some(module => leadModules.has(normalize(module)));
+}
+
 function involved(activity: Activity, user: AppUser) {
   return activity.creatorUserId === user.id || activity.assigneeUserId === user.id ||
     Boolean(user.resourceId && activity.assigneeUserId === `resource:${user.resourceId}`) ||
@@ -85,12 +97,13 @@ function involved(activity: Activity, user: AppUser) {
 
 async function canView(activity: Activity, user: AppUser) {
   if (user.role === "admin") return true;
-  if (activity.scope === "internal") return user.role === "manager" || involved(activity, user);
-  const membership = await projectAccess.getProjectMembership(activity.projectId, user.id);
-  if (membership) return involved(activity, user) || Boolean(membership.active && membership.capabilities?.viewKanban && membership.profile === "gp_internal");
-  if (user.role === "technical_lead") return true;
+  if (involved(activity, user)) return true;
+  if (activity.scope === "internal") return false;
   const project = await plannerStore.getProjectById(activity.projectId);
-  return Boolean(involved(activity, user) || (project && await managedProject(user, project)));
+  if (project && await technicalLeadProject(user, project)) return true;
+  const membership = await projectAccess.getProjectMembership(activity.projectId, user.id);
+  if (membership) return Boolean(membership.active && membership.capabilities?.viewKanban && membership.profile === "gp_internal");
+  return Boolean(project && await managedProject(user, project));
 }
 
 async function canEdit(activity: Activity, user: AppUser) {
@@ -154,13 +167,12 @@ async function syncAndList(user: AppUser) {
   const projectIds = new Set(activities.filter(activity => activity.scope === "project" && !involved(activity, user)).map(activity => activity.projectId));
   const projects = projectIds.size ? (await plannerStore.listProjects()).filter(project => projectIds.has(project.id)) : [];
   const visibleProjectIds = new Set<string>();
-  if (user.role === "technical_lead") for (const project of projects) visibleProjectIds.add(project.id);
-  else if (user.role === "manager") for (const project of projects) if (await managedProject(user, project)) visibleProjectIds.add(project.id);
+  if (user.role === "technical_lead") for (const project of projects) if (await technicalLeadProject(user, project)) visibleProjectIds.add(project.id);
+  if (user.role === "manager") for (const project of projects) if (await managedProject(user, project)) visibleProjectIds.add(project.id);
 
   const visible: Activity[] = [];
   for (const activity of activities) {
     if (involved(activity, user)) visible.push(activity);
-    else if (activity.scope === "internal" && user.role === "manager") visible.push(activity);
     else if (activity.scope === "project" && explicitProjectIds.has(activity.projectId)) visible.push(activity);
     else if (activity.scope === "project" && visibleProjectIds.has(activity.projectId)) visible.push(activity);
   }

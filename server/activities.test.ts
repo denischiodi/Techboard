@@ -204,4 +204,38 @@ describe("kanban de atividades", () => {
     const updated = await lead.activities.update({ id: task.id, data: { priority: "Alta" } });
     expect(updated.priority).toBe("Alta");
   });
+
+  it("limita o líder técnico aos projetos dos módulos sob sua liderança", async () => {
+    const admin = appRouter.createCaller(context("defechi@gmail.com"));
+    const moduleProject = await admin.activities.create({
+      scope: "project", projectId: "p4", title: "Card do módulo Integrações", description: "", priority: "Média",
+      assigneeUserId: "u1", participantUserIds: [], dueDate: "",
+    });
+    const otherProject = await admin.activities.create({
+      scope: "project", projectId: "p3", title: "Card fora dos módulos do líder", description: "", priority: "Média",
+      assigneeUserId: "u1", participantUserIds: [], dueDate: "",
+    });
+    const lead = appRouter.createCaller(context("joao.oliveira@consultoria.com"));
+    const visible = await lead.activities.list();
+
+    expect(visible.some(item => item.id === moduleProject.id)).toBe(true);
+    expect(visible.some(item => item.id === otherProject.id)).toBe(false);
+  });
+
+  it("não mostra cards internos ao gerente quando ele não está envolvido", async () => {
+    const admin = appRouter.createCaller(context("defechi@gmail.com"));
+    const unrelated = await admin.activities.create({
+      scope: "internal", projectId: "", title: "Card interno restrito", description: "", priority: "Baixa",
+      assigneeUserId: "u1", participantUserIds: [], dueDate: "",
+    });
+    const involved = await admin.activities.create({
+      scope: "internal", projectId: "", title: "Card interno com gerente", description: "", priority: "Baixa",
+      assigneeUserId: "u2", participantUserIds: [], dueDate: "",
+    });
+    const manager = appRouter.createCaller(context("ana.costa@consultoria.com"));
+    const visible = await manager.activities.list();
+
+    expect(visible.some(item => item.id === unrelated.id)).toBe(false);
+    expect(visible.some(item => item.id === involved.id)).toBe(true);
+  });
 });
