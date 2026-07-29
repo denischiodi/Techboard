@@ -170,8 +170,8 @@ export default function Activities() {
     if (selectedId) params.set("activityId", selectedId);
     const path = location.split("?")[0];
     const next = params.size ? `${path}?${params.toString()}` : path;
-    if (next !== location) window.history.replaceState(null, "", next);
-  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, selectedId, routeDefaultView, location]);
+    if (next !== location) setLocation(next, { replace: true });
+  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, selectedId, routeDefaultView, location, setLocation]);
 
   useEffect(() => {
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
