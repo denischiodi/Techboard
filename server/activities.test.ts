@@ -39,6 +39,23 @@ describe("kanban de atividades", () => {
     expect(created).toMatchObject({ assigneeUserId: "resource:r5", assigneeName: "Carlos Ferreira" });
   });
 
+  it("permite adicionar e atualizar vários envolvidos, inclusive recursos não alocados", async () => {
+    const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    const created = await caller.activities.create({
+      scope: "project", projectId: "p1", title: "Atividade com envolvidos", description: "",
+      priority: "Média", assigneeUserId: "u3", participantUserIds: ["u1", "resource:r5"], dueDate: "",
+    });
+
+    expect(created.participantUserIds).toEqual(expect.arrayContaining(["u1", "resource:r5"]));
+    const updated = await caller.activities.setParticipants({
+      id: created.id,
+      participantUserIds: ["u2", "resource:r5"],
+    });
+    expect(updated?.participantUserIds).toEqual(expect.arrayContaining(["u2", "resource:r5", created.creatorUserId, created.assigneeUserId]));
+    expect(updated?.participantUserIds).not.toContain("u1");
+    expect(updated?.history[0]).toMatchObject({ action: "PARTICIPANTS_UPDATED" });
+  });
+
   it("permite ao membro do projeto criar e acompanhar uma atividade", async () => {
     const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const created = await caller.activities.create({

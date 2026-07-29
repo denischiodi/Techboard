@@ -353,8 +353,7 @@ export const activitiesRouter = router({
       if (ctx.appUser.role !== "admin" && !members.has(ctx.appUser.id)) forbidden("Somente membros do projeto podem criar atividades nele");
       const membership = await projectAccess.getProjectMembership(input.projectId, ctx.appUser.id);
       if (membership && !membership.capabilities?.createActivity) forbidden("Seu perfil não permite criar atividades neste projeto");
-      await assertEligibleUser({ scope: "project", projectId: project.id }, input.assigneeUserId);
-      for (const userId of input.participantUserIds) if (userId && !members.has(userId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Todos os participantes devem participar do projeto" });
+      for (const userId of [input.assigneeUserId, ...input.participantUserIds]) await assertEligibleUser({ scope: "project", projectId: project.id }, userId);
     } else {
       for (const userId of [input.assigneeUserId, ...input.participantUserIds]) await assertEligibleUser({ scope: "internal", projectId: "" }, userId);
     }
@@ -483,6 +482,28 @@ export const activitiesRouter = router({
     await activityStore.addHistory(activity.id, ctx.appUser, "PARTICIPANT_JOINED");
     await notify(updated, ctx.appUser, "participant_joined", `${ctx.appUser.name} passou a participar da atividade.`);
     return updated;
+  }),
+
+  setParticipants: activityModifyProcedure.input(z.object({
+    id: z.string().min(1),
+    participantUserIds: z.array(z.string()).max(100),
+  })).mutation(async ({ ctx, input }) => {
+    const activity = await requireActivity(input.id, ctx.appUser, true);
+    await approvalStore.assertEntityEditable("activity", activity.id);
+    const selected = [...new Set(input.participantUserIds.filter(Boolean))]
+      .filter(userId => userId !== activity.creatorUserId && userId !== activity.assigneeUserId);
+    for (const userId of selected) await assertEligibleUser(activity, userId);
+    const added = selected.filter(userId => !activity.participantUserIds.includes(userId));
+    const current = await activityStore.replaceParticipants(activity.id, [
+      activity.creatorUserId,
+      activity.assigneeUserId,
+      ...selected,
+    ]) as Activity;
+    await activityStore.addHistory(activity.id, ctx.appUser, "PARTICIPANTS_UPDATED", {
+      participantUserIds: selected,
+    });
+    await notify(current, ctx.appUser, "participants_updated", `${ctx.appUser.name} atualizou os envolvidos da atividade.`, added);
+    return activityStore.getActivity(activity.id);
   }),
 
   leave: activityModifyProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {

@@ -85,6 +85,53 @@ function AssigneePicker({ value, people, onChange, disabled = false }: { value: 
   );
 }
 
+function ParticipantsPicker({ values, people, onChange, disabled = false }: { values: string[]; people: EligibleUser[]; onChange: (values: string[]) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const selected = people.filter(person => values.includes(person.id));
+  const allocated = people.filter(person => person.allocatedToProject);
+  const others = people.filter(person => !person.allocatedToProject);
+  const toggle = (personId: string) => onChange(values.includes(personId) ? values.filter(id => id !== personId) : [...values, personId]);
+  const renderPerson = (person: EligibleUser) => (
+    <CommandItem
+      key={person.id}
+      value={`${person.name} ${person.email} ${person.profile || ""} ${(person.modules || []).join(" ")}`}
+      onSelect={() => toggle(person.id)}
+      className="gap-2 py-2"
+    >
+      <Check className={cn("h-4 w-4 shrink-0", values.includes(person.id) ? "opacity-100" : "opacity-0")} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">{person.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{[person.profile, person.email].filter(Boolean).join(" · ")}</p>
+      </div>
+      {(person.modules || []).length > 0 && <div className="flex max-w-32 flex-wrap justify-end gap-1">{person.modules!.slice(0, 2).map(module => <Badge key={module} variant="secondary" className="px-1.5 text-[10px]">{module}</Badge>)}</div>}
+    </CommandItem>
+  );
+  return (
+    <div className="space-y-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled} className="w-full justify-between font-normal">
+            <span className={cn("truncate", !selected.length && "text-muted-foreground")}>{selected.length ? `${selected.length} envolvido${selected.length === 1 ? "" : "s"}` : "Adicionar envolvidos"}</span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[min(520px,var(--radix-popover-trigger-width))] min-w-[var(--radix-popover-trigger-width)] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Buscar nome, e-mail, perfil ou módulo..." />
+            <CommandList className="max-h-80">
+              <CommandEmpty>Nenhum recurso encontrado.</CommandEmpty>
+              {allocated.length > 0 && <CommandGroup heading={`Alocados no projeto (${allocated.length})`}>{allocated.map(renderPerson)}</CommandGroup>}
+              {allocated.length > 0 && others.length > 0 && <CommandSeparator />}
+              {others.length > 0 && <CommandGroup heading={`Demais recursos (${others.length})`}>{others.map(renderPerson)}</CommandGroup>}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {selected.length > 0 && <div className="flex flex-wrap gap-1.5">{selected.map(person => <Badge key={person.id} variant="secondary" className="gap-1 py-1">{person.name}{!disabled && <button type="button" aria-label={`Remover ${person.name}`} onClick={() => toggle(person.id)}><X className="h-3 w-3" /></button>}</Badge>)}</div>}
+    </div>
+  );
+}
+
 type SavedActivityView = {
   id: string;
   name: string;
@@ -215,7 +262,7 @@ export default function Activities() {
   const [savedViews, setSavedViews] = useState<SavedActivityView[]>(() => {
     try { return JSON.parse(localStorage.getItem(SAVED_VIEWS_KEY) || "[]"); } catch { return []; }
   });
-  const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", stage: "GERAL" as ActivityStage, title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", dueDate: "" });
+  const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", stage: "GERAL" as ActivityStage, title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", participantUserIds: [] as string[], dueDate: "" });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   useEffect(() => {
@@ -277,7 +324,7 @@ export default function Activities() {
     },
     onError: error => toast.error(error.message),
   });
-  const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", stage: "GERAL", title: "", description: "", priority: "Média", assigneeUserId: "", dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
+  const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", stage: "GERAL", title: "", description: "", priority: "Média", assigneeUserId: "", participantUserIds: [], dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
   const importExcel = trpc.activities.importExcel.useMutation({
     onSuccess: async result => {
       await utils.activities.list.invalidate();
@@ -422,14 +469,15 @@ export default function Activities() {
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}><div className="flex gap-3 overflow-x-auto pb-4">{STATUSES.map(status => <KanbanColumn key={status} status={status} activities={filtered.filter(activity => activity.status === status)} onOpen={activity => setSelectedId(activity.id)} />)}</div></DndContext>}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>Nova atividade</DialogTitle></DialogHeader><div className="space-y-4">
-        <div><Label>Quadro</Label><Select value={createForm.scope} onValueChange={(scope: ActivityScope) => setCreateForm(form => ({ ...form, scope, projectId: "", stage: scope === "internal" ? "GERAL" : form.stage, assigneeUserId: "" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="project">Projeto</SelectItem><SelectItem value="internal">Operação interna</SelectItem></SelectContent></Select></div>
-        {createForm.scope === "project" && <div><Label>Projeto</Label><Select value={createForm.projectId} onValueChange={projectId => setCreateForm(form => ({ ...form, projectId, assigneeUserId: "" }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>}
+        <div><Label>Quadro</Label><Select value={createForm.scope} onValueChange={(scope: ActivityScope) => setCreateForm(form => ({ ...form, scope, projectId: "", stage: scope === "internal" ? "GERAL" : form.stage, assigneeUserId: "", participantUserIds: [] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="project">Projeto</SelectItem><SelectItem value="internal">Operação interna</SelectItem></SelectContent></Select></div>
+        {createForm.scope === "project" && <div><Label>Projeto</Label><Select value={createForm.projectId} onValueChange={projectId => setCreateForm(form => ({ ...form, projectId, assigneeUserId: "", participantUserIds: [] }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>}
         {createForm.scope === "project" && <div><Label>Etapa de origem</Label><Select value={createForm.stage} onValueChange={(stage: ActivityStage) => setCreateForm(form => ({ ...form, stage }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STAGES.map(stage => <SelectItem key={stage} value={stage}>{stage}</SelectItem>)}</SelectContent></Select></div>}
         <div><Label>Título</Label><Input value={createForm.title} onChange={event => setCreateForm(form => ({ ...form, title: event.target.value }))} /></div>
         <div><Label>Descrição</Label><Textarea value={createForm.description} onChange={event => setCreateForm(form => ({ ...form, description: event.target.value }))} /></div>
         <div className="grid gap-3 sm:grid-cols-2"><div><Label>Responsável</Label><AssigneePicker value={createForm.assigneeUserId} people={eligibleUsers.data || []} disabled={eligibleUsers.isLoading || (createForm.scope === "project" && !createForm.projectId)} onChange={assigneeUserId => setCreateForm(form => ({ ...form, assigneeUserId }))} /><p className="mt-1 text-xs text-muted-foreground">Alocados no projeto aparecem primeiro. Busque também por módulo.</p></div><div><Label>Prioridade</Label><Select value={createForm.priority} onValueChange={(priority: ActivityPriority) => setCreateForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div></div>
+        <div><Label>Envolvidos</Label><ParticipantsPicker values={createForm.participantUserIds} people={(eligibleUsers.data || []).filter(person => person.id !== createForm.assigneeUserId)} disabled={eligibleUsers.isLoading || (createForm.scope === "project" && !createForm.projectId)} onChange={participantUserIds => setCreateForm(form => ({ ...form, participantUserIds }))} /><p className="mt-1 text-xs text-muted-foreground">Selecione várias pessoas. Todos os envolvidos receberão notificações e e-mails da atividade.</p></div>
         <div><Label>Prazo</Label><Input type="date" value={createForm.dueDate} onChange={event => setCreateForm(form => ({ ...form, dueDate: event.target.value }))} /></div>
-      </div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button disabled={!createForm.title.trim() || (createForm.scope === "project" && !createForm.projectId) || createActivity.isPending} onClick={() => createActivity.mutate({ ...createForm, participantUserIds: [] })}>Criar</Button></DialogFooter></DialogContent></Dialog>
+      </div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button disabled={!createForm.title.trim() || (createForm.scope === "project" && !createForm.projectId) || createActivity.isPending} onClick={() => createActivity.mutate(createForm)}>Criar</Button></DialogFooter></DialogContent></Dialog>
 
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Salvar visão</DialogTitle></DialogHeader><div><Label htmlFor="saved-view-name">Nome da visão</Label><Input id="saved-view-name" value={viewName} onChange={event => setViewName(event.target.value)} placeholder="Ex.: Críticas atrasadas" onKeyDown={event => { if (event.key === "Enter") saveCurrentView(); }} /></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)}>Cancelar</Button><Button disabled={!viewName.trim()} onClick={saveCurrentView}>Salvar</Button></DialogFooter></DialogContent></Dialog>
 
@@ -471,6 +519,7 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
   const [archiveReason, setArchiveReason] = useState("");
   const [checkForm, setCheckForm] = useState({ description: "", assigneeUserId: "", dueDate: "", required: true });
   const [contentForm, setContentForm] = useState({ title: activity.title, description: activity.description, priority: activity.priority });
+  const [participantIds, setParticipantIds] = useState(() => activity.participantUserIds.filter(id => id !== activity.creatorUserId && id !== activity.assigneeUserId));
   const eligible = trpc.activities.eligibleUsers.useQuery({ scope: activity.scope, projectId: activity.projectId });
   const invalidate = async () => { await utils.activities.list.invalidate(); };
   const mutationOptions = { onSuccess: invalidate, onError: (error: { message: string }) => toast.error(error.message) };
@@ -486,6 +535,10 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
   const saveUpdate = (data: Partial<Pick<Activity, "title" | "description" | "priority" | "status" | "assigneeUserId" | "dueDate">>) => isAdmin ? adminUpdate.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data }) : update.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data });
   const archive = trpc.activities.admin.archive.useMutation({ onSuccess: async () => { await Promise.all([invalidate(), utils.activities.admin.archived.invalidate(), utils.activities.admin.audit.invalidate()]); setArchiveOpen(false); onOpenChange(false); toast.success("Item arquivado e registrado no log"); }, onError: (error: { message: string }) => toast.error(error.message) });
   const join = trpc.activities.join.useMutation(mutationOptions);
+  const setParticipants = trpc.activities.setParticipants.useMutation({
+    onSuccess: async () => { await invalidate(); toast.success("Envolvidos atualizados"); },
+    onError: (error: { message: string }) => { setParticipantIds(activity.participantUserIds.filter(id => id !== activity.creatorUserId && id !== activity.assigneeUserId)); toast.error(error.message); },
+  });
   const checklistCreate = trpc.activities.checklistCreate.useMutation({ ...mutationOptions, onSuccess: async () => { setCheckForm({ description: "", assigneeUserId: "", dueDate: "", required: true }); await invalidate(); } });
   const checklistUpdate = trpc.activities.checklistUpdate.useMutation(mutationOptions);
   const checklistDelete = trpc.activities.checklistDelete.useMutation(mutationOptions);
@@ -515,6 +568,7 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
       <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}{isAdmin && <Button className="ml-auto" size="sm" variant="destructive" disabled={archive.isPending} onClick={() => setArchiveOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Arquivar item</Button>}</div>
       {!canEdit && <Button variant="outline" onClick={() => join.mutate({ id: activity.id })}><UserPlus className="mr-2 h-4 w-4" />Participar para colaborar</Button>}
       <div className="grid gap-3 sm:grid-cols-3"><div><Label>Status</Label><Select disabled={!canEdit} value={activity.status} onValueChange={(status: ActivityStatus) => saveUpdate({ status })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div><Label>Responsável</Label><AssigneePicker disabled={!canEdit || eligible.isLoading} value={activity.assigneeUserId} people={eligible.data || []} onChange={assigneeUserId => saveUpdate({ assigneeUserId })} /></div><div><Label>Prazo</Label><Input disabled={!canEdit} type="date" value={activity.dueDate} onChange={event => saveUpdate({ dueDate: event.target.value })} /></div></div>
+      <div><Label>Envolvidos</Label><ParticipantsPicker values={participantIds} people={(eligible.data || []).filter(person => person.id !== activity.assigneeUserId && person.id !== activity.creatorUserId)} disabled={!canEdit || eligible.isLoading || setParticipants.isPending} onChange={values => { setParticipantIds(values); setParticipants.mutate({ id: activity.id, participantUserIds: values }); }} /><p className="mt-1 text-xs text-muted-foreground">Os envolvidos acompanham o card e recebem notificações por e-mail.</p></div>
       {(activity.sourceType === "manual" || isAdmin) && canEdit ? <section className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">Conteúdo {activity.sourceType !== "manual" && <Badge variant="outline" className="ml-2">Personalização administrativa</Badge>}</h3><div><Label>Título</Label><Input value={contentForm.title} onChange={event => setContentForm(form => ({ ...form, title: event.target.value }))} /></div><div><Label>Descrição</Label><Textarea value={contentForm.description} onChange={event => setContentForm(form => ({ ...form, description: event.target.value }))} /></div><div className="max-w-48"><Label>Prioridade</Label><Select value={contentForm.priority} onValueChange={(priority: ActivityPriority) => setContentForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div><Button disabled={!contentForm.title.trim()} onClick={() => saveUpdate(contentForm)}>Salvar conteúdo</Button></section> : <div><Label>Descrição</Label><p className="mt-1 whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 text-sm">{activity.description || "Sem descrição"}</p></div>}
       {activity.sourceUrl && <Button variant="outline" onClick={() => onNavigate(activity.sourceUrl)}><ExternalLink className="mr-2 h-4 w-4" />Abrir origem</Button>}
 
