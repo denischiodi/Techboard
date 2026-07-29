@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   Plus,
@@ -49,12 +50,86 @@ import {
   Users,
   ShieldCheck,
   RotateCcw,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 
 import { useWorkflowProject } from "./useWorkflowProject";
 import { GeneratedModelItems } from "@/components/GeneratedModelItems";
+
+type BdcqQuestionForm = {
+  id: string;
+  question: string;
+  questionOriginal: string;
+  module: string;
+  category: string;
+  sapId: string;
+  level: string;
+  process: string;
+  sscuiReference: string;
+  area: string;
+  topic: string;
+  topicDefinition: string;
+  solution: string;
+  source: string;
+  sourceFile: string;
+  sourceRelease: string;
+  required: boolean;
+  active: number;
+  scopeItemIds: string[];
+  consultantResourceId: string;
+  keyUserId: string;
+};
+
+const emptyQuestionForm = (): BdcqQuestionForm => ({
+  id: "",
+  question: "",
+  questionOriginal: "",
+  module: "",
+  category: "",
+  sapId: "",
+  level: "L3",
+  process: "",
+  sscuiReference: "",
+  area: "",
+  topic: "",
+  topicDefinition: "",
+  solution: "",
+  source: "manual",
+  sourceFile: "",
+  sourceRelease: "",
+  required: false,
+  active: 1,
+  scopeItemIds: [],
+  consultantResourceId: "",
+  keyUserId: "",
+});
+
+type FilterState = {
+  modules: string[];
+  scopeItemIds: string[];
+  levels: string[];
+  areas: string[];
+  topics: string[];
+  sources: string[];
+  statuses: Array<"pending" | "answered" | "inactive">;
+  consultantResourceIds: string[];
+  keyUserIds: string[];
+};
+
+const emptyFilters = (): FilterState => ({
+  modules: [],
+  scopeItemIds: [],
+  levels: [],
+  areas: [],
+  topics: [],
+  sources: [],
+  statuses: [],
+  consultantResourceIds: [],
+  keyUserIds: [],
+});
 
 export default function BDCQPage() {
   const [, setLocation] = useLocation();
@@ -66,14 +141,8 @@ export default function BDCQPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showAnswer, setShowAnswer] = useState<any>(null);
   const [page, setPage] = useState(0);
-  const [form, setForm] = useState({
-    question: "",
-    module: "",
-    category: "",
-    scopeItemIds: [] as string[],
-    consultantResourceId: "",
-    keyUserId: "",
-  });
+  const [form, setForm] = useState<BdcqQuestionForm>(emptyQuestionForm);
+  const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const [showLibrary, setShowLibrary] = useState(false);
   const emptyTemplate = {
     id: "",
@@ -105,18 +174,21 @@ export default function BDCQPage() {
   >("idle");
   const [savedAnswerId, setSavedAnswerId] = useState("");
   const [showHistory, setShowHistory] = useState<any>(null);
+  const [importResult, setImportResult] = useState<any>(null);
   const [approvalComment, setApprovalComment] = useState("");
   const [openedDeepLink, setOpenedDeepLink] = useState(false);
   const lastSaved = useRef("");
 
-  const { data: questionPage = [], refetch: refetchQ } =
-    trpc.workflow.bdcq.questions.list.useQuery({
+  const { data: questionResult, refetch: refetchQ } =
+    trpc.workflow.bdcq.questions.search.useQuery({
       projectId: PROJECT_ID,
       offset: page * PAGE_SIZE,
-      limit: PAGE_SIZE + 1,
+      limit: PAGE_SIZE,
+      search: search || undefined,
+      ...filters,
     });
-  const hasNextPage = questionPage.length > PAGE_SIZE;
-  const questions = questionPage.slice(0, PAGE_SIZE);
+  const questions = questionResult?.items || [];
+  const hasNextPage = (page + 1) * PAGE_SIZE < (questionResult?.total || 0);
   const questionIds = questions.map((question: any) => question.id);
   const { data: answers = [], refetch: refetchA } =
     trpc.workflow.bdcq.answers.list.useQuery(
@@ -144,8 +216,12 @@ export default function BDCQPage() {
   const { data: allocations = [] } = trpc.allocations.list.useQuery(undefined, {
     enabled: canManageBdcq,
   });
-  const exportQuestions = trpc.workflow.bdcq.questions.list.useQuery(
-    { projectId: PROJECT_ID, offset: 0, limit: 500 },
+  const exportQuestions = trpc.workflow.bdcq.questions.exportFiltered.useQuery(
+    {
+      projectId: PROJECT_ID,
+      search: search || undefined,
+      ...filters,
+    },
     { enabled: false }
   );
   const { data: keyUsers = [], refetch: refetchKeyUsers } =
@@ -181,13 +257,6 @@ export default function BDCQPage() {
     },
   });
   const updateQ = trpc.workflow.bdcq.questions.update.useMutation({
-    onSuccess: async () => {
-      await refetchQ();
-      setShowAnswer((current: any) =>
-        current ? { ...current, ...ownerForm } : current
-      );
-      toast.success("Responsáveis atualizados");
-    },
     onError: error => toast.error(error.message),
   });
   const createKeyUser = trpc.workflow.bdcq.keyUsers.create.useMutation({
@@ -216,15 +285,40 @@ export default function BDCQPage() {
   const createA = trpc.workflow.bdcq.answers.create.useMutation();
   const updateA = trpc.workflow.bdcq.answers.update.useMutation();
   const uploadAttachment = trpc.workflow.upload.useMutation();
-  const { data: answerHistory = [] } =
+  const { data: answerHistory = [], refetch: refetchAnswerHistory } =
     trpc.workflow.bdcq.answers.history.useQuery(
       { answerId: showHistory?.id || "" },
       { enabled: Boolean(showHistory?.id) }
     );
+  const restoreAnswerVersion =
+    trpc.workflow.bdcq.answers.restoreVersion.useMutation({
+      onSuccess: async restored => {
+        await Promise.all([refetchA(), refetchAnswerHistory()]);
+        setShowHistory((current: any) =>
+          current?.id === restored.id ? { ...current, ...restored } : current
+        );
+        toast.success("Versão restaurada como resposta atual");
+      },
+      onError: error => toast.error(error.message),
+    });
+  const restoreOriginalAnswer =
+    trpc.workflow.bdcq.answers.restoreOriginal.useMutation({
+      onSuccess: async restored => {
+        await Promise.all([refetchA(), refetchAnswerHistory()]);
+        setShowHistory((current: any) =>
+          current?.id === restored.id ? { ...current, ...restored } : current
+        );
+        toast.success("Pergunta restaurada para o estado original, sem resposta");
+      },
+      onError: error => toast.error(error.message),
+    });
   const bulkCreate = trpc.workflow.bdcq.questions.bulkCreate.useMutation({
     onSuccess: data => {
-      refetchQ();
-      toast.success(`${data.added} criadas e ${data.updated} atualizadas`);
+      Promise.all([refetchQ(), refetchA()]);
+      setImportResult(data);
+      toast.success(
+        `${data.added} perguntas criadas · ${data.updated} atualizadas · ${data.answersUpdated} respostas atualizadas · ${data.warningCount} avisos`
+      );
     },
     onError: error =>
       toast.error(error.message || "Erro ao importar perguntas"),
@@ -291,23 +385,15 @@ export default function BDCQPage() {
   const keyUserMap = new Map(
     keyUsers.map((keyUser: any) => [keyUser.id, keyUser])
   );
-  const filtered = questions.filter(
-    (q: any) =>
-      q.question?.toLowerCase().includes(search.toLowerCase()) ||
-      q.module?.toLowerCase().includes(search.toLowerCase()) ||
-      q.category?.toLowerCase().includes(search.toLowerCase())
-  );
-  const answeredCount = new Set(
-    answers
-      .filter((answer: any) => String(answer.answer || "").trim())
-      .map((answer: any) => answer.questionId)
-  ).size;
+  const filtered = questions;
+  const answeredCount = questionResult?.answered || 0;
   const moduleOptions = [
     ...new Set([
       ...(lookups?.fronts || [])
         .filter((item: any) => item.active)
         .map((item: any) => item.value),
       ...scopeItems.map((item: any) => item.module).filter(Boolean),
+      ...(questionResult?.facets.modules || []),
     ]),
   ].sort();
   const projectAllocationMap = new Map(
@@ -340,6 +426,48 @@ export default function BDCQPage() {
     values.includes(value)
       ? values.filter(item => item !== value)
       : [...values, value];
+  const activeFilterCount = Object.values(filters).reduce(
+    (total, values) => total + values.length,
+    0
+  );
+
+  const openQuestionForm = (question?: any) => {
+    setForm(
+      question
+        ? {
+            ...emptyQuestionForm(),
+            ...question,
+            id: question.id,
+            scopeItemIds: question.scopeItemIds || [],
+            required: Boolean(question.required),
+            active: question.active === 0 ? 0 : 1,
+          }
+        : emptyQuestionForm()
+    );
+    setShowAdd(true);
+  };
+
+  const saveQuestion = () => {
+    const { id, ...data } = form;
+    if (id) {
+      updateQ.mutate(
+        { id, data },
+        {
+          onSuccess: async () => {
+            await refetchQ();
+            setShowAdd(false);
+            toast.success("Pergunta atualizada");
+          },
+        }
+      );
+      return;
+    }
+    createQ.mutate({
+      projectId: PROJECT_ID,
+      ...data,
+      module: data.module || "Geral",
+    });
+  };
 
   const persistAnswer = (closeAfter = false) => {
     if (
@@ -518,8 +646,22 @@ export default function BDCQPage() {
         );
         return String(entry?.[1] || "").trim();
       };
+      const optionalBoolean = (
+        row: Record<string, unknown>,
+        names: string[]
+      ) => {
+        const raw = valueFrom(row, names);
+        if (!raw) return undefined;
+        return ["sim", "yes", "true", "1"].includes(normalize(raw));
+      };
       const parsed = rows
-        .map(row => ({
+        .map((row, index) => ({
+          rowNumber: index + 2,
+          technicalKey: valueFrom(row, [
+            "chave tecnica",
+            "chave bdcq",
+            "__chave bdcq",
+          ]),
           id: valueFrom(row, ["id", "identificador", "codigo"]),
           question: valueFrom(row, [
             "pergunta",
@@ -527,29 +669,90 @@ export default function BDCQPage() {
             "questao",
             "texto",
           ]),
-          module:
-            valueFrom(row, ["modulo", "module", "frente", "lob"]) || "Geral",
+          questionOriginal: valueFrom(row, [
+            "pergunta original",
+            "question original",
+          ]),
+          module: valueFrom(row, ["modulo", "module", "frente", "lob"]),
           category: valueFrom(row, [
             "categoria",
             "category",
             "tema",
             "processo",
           ]),
+          sapId: valueFrom(row, ["sap id", "id sap"]),
+          level: valueFrom(row, ["level", "nivel"]),
+          process: valueFrom(row, ["processo", "process"]),
+          sscuiReference: valueFrom(row, ["referencia sscui", "sscui"]),
+          area: valueFrom(row, ["area"]),
+          topic: valueFrom(row, ["topico", "topic"]),
+          topicDefinition: valueFrom(row, [
+            "definicao do topico",
+            "topic definition",
+          ]),
+          solution: valueFrom(row, ["solucao", "solution"]),
+          source: valueFrom(row, ["origem", "fonte", "source"]),
+          sourceFile: valueFrom(row, [
+            "arquivo de origem",
+            "arquivo fonte",
+            "source file",
+          ]),
+          sourceRelease: valueFrom(row, [
+            "release da fonte",
+            "release fonte",
+            "source release",
+          ]),
+          required: optionalBoolean(row, ["obrigatoria", "required"]),
+          active: (() => {
+            const value = optionalBoolean(row, ["ativa", "active"]);
+            return value === undefined ? undefined : value ? 1 : 0;
+          })(),
+          consultantEmail: valueFrom(row, [
+            "email consultor",
+            "e-mail consultor",
+            "consultor email",
+          ]),
           consultantResourceId: valueFrom(row, [
             "id consultor",
             "consultor id",
             "consultant id",
           ]),
+          keyUserEmail: valueFrom(row, [
+            "email key user",
+            "e-mail key user",
+            "key user email",
+          ]),
           keyUserId: valueFrom(row, ["id key user", "key user id"]),
+          scopeItemRefs: valueFrom(row, [
+            "scope items",
+            "scope item",
+            "codigos scope items",
+          ])
+            .split(/[;,]/)
+            .map(value => value.trim())
+            .filter(Boolean),
           scopeItemIds: valueFrom(row, ["ids scope items", "scope item ids"])
             .split(/[;,]/)
             .map(value => value.trim())
             .filter(Boolean),
+          answer: valueFrom(row, ["resposta", "answer"]),
+          answeredBy: valueFrom(row, [
+            "respondido por",
+            "answered by",
+            "responsavel pela resposta",
+          ]),
         }))
-        .filter(row => row.question);
+        .filter(
+          row =>
+            row.question ||
+            row.technicalKey ||
+            row.id ||
+            row.sapId ||
+            row.answer
+        );
       if (!parsed.length) {
         toast.error(
-          "Nenhuma pergunta encontrada. Use colunas Pergunta, Módulo e Categoria."
+          "Nenhuma pergunta encontrada. Use a aba BDCQ e mantenha os cabeçalhos do modelo."
         );
         return;
       }
@@ -566,49 +769,123 @@ export default function BDCQPage() {
   const downloadExcelModel = async () => {
     try {
       const result = await exportQuestions.refetch();
-      const registered = result.data || [];
+      const registered = result.data?.items || [];
       const rows = registered.length
         ? registered.map((question: any) => ({
-            ID: question.id,
+            "__Chave BDCQ": question.technicalKey,
             Pergunta: question.question,
+            "Pergunta original": question.questionOriginal || "",
+            "SAP ID": question.sapId || "",
             Módulo: question.module,
+            Level: question.level || "L3",
             Categoria: question.category || "",
-            "ID consultor": question.consultantResourceId || "",
-            "Consultor responsável":
-              resourceMap.get(question.consultantResourceId)?.name || "",
-            "ID key user": question.keyUserId || "",
-            "Key user responsável":
-              keyUserMap.get(question.keyUserId)?.name || "",
-            "IDs scope items": (question.scopeItemIds || []).join(";"),
+            Processo: question.process || "",
+            "Referência SSCUI": question.sscuiReference || "",
+            Área: question.area || "",
+            Tópico: question.topic || "",
+            "Definição do tópico": question.topicDefinition || "",
+            Solução: question.solution || "",
+            Origem: question.source || "",
+            "Arquivo de origem": question.sourceFile || "",
+            "Release da fonte": question.sourceRelease || "",
+            Obrigatória: question.required ? "Sim" : "Não",
+            Ativa: question.active === 0 ? "Não" : "Sim",
+            "Scope items": (question.scopeItems || [])
+              .map((item: any) => item.code || item.name)
+              .filter(Boolean)
+              .join("; "),
+            "E-mail consultor": question.consultantEmail || "",
+            "Consultor responsável": question.consultantName || "",
+            "E-mail key user": question.keyUserEmail || "",
+            "Key user responsável": question.keyUserName || "",
+            Resposta: question.answer || "",
+            "Respondido por": question.answeredBy || "",
           }))
         : [
             {
-              ID: "",
+              "__Chave BDCQ": "",
               Pergunta: "",
+              "Pergunta original": "",
+              "SAP ID": "",
               Módulo: "",
+              Level: "L3",
               Categoria: "",
-              "ID consultor": "",
+              Processo: "",
+              "Referência SSCUI": "",
+              Área: "",
+              Tópico: "",
+              "Definição do tópico": "",
+              Solução: "",
+              Origem: "manual",
+              "Arquivo de origem": "",
+              "Release da fonte": "",
+              Obrigatória: "Não",
+              Ativa: "Sim",
+              "Scope items": "",
+              "E-mail consultor": "",
               "Consultor responsável": "",
-              "ID key user": "",
+              "E-mail key user": "",
               "Key user responsável": "",
-              "IDs scope items": "",
+              Resposta: "",
+              "Respondido por": "",
             },
           ];
       const XLSX = await import("xlsx");
       const sheet = XLSX.utils.json_to_sheet(rows);
       sheet["!cols"] = [
-        { wch: 24 },
-        { wch: 60 },
-        { wch: 16 },
-        { wch: 24 },
-        { wch: 24 },
-        { wch: 30 },
-        { wch: 24 },
-        { wch: 30 },
-        { wch: 36 },
+        24, 60, 60, 14, 16, 10, 24, 24, 36, 24, 24, 60, 40, 18, 42, 16, 12, 10,
+        36, 32, 30, 32, 30, 60, 30,
+      ].map((wch, index) => ({ wch, hidden: index === 0 }));
+      sheet["!autofilter"] = { ref: sheet["!ref"] || "A1:Y1" };
+
+      const references = result.data?.references;
+      const referenceRows: Array<Array<string>> = [
+        ["INSTRUÇÕES"],
+        [
+          "A exportação respeita os filtros da tela. Não exclua a coluna técnica oculta.",
+        ],
+        [
+          "Separe vários scope items com ponto e vírgula, por exemplo: 1EG; J45; BMC.",
+        ],
+        [
+          "Consultor e key user são localizados pelo e-mail. Resposta vazia preserva a atual.",
+        ],
+        [
+          "Campos textuais vazios preservam o valor atual; responsável ou scope items vazios removem os vínculos.",
+        ],
+        [],
+        ["SCOPE ITEMS", "Código", "Nome", "Módulo"],
+        ...(references?.scopeItems || []).map((item: any) => [
+          "",
+          item.code,
+          item.name,
+          item.module,
+        ]),
+        [],
+        ["CONSULTORES", "Nome", "E-mail"],
+        ...(references?.consultants || []).map((item: any) => [
+          "",
+          item.name,
+          item.email,
+        ]),
+        [],
+        ["KEY USERS", "Nome", "E-mail"],
+        ...(references?.keyUsers || []).map((item: any) => [
+          "",
+          item.name,
+          item.email,
+        ]),
+      ];
+      const referenceSheet = XLSX.utils.aoa_to_sheet(referenceRows);
+      referenceSheet["!cols"] = [
+        { wch: 18 },
+        { wch: 34 },
+        { wch: 42 },
+        { wch: 18 },
       ];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, sheet, "BDCQ");
+      XLSX.utils.book_append_sheet(workbook, referenceSheet, "Referências");
       XLSX.writeFile(workbook, `modelo-bdcq-${PROJECT_ID}.xlsx`);
     } catch (error) {
       toast.error(
@@ -659,7 +936,7 @@ export default function BDCQPage() {
                   />
                 </label>
               </Button>
-              <Button onClick={() => setShowAdd(true)}>
+              <Button onClick={() => openQuestionForm()}>
                 <Plus className="h-4 w-4 mr-2" />
                 Nova Pergunta
               </Button>
@@ -677,177 +954,347 @@ export default function BDCQPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3">
         <Search className="h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar perguntas nesta página..."
+          placeholder="Buscar pergunta, SAP ID, processo, área ou tópico..."
           value={search}
           onChange={e => {
             setSearch(e.target.value);
             setPage(0);
           }}
-          className="min-w-0 flex-1 basis-full sm:max-w-sm sm:basis-auto"
+          className="min-w-0 flex-1 basis-full sm:max-w-md sm:basis-auto"
         />
+        <FilterMenu
+          label="Módulo"
+          values={questionResult?.facets.modules || []}
+          selected={filters.modules}
+          onChange={modules => {
+            setFilters(current => ({ ...current, modules }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Scope item"
+          values={scopeItems.map((item: any) => item.id)}
+          selected={filters.scopeItemIds}
+          labelFor={id => {
+            const item = scopeItems.find((scope: any) => scope.id === id);
+            return item ? `${item.code || item.name} · ${item.module}` : id;
+          }}
+          onChange={scopeItemIds => {
+            setFilters(current => ({ ...current, scopeItemIds }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Level"
+          values={questionResult?.facets.levels || []}
+          selected={filters.levels}
+          onChange={levels => {
+            setFilters(current => ({ ...current, levels }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Área"
+          values={questionResult?.facets.areas || []}
+          selected={filters.areas}
+          onChange={areas => {
+            setFilters(current => ({ ...current, areas }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Tópico"
+          values={questionResult?.facets.topics || []}
+          selected={filters.topics}
+          onChange={topics => {
+            setFilters(current => ({ ...current, topics }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Origem"
+          values={questionResult?.facets.sources || []}
+          selected={filters.sources}
+          onChange={sources => {
+            setFilters(current => ({ ...current, sources }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Status"
+          values={["pending", "answered", "inactive"]}
+          selected={filters.statuses}
+          labelFor={value =>
+            value === "pending"
+              ? "Pendente"
+              : value === "answered"
+                ? "Respondida"
+                : "Inativa"
+          }
+          onChange={statuses => {
+            setFilters(current => ({
+              ...current,
+              statuses: statuses as FilterState["statuses"],
+            }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Consultor"
+          values={resources.map((resource: any) => resource.id)}
+          selected={filters.consultantResourceIds}
+          labelFor={id => resourceMap.get(id)?.name || id}
+          onChange={consultantResourceIds => {
+            setFilters(current => ({ ...current, consultantResourceIds }));
+            setPage(0);
+          }}
+        />
+        <FilterMenu
+          label="Key user"
+          values={keyUsers.map((item: any) => item.id)}
+          selected={filters.keyUserIds}
+          labelFor={id => keyUserMap.get(id)?.name || id}
+          onChange={keyUserIds => {
+            setFilters(current => ({ ...current, keyUserIds }));
+            setPage(0);
+          }}
+        />
+        {activeFilterCount > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilters(emptyFilters());
+              setPage(0);
+            }}
+          >
+            <X className="mr-1 h-4 w-4" />
+            Limpar ({activeFilterCount})
+          </Button>
+        )}
         <Badge variant="secondary">
-          {filtered.length} perguntas nesta página
+          {questionResult?.total || 0} pergunta(s)
         </Badge>
-        <Badge variant="outline">
-          {answeredCount} respondidas nesta página
-        </Badge>
+        <Badge variant="outline">{answeredCount} respondida(s)</Badge>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Módulo</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Pergunta</TableHead>
-                <TableHead>Consultor responsável</TableHead>
-                <TableHead>Key user responsável</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[100px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
+      <Card className="min-w-0 max-w-full overflow-hidden">
+        <CardContent className="min-w-0 p-0">
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-[1720px] table-fixed">
+              <TableHeader>
                 <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="text-center text-muted-foreground py-8"
-                  >
-                    Nenhuma pergunta. Importe uma planilha ou adicione
-                    manualmente.
-                  </TableCell>
+                  <TableHead className="w-[110px]">Status</TableHead>
+                  <TableHead className="w-[150px]">Ações</TableHead>
+                  <TableHead className="w-[440px]">Pergunta</TableHead>
+                  <TableHead className="w-[100px]">Módulo</TableHead>
+                  <TableHead className="w-[110px]">SAP ID</TableHead>
+                  <TableHead className="w-[80px]">Level</TableHead>
+                  <TableHead className="w-[220px]">Área / tópico</TableHead>
+                  <TableHead className="w-[190px]">Scope items</TableHead>
+                  <TableHead className="w-[130px]">Origem</TableHead>
+                  <TableHead className="w-[170px]">Consultor</TableHead>
+                  <TableHead className="w-[170px]">Key user</TableHead>
                 </TableRow>
-              ) : (
-                filtered.map((q: any) => {
-                  const ans = answerMap.get(q.id);
-                  return (
-                    <TableRow
-                      key={q.id}
-                      className="cursor-pointer transition-colors hover:bg-muted/70"
-                      tabIndex={0}
-                      onClick={() => openAnswer(q, ans)}
-                      onKeyDown={event => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          openAnswer(q, ans);
-                        }
-                      }}
+              </TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={11}
+                      className="text-center text-muted-foreground py-8"
                     >
-                      <TableCell>
-                        <Badge variant="outline">{q.module || "-"}</Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {q.category || "-"}
-                      </TableCell>
-                      <TableCell className="max-w-[300px]">
-                        <p className="truncate">{q.question}</p>
-                        {q.scopeItemIds?.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {q.scopeItemIds.map((id: string) => {
-                              const item = scopeItems.find(
-                                (scope: any) => scope.id === id
-                              );
-                              return item ? (
-                                <Badge
-                                  key={id}
-                                  variant="secondary"
-                                  className="text-[10px]"
-                                >
-                                  {item.code || item.name}
-                                </Badge>
-                              ) : null;
-                            })}
-                          </div>
-                        )}
-                        {String((ans as any)?.answer || "").trim() ? (
-                          <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                            <MessageSquare className="h-3 w-3" />
-                            {String((ans as any).answer || "").slice(0, 50)}...
+                      Nenhuma pergunta encontrada para os filtros selecionados.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filtered.map((q: any) => {
+                    const ans = answerMap.get(q.id);
+                    return (
+                      <TableRow
+                        key={q.id}
+                        className="cursor-pointer transition-colors hover:bg-muted/70"
+                        tabIndex={0}
+                        onClick={() => openAnswer(q, ans)}
+                        onKeyDown={event => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openAnswer(q, ans);
+                          }
+                        }}
+                      >
+                        <TableCell className="align-top">
+                          {q.active === 0 ? (
+                            <Badge variant="secondary">Inativa</Badge>
+                          ) : String((ans as any)?.answer || "").trim() ? (
+                            <Badge className="bg-green-100 text-green-800">
+                              Respondida
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">Pendente</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="flex gap-1 align-top">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={event => {
+                              event.stopPropagation();
+                              openAnswer(q, ans);
+                            }}
+                            title="Visualizar e responder"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                          {canManageBdcq && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={event => {
+                                event.stopPropagation();
+                                openQuestionForm(q);
+                              }}
+                              title="Editar pergunta"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {ans && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={event => {
+                                event.stopPropagation();
+                                setShowHistory(ans);
+                              }}
+                              title="Histórico da resposta"
+                            >
+                              <History className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canManageBdcq && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={event => {
+                                event.stopPropagation();
+                                deleteQ.mutate({ id: q.id });
+                              }}
+                              title="Excluir pergunta"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top">
+                          <p className="line-clamp-3 break-words font-medium">
+                            {q.question}
                           </p>
-                        ) : null}
-                        {Array.isArray((ans as any)?.attachments) &&
-                          (ans as any).attachments.length > 0 && (
-                            <p className="mt-1 flex items-center gap-1 text-xs text-blue-600">
-                              <Paperclip className="h-3 w-3" />
-                              {(ans as any).attachments.length} anexo(s)
+                          {q.category && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {q.category}
                             </p>
                           )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {resourceMap.get(q.consultantResourceId)?.name || (
-                          <span className="text-muted-foreground">
-                            Não definido
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {keyUserMap.get(q.keyUserId)?.name || (
-                          <span className="text-muted-foreground">
-                            Não definido
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {String((ans as any)?.answer || "").trim() ? (
-                          <Badge className="bg-green-100 text-green-800">
-                            Respondida
+                          {String((ans as any)?.answer || "").trim() ? (
+                            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                              <MessageSquare className="h-3 w-3" />
+                              {String((ans as any).answer || "").slice(0, 50)}
+                              ...
+                            </p>
+                          ) : null}
+                          {Array.isArray((ans as any)?.attachments) &&
+                            (ans as any).attachments.length > 0 && (
+                              <p className="mt-1 flex items-center gap-1 text-xs text-blue-600">
+                                <Paperclip className="h-3 w-3" />
+                                {(ans as any).attachments.length} anexo(s)
+                              </p>
+                            )}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant="outline">{q.module || "-"}</Badge>
+                        </TableCell>
+                        <TableCell className="break-words align-top font-mono text-xs">
+                          {q.sapId || "—"}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge
+                            variant={q.level === "L2" ? "default" : "secondary"}
+                          >
+                            {q.level || "—"}
                           </Badge>
-                        ) : (
-                          <Badge variant="outline">Pendente</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={event => {
-                            event.stopPropagation();
-                            openAnswer(q, ans);
-                          }}
-                          title="Visualizar e responder"
-                        >
-                          <MessageSquare className="h-4 w-4" />
-                        </Button>
-                        {ans && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={event => {
-                              event.stopPropagation();
-                              setShowHistory(ans);
-                            }}
-                            title="Histórico da resposta"
-                          >
-                            <History className="h-4 w-4" />
-                          </Button>
-                        )}
-                        {canManageBdcq && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={event => {
-                              event.stopPropagation();
-                              deleteQ.mutate({ id: q.id });
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-sm">
+                          <p>{q.area || "—"}</p>
+                          {q.topic && (
+                            <p className="text-xs text-muted-foreground">
+                              {q.topic}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-xs">
+                          {q.scopeItemIds?.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {q.scopeItemIds.map((id: string) => {
+                                const item = scopeItems.find(
+                                  (scope: any) => scope.id === id
+                                );
+                                return item ? (
+                                  <Badge
+                                    key={id}
+                                    variant="secondary"
+                                    className="text-[10px]"
+                                  >
+                                    {item.code || item.name}
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          ) : (
+                            "Geral do módulo"
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-xs">
+                          <Badge variant="outline">
+                            {q.source ||
+                              (q.isDefault ? "Standard SAP" : "manual")}
+                          </Badge>
+                          {q.sourceRelease && (
+                            <p className="mt-1 text-muted-foreground">
+                              {q.sourceRelease}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-sm">
+                          {resourceMap.get(q.consultantResourceId)?.name || (
+                            <span className="text-muted-foreground">
+                              Não definido
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-normal align-top text-sm">
+                          {keyUserMap.get(q.keyUserId)?.name || (
+                            <span className="text-muted-foreground">
+                              Não definido
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Página {page + 1}</p>
+        <p className="text-sm text-muted-foreground">
+          Página {page + 1} de{" "}
+          {Math.max(1, Math.ceil((questionResult?.total || 0) / PAGE_SIZE))}
+        </p>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -867,37 +1314,86 @@ export default function BDCQPage() {
       </div>
 
       {/* Add Question Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent>
+      <Dialog
+        open={showAdd}
+        onOpenChange={open => {
+          setShowAdd(open);
+          if (!open) setForm(emptyQuestionForm());
+        }}
+      >
+        <DialogContent className="max-h-[92vh] w-[96vw] max-w-[1500px] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nova Pergunta BDCQ</DialogTitle>
+            <DialogTitle>
+              {form.id ? "Editar pergunta BDCQ" : "Nova pergunta BDCQ"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             <div>
-              <Label>Pergunta *</Label>
+              <Label>Pergunta em português *</Label>
               <Textarea
+                rows={4}
                 value={form.question}
                 onChange={e =>
                   setForm(f => ({ ...f, question: e.target.value }))
                 }
               />
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Pergunta original</Label>
+              <Textarea
+                rows={3}
+                value={form.questionOriginal}
+                onChange={e =>
+                  setForm(f => ({ ...f, questionOriginal: e.target.value }))
+                }
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label>Frente/Módulo</Label>
                 <Select
-                  value={form.module}
-                  onValueChange={v => setForm(f => ({ ...f, module: v }))}
+                  value={form.module || "none"}
+                  onValueChange={v =>
+                    setForm(f => ({ ...f, module: v === "none" ? "" : v }))
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Sem módulo</SelectItem>
+                    {form.module && !moduleOptions.includes(form.module) && (
+                      <SelectItem value={form.module}>{form.module}</SelectItem>
+                    )}
                     {moduleOptions.map(module => (
                       <SelectItem key={module} value={module}>
                         {module}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>SAP ID</Label>
+                <Input
+                  value={form.sapId}
+                  onChange={e =>
+                    setForm(f => ({ ...f, sapId: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Level</Label>
+                <Select
+                  value={form.level || "L3"}
+                  onValueChange={level => setForm(f => ({ ...f, level }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="L2">L2</SelectItem>
+                    <SelectItem value="L3">L3</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -908,9 +1404,89 @@ export default function BDCQPage() {
                   onChange={e =>
                     setForm(f => ({ ...f, category: e.target.value }))
                   }
-                  placeholder="Pricing, Purchasing..."
                 />
               </div>
+              <div>
+                <Label>Processo</Label>
+                <Input
+                  value={form.process}
+                  onChange={e =>
+                    setForm(f => ({ ...f, process: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Área</Label>
+                <Input
+                  value={form.area}
+                  onChange={e => setForm(f => ({ ...f, area: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>Tópico</Label>
+                <Input
+                  value={form.topic}
+                  onChange={e =>
+                    setForm(f => ({ ...f, topic: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Referência SSCUI</Label>
+                <Input
+                  value={form.sscuiReference}
+                  onChange={e =>
+                    setForm(f => ({ ...f, sscuiReference: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Origem</Label>
+                <Input
+                  value={form.source}
+                  onChange={e =>
+                    setForm(f => ({ ...f, source: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Arquivo de origem</Label>
+                <Input
+                  value={form.sourceFile}
+                  onChange={e =>
+                    setForm(f => ({ ...f, sourceFile: e.target.value }))
+                  }
+                />
+              </div>
+              <div>
+                <Label>Release da fonte</Label>
+                <Input
+                  value={form.sourceRelease}
+                  onChange={e =>
+                    setForm(f => ({ ...f, sourceRelease: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Definição do tópico</Label>
+              <Textarea
+                rows={3}
+                value={form.topicDefinition}
+                onChange={e =>
+                  setForm(f => ({ ...f, topicDefinition: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <Label>Solução</Label>
+              <Textarea
+                rows={3}
+                value={form.solution}
+                onChange={e =>
+                  setForm(f => ({ ...f, solution: e.target.value }))
+                }
+              />
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -1009,23 +1585,38 @@ export default function BDCQPage() {
                 )}
               </div>
             </div>
+            <div className="flex flex-wrap gap-6 rounded-md border p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={form.required}
+                  onCheckedChange={required =>
+                    setForm(current => ({ ...current, required }))
+                  }
+                />
+                Obrigatória
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch
+                  checked={form.active === 1}
+                  onCheckedChange={active =>
+                    setForm(current => ({ ...current, active: active ? 1 : 0 }))
+                  }
+                />
+                Ativa
+              </label>
+            </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>
+              Cancelar
+            </Button>
             <Button
-              onClick={() =>
-                createQ.mutate({
-                  projectId: PROJECT_ID,
-                  module: form.module || "Geral",
-                  question: form.question,
-                  category: form.category,
-                  scopeItemIds: form.scopeItemIds,
-                  consultantResourceId: form.consultantResourceId,
-                  keyUserId: form.keyUserId,
-                })
+              onClick={saveQuestion}
+              disabled={
+                !form.question.trim() || createQ.isPending || updateQ.isPending
               }
-              disabled={!form.question}
             >
-              Criar
+              {form.id ? "Salvar alterações" : "Criar pergunta"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1420,10 +2011,84 @@ export default function BDCQPage() {
                 {showAnswer.category && (
                   <Badge variant="secondary">{showAnswer.category}</Badge>
                 )}
+                {showAnswer.sapId && (
+                  <Badge variant="outline">SAP ID: {showAnswer.sapId}</Badge>
+                )}
+                {showAnswer.level && <Badge>{showAnswer.level}</Badge>}
+                <Badge variant="outline">
+                  {showAnswer.source ||
+                    (showAnswer.isDefault ? "Standard SAP" : "manual")}
+                </Badge>
+                {showAnswer.active === 0 && (
+                  <Badge variant="secondary">Inativa</Badge>
+                )}
               </div>
               <p className="whitespace-pre-wrap text-base font-medium leading-relaxed">
                 {showAnswer.question}
               </p>
+              {showAnswer.questionOriginal && (
+                <details className="rounded-md border bg-background p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Ver pergunta original
+                  </summary>
+                  <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
+                    {showAnswer.questionOriginal}
+                  </p>
+                </details>
+              )}
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                {showAnswer.process && (
+                  <p>
+                    <span className="font-medium">Processo:</span>{" "}
+                    {showAnswer.process}
+                  </p>
+                )}
+                {showAnswer.sscuiReference && (
+                  <p>
+                    <span className="font-medium">SSCUI:</span>{" "}
+                    {showAnswer.sscuiReference}
+                  </p>
+                )}
+                {showAnswer.area && (
+                  <p>
+                    <span className="font-medium">Área:</span> {showAnswer.area}
+                  </p>
+                )}
+                {showAnswer.topic && (
+                  <p>
+                    <span className="font-medium">Tópico:</span>{" "}
+                    {showAnswer.topic}
+                  </p>
+                )}
+                {showAnswer.sourceFile && (
+                  <p>
+                    <span className="font-medium">Arquivo:</span>{" "}
+                    {showAnswer.sourceFile}
+                  </p>
+                )}
+                {showAnswer.sourceRelease && (
+                  <p>
+                    <span className="font-medium">Release:</span>{" "}
+                    {showAnswer.sourceRelease}
+                  </p>
+                )}
+              </div>
+              {showAnswer.topicDefinition && (
+                <div className="text-sm">
+                  <p className="font-medium">Definição do tópico</p>
+                  <p className="whitespace-pre-wrap text-muted-foreground">
+                    {showAnswer.topicDefinition}
+                  </p>
+                </div>
+              )}
+              {showAnswer.solution && (
+                <div className="text-sm">
+                  <p className="font-medium">Solução</p>
+                  <p className="whitespace-pre-wrap text-muted-foreground">
+                    {showAnswer.solution}
+                  </p>
+                </div>
+              )}
               {showAnswer.scopeItemIds?.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {showAnswer.scopeItemIds.map((id: string) => {
@@ -1507,7 +2172,18 @@ export default function BDCQPage() {
                       ownerForm.keyUserId === (showAnswer?.keyUserId || ""))
                   }
                   onClick={() =>
-                    updateQ.mutate({ id: showAnswer.id, data: ownerForm })
+                    updateQ.mutate(
+                      { id: showAnswer.id, data: ownerForm },
+                      {
+                        onSuccess: async () => {
+                          await refetchQ();
+                          setShowAnswer((current: any) =>
+                            current ? { ...current, ...ownerForm } : current
+                          );
+                          toast.success("Responsáveis atualizados");
+                        },
+                      }
+                    )
                   }
                 >
                   Salvar responsáveis
@@ -1800,6 +2476,57 @@ export default function BDCQPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={Boolean(importResult)}
+        onOpenChange={open => {
+          if (!open) setImportResult(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Resultado da importação BDCQ</DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-4">
+              <div className="grid gap-2 sm:grid-cols-4">
+                {[
+                  ["Perguntas criadas", importResult.added],
+                  ["Perguntas atualizadas", importResult.updated],
+                  ["Respostas atualizadas", importResult.answersUpdated],
+                  ["Avisos", importResult.warningCount],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-md border p-3">
+                    <p className="text-2xl font-semibold">{value}</p>
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                  </div>
+                ))}
+              </div>
+              {importResult.warnings?.length ? (
+                <div className="space-y-2">
+                  <h3 className="font-medium">Detalhes dos avisos</h3>
+                  {importResult.warnings.map((warning: any, index: number) => (
+                    <div
+                      key={`${warning.row}-${index}`}
+                      className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900"
+                    >
+                      <span className="font-medium">Linha {warning.row}:</span>{" "}
+                      {warning.message}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  Arquivo processado sem avisos.
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setImportResult(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!showHistory} onOpenChange={() => setShowHistory(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -1814,6 +2541,37 @@ export default function BDCQPage() {
               Respondido por {showHistory?.answeredBy || "Não informado"}
             </p>
           </div>
+          <div className="rounded-md border border-dashed p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium">Versão original</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sem resposta — retorna a pergunta para o status Pendente.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  restoreOriginalAnswer.isPending ||
+                  !String(showHistory?.answer || "").trim()
+                }
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Voltar esta pergunta ao estado original, sem resposta?"
+                    )
+                  )
+                    restoreOriginalAnswer.mutate({
+                      answerId: showHistory.id,
+                    });
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Voltar sem resposta
+              </Button>
+            </div>
+          </div>
           {answerHistory.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Ainda não existem versões anteriores.
@@ -1822,11 +2580,32 @@ export default function BDCQPage() {
             <div className="space-y-3">
               {answerHistory.map((version: any) => (
                 <div key={version.id} className="rounded-md border p-3">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-medium">Versão anterior</p>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(version.createdAt).toLocaleString("pt-BR")}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(version.createdAt).toLocaleString("pt-BR")}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={restoreAnswerVersion.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Restaurar esta versão como a resposta atual?"
+                            )
+                          )
+                            restoreAnswerVersion.mutate({
+                              answerId: showHistory.id,
+                              historyId: version.id,
+                            });
+                        }}
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Restaurar
+                      </Button>
+                    </div>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm">
                     {version.answer}
@@ -1842,5 +2621,64 @@ export default function BDCQPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function FilterMenu({
+  label,
+  values,
+  selected,
+  onChange,
+  labelFor = value => value,
+}: {
+  label: string;
+  values: string[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+  labelFor?: (value: string) => string;
+}) {
+  const options = [...new Set(values.filter(Boolean))].sort((left, right) =>
+    labelFor(left).localeCompare(labelFor(right), "pt-BR")
+  );
+  return (
+    <details className="group relative">
+      <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium shadow-sm hover:bg-accent [&::-webkit-details-marker]:hidden">
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        {label}
+        {selected.length > 0 && (
+          <Badge className="ml-1 h-5 min-w-5 justify-center px-1">
+            {selected.length}
+          </Badge>
+        )}
+      </summary>
+      <div className="absolute right-0 z-50 mt-1 max-h-72 min-w-56 overflow-y-auto rounded-md border bg-popover p-2 text-popover-foreground shadow-lg">
+        {options.length === 0 ? (
+          <p className="p-2 text-xs text-muted-foreground">
+            Sem opções disponíveis.
+          </p>
+        ) : (
+          options.map(value => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+            >
+              <Checkbox
+                checked={selected.includes(value)}
+                onCheckedChange={() =>
+                  onChange(
+                    selected.includes(value)
+                      ? selected.filter(item => item !== value)
+                      : [...selected, value]
+                  )
+                }
+              />
+              <span className="max-w-72 whitespace-normal">
+                {labelFor(value)}
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+    </details>
   );
 }

@@ -17,13 +17,17 @@ export async function flushActivityEmailOutbox(limit = 25) {
   const users = await plannerStore.listAppUsers();
   for (const notification of pending.rows) {
     const user = users.find(item => item.id === notification.userId);
-    if (!user?.email) {
+    const resource = !user && String(notification.userId).startsWith("resource:")
+      ? await plannerStore.getResourceById(String(notification.userId).slice("resource:".length))
+      : null;
+    const email = user?.email || resource?.email || "";
+    if (!email) {
       await db.query(`UPDATE "activity_notifications" SET "emailStatus" = 'skipped', "lastEmailError" = 'Usuário sem e-mail' WHERE "id" = $1`, [notification.id]);
       continue;
     }
     try {
       if (ENV.emailDeliveryMode === "log") {
-        console.info(`[Activity email] ${user.email}: ${notification.title}`);
+        console.info(`[Activity email] ${email}: ${notification.title}`);
       } else {
         if (!ENV.resendApiKey || !ENV.emailFrom) throw new Error("RESEND_API_KEY/EMAIL_FROM não configurados");
         const response = await fetch("https://api.resend.com/emails", {
@@ -31,7 +35,7 @@ export async function flushActivityEmailOutbox(limit = 25) {
           headers: { Authorization: `Bearer ${ENV.resendApiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             from: ENV.emailFrom,
-            to: user.email,
+            to: email,
             subject: `[TechBoard+] ${notification.title}`,
             text: `${notification.message}\n\nAbra a atividade no TechBoard+.`,
             html: `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2>${escapeHtml(notification.title)}</h2><p>${escapeHtml(notification.message)}</p><p>Abra a atividade no TechBoard+ para acompanhar.</p></div>`,

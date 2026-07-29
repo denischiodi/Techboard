@@ -72,12 +72,6 @@ jobs:
           pnpm install --frozen-lockfile
           npm install --global @railway/cli
 
-      - name: Database migration strategy
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
-        run: |
-          echo "Migrations run inside the Railway service during application startup."
-          echo "GitHub-hosted runners cannot resolve Railway private PostgreSQL DNS."
-
       - name: Deploy
         if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         run: railway up --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --ci

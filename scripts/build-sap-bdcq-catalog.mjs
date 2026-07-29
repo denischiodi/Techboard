@@ -3,7 +3,9 @@ import path from "node:path";
 import process from "node:process";
 import xlsx from "xlsx";
 
-const positionalArgs = process.argv.slice(2).filter(value => !value.startsWith("--"));
+const positionalArgs = process.argv
+  .slice(2)
+  .filter(value => !value.startsWith("--"));
 const sourceDir =
   positionalArgs[0] ||
   "/Users/DENIS/Library/CloudStorage/OneDrive-Pessoal/Denis Chiodi/Empresas/Consultoria SAP/Seidor/SCOPE ITEMS/BDCQ";
@@ -55,7 +57,10 @@ function moduleForFile(fileName) {
 function findQuestionSheet(workbook) {
   const preferred = workbook.SheetNames.find(name => {
     const normalized = normalizeHeader(name);
-    return normalized.includes("accelerator") || normalized.includes("content details");
+    return (
+      normalized.includes("accelerator") ||
+      normalized.includes("content details")
+    );
   });
   if (preferred) return preferred;
   return workbook.SheetNames.find(name => {
@@ -112,10 +117,15 @@ async function translate(value) {
     const response = await fetch(url);
     if (response.ok) {
       const payload = await response.json();
-      return payload[0].map(part => part[0]).join("").trim();
+      return payload[0]
+        .map(part => part[0])
+        .join("")
+        .trim();
     }
     if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 5)
-      throw new Error(`Falha ao traduzir (${response.status}): ${value.slice(0, 80)}`);
+      throw new Error(
+        `Falha ao traduzir (${response.status}): ${value.slice(0, 80)}`
+      );
     await new Promise(resolve => setTimeout(resolve, attempt * 750));
   }
   return value;
@@ -246,7 +256,9 @@ if (translateEnabled && pending.length) {
     const translatedValue = await translate(value);
     completed++;
     if (completed % 100 === 0)
-      console.log(`Traduzidos ${completed}/${pending.length} textos pendentes.`);
+      console.log(
+        `Traduzidos ${completed}/${pending.length} textos pendentes.`
+      );
     return translatedValue;
   });
   pending.forEach((value, index) => {

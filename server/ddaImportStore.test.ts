@@ -91,15 +91,8 @@ describe("DDA partial import persistence", () => {
     const importedItems = queries.filter(item =>
       item.sql.includes('INSERT INTO "dda_import_items"')
     );
-    expect(importedItems.every(item => item.sql.includes("$12::boolean"))).toBe(
-      true
-    );
-    expect(importedItems.map(item => item.values[11])).toEqual([
-      true,
-      true,
-      false,
-      false,
-    ]);
+    expect(importedItems.every(item => item.sql.includes("$12::boolean"))).toBe(true);
+    expect(importedItems.map(item => item.values[11])).toEqual([true, true, false, false]);
     expect(queries.some(item => item.sql === "COMMIT")).toBe(true);
   });
 

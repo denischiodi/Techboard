@@ -20,6 +20,7 @@ import {
   workflowWorkshopTemplates as workshopTemplateLibrary,
   workflowTestCases,
   workflowTestSteps,
+  workshopLearningPatterns,
 } from "../../drizzle/schema";
 
 const identifierPattern = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -332,6 +333,20 @@ export async function updateBdcqQuestion(
       "module",
       "category",
       "question",
+      "questionOriginal",
+      "sapId",
+      "level",
+      "process",
+      "sscuiReference",
+      "area",
+      "topic",
+      "topicDefinition",
+      "solution",
+      "source",
+      "sourceFile",
+      "sourceRelease",
+      "active",
+      "metadataInitialized",
       "templateId",
       "scopeItemIds",
       "consultantResourceId",
@@ -644,6 +659,20 @@ export async function listBdcqAnswerHistory(answerId: string) {
   );
   return result.rows as Array<typeof bdcqAnswerHistory.$inferSelect>;
 }
+export async function getBdcqAnswerHistoryVersion(
+  answerId: string,
+  historyId: string
+) {
+  const pool = getPgPool();
+  if (!pool) return null;
+  const result = await pool.query(
+    `SELECT * FROM "bdcq_answer_history"
+     WHERE "id" = $1 AND "answerId" = $2
+     LIMIT 1`,
+    [historyId, answerId]
+  );
+  return (result.rows[0] as typeof bdcqAnswerHistory.$inferSelect) || null;
+}
 export async function deleteBdcqAnswer(id: string) {
   return deleteRow("bdcq_answers", id);
 }
@@ -677,7 +706,6 @@ export async function createWorkshop(data: typeof workshops.$inferInsert) {
     "prerequisites",
     "requiredRoles",
     "presentationFiles",
-    "attachments",
   ]);
 }
 export async function updateWorkshop(
@@ -699,12 +727,14 @@ export async function updateWorkshop(
       "duration",
       "participants",
       "participantEmails",
+      "consultantResourceId",
+      "responsible",
+      "learningKey",
       "agenda",
       "expectedOutcomes",
       "prerequisites",
       "requiredRoles",
       "presentationFiles",
-      "attachments",
       "templateId",
       "source",
       "status",
@@ -720,12 +750,85 @@ export async function updateWorkshop(
       "prerequisites",
       "requiredRoles",
       "presentationFiles",
-      "attachments",
     ]
   );
 }
 export async function deleteWorkshop(id: string) {
   return deleteRow("workshops", id);
+}
+
+export async function listWorkshopLearningPatterns(modules: string[] = []) {
+  const pool = getPgPool();
+  if (!pool) return [] as Array<typeof workshopLearningPatterns.$inferSelect>;
+  const result = modules.length
+    ? await pool.query(
+        `SELECT * FROM "workshop_learning_patterns"
+         WHERE "decision" IN ('confirmed','edited') AND ("module" = ANY($1) OR "module" = '')
+         ORDER BY "confidence" DESC,"usageCount" DESC,"updatedAt" DESC LIMIT 200`,
+        [modules]
+      )
+    : await pool.query(
+        `SELECT * FROM "workshop_learning_patterns"
+         WHERE "decision" IN ('confirmed','edited')
+         ORDER BY "confidence" DESC,"usageCount" DESC,"updatedAt" DESC LIMIT 200`
+      );
+  return result.rows;
+}
+
+export async function saveWorkshopLearningPattern(input: {
+  id: string;
+  projectId: string;
+  workshopId: string;
+  learningKey: string;
+  module: string;
+  scopeItemCodes: string[];
+  title: string;
+  objective: string;
+  content: string;
+  duration: string;
+  agenda: string[];
+  expectedOutcomes: string[];
+  prerequisites: string[];
+  requiredRoles: string[];
+  decision: "confirmed" | "edited" | "discarded";
+  confidence: number;
+  createdBy: string;
+}) {
+  const pool = getPgPool();
+  if (!pool) return input;
+  const result = await pool.query(
+    `INSERT INTO "workshop_learning_patterns"
+      ("id","projectId","workshopId","learningKey","module","scopeItemCodes","title","objective","content","duration","agenda","expectedOutcomes","prerequisites","requiredRoles","decision","confidence","createdBy")
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb,$15,$16,$17)
+     ON CONFLICT ("workshopId") WHERE "workshopId" <> '' DO UPDATE SET
+      "learningKey"=EXCLUDED."learningKey","module"=EXCLUDED."module","scopeItemCodes"=EXCLUDED."scopeItemCodes",
+      "title"=EXCLUDED."title","objective"=EXCLUDED."objective","content"=EXCLUDED."content",
+      "duration"=EXCLUDED."duration","agenda"=EXCLUDED."agenda","expectedOutcomes"=EXCLUDED."expectedOutcomes",
+      "prerequisites"=EXCLUDED."prerequisites","requiredRoles"=EXCLUDED."requiredRoles",
+      "decision"=EXCLUDED."decision","confidence"=GREATEST("workshop_learning_patterns"."confidence",EXCLUDED."confidence"),
+      "usageCount"="workshop_learning_patterns"."usageCount"+1,"updatedAt"=now()
+     RETURNING *`,
+    [
+      input.id,
+      input.projectId,
+      input.workshopId,
+      input.learningKey,
+      input.module,
+      JSON.stringify(input.scopeItemCodes),
+      input.title,
+      input.objective,
+      input.content,
+      input.duration,
+      JSON.stringify(input.agenda),
+      JSON.stringify(input.expectedOutcomes),
+      JSON.stringify(input.prerequisites),
+      JSON.stringify(input.requiredRoles),
+      input.decision,
+      input.confidence,
+      input.createdBy,
+    ]
+  );
+  return result.rows[0];
 }
 
 export async function listWorkshopTemplates() {
@@ -828,26 +931,17 @@ export async function listMinutesByProject(projectId: string) {
   return result.rows as Array<typeof meetingMinutes.$inferSelect>;
 }
 export async function createMinutes(data: typeof meetingMinutes.$inferInsert) {
-  return insertRow("meeting_minutes", data, ["structuredContent"]);
+  return insertRow("meeting_minutes", data);
 }
 export async function updateMinutes(
   id: string,
   data: Partial<typeof meetingMinutes.$inferInsert>
 ) {
-  return updateRow(
-    "meeting_minutes",
-    id,
-    data,
-    [
-      "content",
-      "generatedBy",
-      "version",
-      "structuredContent",
-      "docxUrl",
-      "pdfUrl",
-    ],
-    ["structuredContent"]
-  );
+  return updateRow("meeting_minutes", id, data, [
+    "content",
+    "generatedBy",
+    "version",
+  ]);
 }
 
 // ===== DCD Documents =====
@@ -993,17 +1087,17 @@ export async function listGaps(
     Array<typeof gaps.$inferSelect>
   >;
 }
-export async function getGap(id: string) {
-  const pool = getPgPool();
-  if (!pool) return null;
-  const result = await pool.query(
-    'SELECT * FROM "gaps" WHERE "id"=$1 AND "archivedAt" IS NULL LIMIT 1',
-    [id]
-  );
-  return (result.rows[0] as typeof gaps.$inferSelect | undefined) || null;
-}
 export async function createGap(data: typeof gaps.$inferInsert) {
   return insertRow("gaps", data, ["modules", "attachments"]);
+}
+export async function getGap(id: string) {
+  const pool = getPgPool();
+  if (!pool) return undefined;
+  const result = await pool.query(
+    'SELECT * FROM "gaps" WHERE "id"=$1 AND "archivedAt" IS NULL',
+    [id]
+  );
+  return result.rows[0] as typeof gaps.$inferSelect | undefined;
 }
 export async function updateGap(
   id: string,

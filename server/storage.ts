@@ -4,7 +4,7 @@
 
 import { ENV } from "./_core/env";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { appendFile, mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -129,6 +129,22 @@ export async function storageValidateUpload(relKey: string, expectedSize: number
   if (!file) throw new Error("ZIP não encontrado após o envio");
   if (file.size !== expectedSize)
     throw new Error(`ZIP incompleto: esperado ${expectedSize} bytes, recebido ${file.size}`);
+}
+
+export async function storageRead(relKey: string): Promise<Buffer> {
+  if (!ENV.forgeApiUrl || !ENV.forgeApiKey)
+    return readFile(localStoragePath(relKey));
+  const url = await storageGetSignedUrl(relKey);
+  const response = await fetch(url);
+  if (!response.ok)
+    throw new Error(`Não foi possível validar o arquivo enviado (${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+export async function storageDeleteLocal(relKey: string) {
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) return;
+  await unlink(localStoragePath(relKey)).catch(() => undefined);
+  await unlink(`${localStoragePath(relKey)}.uploading`).catch(() => undefined);
 }
 
 export async function storagePut(

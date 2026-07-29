@@ -123,6 +123,14 @@ async function startServer() {
   void resumePendingSapImports().catch(error =>
     console.warn("Falha ao retomar importações SAP", error)
   );
+  const sapImportTimer = setInterval(
+    () =>
+      void resumePendingSapImports().catch(error =>
+        console.warn("Falha ao retomar importações SAP", error)
+      ),
+    5 * 60 * 1000
+  );
+  sapImportTimer.unref();
   const templatePublicationTimer = setInterval(
     () => void runTemplatePublisher(),
     5 * 60 * 1000

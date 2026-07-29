@@ -41,15 +41,7 @@ const memoryHistory = new Map<string, ActivityHistoryEvent[]>();
 const memoryNotifications: ActivityNotification[] = [];
 const memoryNotificationKeys = new Set<string>();
 const memorySequenceCounters = new Map<string, number>();
-const memorySuppressions = new Map<
-  string,
-  {
-    activityId: string;
-    reason: string;
-    createdByUserId: string;
-    restoredAt: string;
-  }
->();
+const memorySuppressions = new Map<string, { activityId: string; reason: string; createdByUserId: string; restoredAt: string }>();
 
 function id(prefix: string) {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
@@ -186,9 +178,7 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
     plannerStore.listProjects(),
     plannerStore.listResources(),
   ]);
-  const usersById = new Map<string, Pick<AppUser, "id" | "name" | "email">>(
-    users.map(user => [user.id, user])
-  );
+  const usersById = new Map<string, Pick<AppUser, "id" | "name" | "email">>(users.map(user => [user.id, user]));
   for (const resource of resources) {
     usersById.set(`resource:${resource.id}`, {
       id: `resource:${resource.id}`,
@@ -555,44 +545,19 @@ export async function adminArchiveActivity(
   originSnapshot: Record<string, unknown> | null = null
 ) {
   const current = await getActivity(activityId);
-  if (!current || current.archivedAt)
-    throw new Error(
-      current ? "Atividade já arquivada" : "Atividade não encontrada"
-    );
+  if (!current || current.archivedAt) throw new Error(current ? "Atividade já arquivada" : "Atividade não encontrada");
   const snapshot = {
-    title: current.title,
-    description: current.description,
-    status: current.status,
-    priority: current.priority,
-    assigneeUserId: current.assigneeUserId,
-    dueDate: current.dueDate,
-    sourceResolved: current.sourceResolved,
-    origin: originSnapshot,
+    title: current.title, description: current.description, status: current.status,
+    priority: current.priority, assigneeUserId: current.assigneeUserId,
+    dueDate: current.dueDate, sourceResolved: current.sourceResolved, origin: originSnapshot,
   };
   const db = getPgPool();
   if (!db) {
     const row = memoryActivities.get(activityId)!;
-    memoryActivities.set(activityId, {
-      ...row,
-      archivedAt: now(),
-      archivedByUserId: actor.id,
-      archiveReason: reason,
-      archiveSnapshot: snapshot,
-      updatedAt: now(),
-    });
+    memoryActivities.set(activityId, { ...row, archivedAt: now(), archivedByUserId: actor.id, archiveReason: reason, archiveSnapshot: snapshot, updatedAt: now() });
     if (current.sourceType !== "manual")
-      memorySuppressions.set(`${current.sourceType}:${current.sourceKey}`, {
-        activityId,
-        reason,
-        createdByUserId: actor.id,
-        restoredAt: "",
-      });
-    await addHistory(activityId, actor, "ADMIN_ARCHIVED", {
-      reason,
-      before: snapshot,
-      sourceType: current.sourceType,
-      sourceKey: current.sourceKey,
-    });
+      memorySuppressions.set(`${current.sourceType}:${current.sourceKey}`, { activityId, reason, createdByUserId: actor.id, restoredAt: "" });
+    await addHistory(activityId, actor, "ADMIN_ARCHIVED", { reason, before: snapshot, sourceType: current.sourceType, sourceKey: current.sourceKey });
   } else {
     const client = await db.connect();
     try {
@@ -604,38 +569,15 @@ export async function adminArchiveActivity(
       if (current.sourceType !== "manual")
         await client.query(
           'INSERT INTO "activity_source_suppressions" ("id","sourceType","sourceKey","activityId","reason","createdByUserId") VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT ("sourceType","sourceKey") WHERE "restoredAt" IS NULL DO NOTHING',
-          [
-            id("asu"),
-            current.sourceType,
-            current.sourceKey,
-            activityId,
-            reason,
-            actor.id,
-          ]
+          [id("asu"), current.sourceType, current.sourceKey, activityId, reason, actor.id]
         );
       await client.query(
         'INSERT INTO "activity_history" ("id","activityId","actorUserId","actorName","action","details") VALUES ($1,$2,$3,$4,$5,$6)',
-        [
-          id("ahe"),
-          activityId,
-          actor.id,
-          actor.name,
-          "ADMIN_ARCHIVED",
-          JSON.stringify({
-            reason,
-            before: snapshot,
-            sourceType: current.sourceType,
-            sourceKey: current.sourceKey,
-          }),
-        ]
+        [id("ahe"), activityId, actor.id, actor.name, "ADMIN_ARCHIVED", JSON.stringify({ reason, before: snapshot, sourceType: current.sourceType, sourceKey: current.sourceKey })]
       );
       await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
   return getActivity(activityId);
 }
@@ -646,71 +588,32 @@ export async function adminRestoreActivity(
   reason: string
 ) {
   const current = await getActivity(activityId);
-  if (!current || !current.archivedAt)
-    throw new Error(
-      current ? "Atividade não está arquivada" : "Atividade não encontrada"
-    );
+  if (!current || !current.archivedAt) throw new Error(current ? "Atividade não está arquivada" : "Atividade não encontrada");
   const db = getPgPool();
   if (!db) {
     const row = memoryActivities.get(activityId)!;
-    memoryActivities.set(activityId, {
-      ...row,
-      archivedAt: "",
-      archivedByUserId: "",
-      archiveReason: "",
-      updatedAt: now(),
-    });
-    const suppression = memorySuppressions.get(
-      `${current.sourceType}:${current.sourceKey}`
-    );
+    memoryActivities.set(activityId, { ...row, archivedAt: "", archivedByUserId: "", archiveReason: "", updatedAt: now() });
+    const suppression = memorySuppressions.get(`${current.sourceType}:${current.sourceKey}`);
     if (suppression) suppression.restoredAt = now();
-    await addHistory(activityId, actor, "ADMIN_RESTORED", {
-      reason,
-      restoredSnapshot: current.archiveSnapshot,
-      archivedAt: current.archivedAt,
-    });
+    await addHistory(activityId, actor, "ADMIN_RESTORED", { reason, restoredSnapshot: current.archiveSnapshot, archivedAt: current.archivedAt });
   } else {
     const client = await db.connect();
     try {
       await client.query("BEGIN");
-      await client.query(
-        `UPDATE "activities" SET "archivedAt"=NULL,"archivedByUserId"='',"archiveReason"='',"updatedAt"=now() WHERE "id"=$1`,
-        [activityId]
-      );
-      await client.query(
-        'UPDATE "activity_source_suppressions" SET "restoredAt"=now() WHERE "activityId"=$1 AND "restoredAt" IS NULL',
-        [activityId]
-      );
+      await client.query(`UPDATE "activities" SET "archivedAt"=NULL,"archivedByUserId"='',"archiveReason"='',"updatedAt"=now() WHERE "id"=$1`, [activityId]);
+      await client.query('UPDATE "activity_source_suppressions" SET "restoredAt"=now() WHERE "activityId"=$1 AND "restoredAt" IS NULL', [activityId]);
       await client.query(
         'INSERT INTO "activity_history" ("id","activityId","actorUserId","actorName","action","details") VALUES ($1,$2,$3,$4,$5,$6)',
-        [
-          id("ahe"),
-          activityId,
-          actor.id,
-          actor.name,
-          "ADMIN_RESTORED",
-          JSON.stringify({
-            reason,
-            restoredSnapshot: current.archiveSnapshot,
-            archivedAt: current.archivedAt,
-          }),
-        ]
+        [id("ahe"), activityId, actor.id, actor.name, "ADMIN_RESTORED", JSON.stringify({ reason, restoredSnapshot: current.archiveSnapshot, archivedAt: current.archivedAt })]
       );
       await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
   return getActivity(activityId);
 }
 
-export async function isSourceSuppressed(
-  sourceType: ActivitySourceType,
-  sourceKey: string
-) {
+export async function isSourceSuppressed(sourceType: ActivitySourceType, sourceKey: string) {
   const db = getPgPool();
   if (!db) {
     const item = memorySuppressions.get(`${sourceType}:${sourceKey}`);

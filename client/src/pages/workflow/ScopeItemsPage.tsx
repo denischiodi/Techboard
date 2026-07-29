@@ -320,7 +320,7 @@ export default function ScopeItemsPage() {
                           {new Date(item.resolvedAt).toLocaleString("pt-BR")}
                         </span>
                       )}
-                      <span className="sm:ml-auto text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground sm:ml-auto">
                         {item.attempts} tentativa(s)
                       </span>
                     </div>

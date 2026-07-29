@@ -63,30 +63,11 @@ export const projects = mysqlTable("projects", {
   logoUrl: text("logoUrl"),
   client: varchar("client", { length: 255 }).notNull().default(""),
   manager: varchar("manager", { length: 255 }).notNull().default(""),
-  projectCode: varchar("projectCode", { length: 255 }).notNull().default(""),
-  clientManager: varchar("clientManager", { length: 255 })
-    .notNull()
-    .default(""),
-  seidorExecutive: varchar("seidorExecutive", { length: 255 })
-    .notNull()
-    .default(""),
-  sponsor: varchar("sponsor", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Planejado"),
   startDate: varchar("startDate", { length: 10 }).notNull().default(""),
   endDate: varchar("endDate", { length: 10 }).notNull().default(""),
   fronts: json("fronts").$type<string[]>().default([]),
   notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-
-export const projectCostCodes = mysqlTable("project_cost_codes", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  projectId: varchar("projectId", { length: 64 }).notNull(),
-  code: varchar("code", { length: 128 }).notNull(),
-  description: varchar("description", { length: 512 }).notNull().default(""),
-  active: mysqlBoolean("active").notNull().default(true),
-  isPrimary: mysqlBoolean("isPrimary").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -395,6 +376,19 @@ export const bdcqQuestions = mysqlTable("bdcq_questions", {
   module: varchar("module", { length: 128 }).notNull(),
   category: varchar("category", { length: 256 }).notNull().default(""),
   question: text("question").notNull(),
+  questionOriginal: text("questionOriginal"),
+  sapId: varchar("sapId", { length: 64 }).notNull().default(""),
+  level: varchar("level", { length: 16 }).notNull().default("L3"),
+  process: varchar("process", { length: 256 }).notNull().default(""),
+  sscuiReference: text("sscuiReference"),
+  area: varchar("area", { length: 256 }).notNull().default(""),
+  topic: varchar("topic", { length: 256 }).notNull().default(""),
+  topicDefinition: text("topicDefinition"),
+  solution: text("solution"),
+  sourceFile: varchar("sourceFile", { length: 512 }).notNull().default(""),
+  sourceRelease: varchar("sourceRelease", { length: 64 }).notNull().default(""),
+  active: int("active").notNull().default(1),
+  metadataInitialized: int("metadataInitialized").notNull().default(0),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
   occurrenceKey: varchar("occurrenceKey", { length: 512 })
@@ -562,11 +556,6 @@ export type WorkshopPresentationFile = {
   contentType: string;
 };
 
-export type WorkshopAttachment = WorkshopPresentationFile & {
-  size: number;
-  uploadedAt: string;
-};
-
 export const workflowWorkshopTemplates = mysqlTable(
   "workflow_workshop_templates",
   {
@@ -637,7 +626,6 @@ export const workshops = mysqlTable("workshops", {
   presentationFiles: json("presentationFiles")
     .$type<WorkshopPresentationFile[]>()
     .default([]),
-  attachments: json("attachments").$type<WorkshopAttachment[]>().default([]),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
   occurrenceKey: varchar("occurrenceKey", { length: 512 })
@@ -648,6 +636,11 @@ export const workshops = mysqlTable("workshops", {
   duration: varchar("duration", { length: 64 }).notNull().default(""),
   participants: json("participants").$type<string[]>().default([]),
   participantEmails: json("participantEmails").$type<string[]>().default([]),
+  consultantResourceId: varchar("consultantResourceId", { length: 64 })
+    .notNull()
+    .default(""),
+  responsible: varchar("responsible", { length: 255 }).notNull().default(""),
+  learningKey: varchar("learningKey", { length: 128 }).notNull().default(""),
   agenda: json("agenda").$type<string[]>().default([]),
   status: varchar("status", { length: 64 }).notNull().default("Planejado"),
   notes: text("notes"),
@@ -655,6 +648,36 @@ export const workshops = mysqlTable("workshops", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+export const workshopLearningPatterns = mysqlTable(
+  "workshop_learning_patterns",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    projectId: varchar("projectId", { length: 64 }).notNull(),
+    workshopId: varchar("workshopId", { length: 64 }).notNull().default(""),
+    learningKey: varchar("learningKey", { length: 128 }).notNull(),
+    module: varchar("module", { length: 128 }).notNull().default(""),
+    phase: varchar("phase", { length: 64 }).notNull().default("Explore"),
+    stage: varchar("stage", { length: 128 }).notNull().default("workshops"),
+    scopeItemCodes: json("scopeItemCodes").$type<string[]>().default([]),
+    title: varchar("title", { length: 512 }).notNull(),
+    objective: text("objective"),
+    content: text("content"),
+    duration: varchar("duration", { length: 64 }).notNull().default(""),
+    agenda: json("agenda").$type<string[]>().default([]),
+    expectedOutcomes: json("expectedOutcomes").$type<string[]>().default([]),
+    prerequisites: json("prerequisites").$type<string[]>().default([]),
+    requiredRoles: json("requiredRoles").$type<string[]>().default([]),
+    decision: varchar("decision", { length: 32 })
+      .notNull()
+      .default("confirmed"),
+    confidence: int("confidence").notNull().default(50),
+    usageCount: int("usageCount").notNull().default(1),
+    createdBy: varchar("createdBy", { length: 64 }).notNull().default(""),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
 
 /**
  * Workshop Transcripts - transcrições de workshops
@@ -675,11 +698,6 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   id: varchar("id", { length: 64 }).primaryKey(),
   workshopId: varchar("workshopId", { length: 64 }).notNull(),
   content: text("content").notNull(),
-  structuredContent: json("structuredContent")
-    .$type<Record<string, unknown>>()
-    .default({}),
-  docxUrl: varchar("docxUrl", { length: 1024 }).notNull().default(""),
-  pdfUrl: varchar("pdfUrl", { length: 1024 }).notNull().default(""),
   generatedBy: varchar("generatedBy", { length: 64 }).notNull().default("ai"),
   version: int("version").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -779,7 +797,9 @@ export const gaps = mysqlTable("gaps", {
     .notNull()
     .default(""),
   smdNotes: text("smdNotes"),
-  smdApprovedAt: varchar("smdApprovedAt", { length: 10 }).notNull().default(""),
+  smdApprovedAt: varchar("smdApprovedAt", { length: 10 })
+    .notNull()
+    .default(""),
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
