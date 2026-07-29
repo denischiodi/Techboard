@@ -198,11 +198,11 @@ export async function importDdaBatch(input: {
       }
 
       await client.query(
-        `INSERT INTO "dda_import_items"
+         `INSERT INTO "dda_import_items"
           ("id","batchId","projectId","code","normalizedCode","status","result",
            "errorCode","errorMessage","payload","attempts","scopeItemId","resolvedAt")
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,1,$11,
-           CASE WHEN $6='resolved' THEN now() ELSE NULL END)`,
+           CASE WHEN $12::boolean THEN now() ELSE NULL END)`,
         [
           itemId,
           batchId,
@@ -215,6 +215,7 @@ export async function importDdaBatch(input: {
           errorMessage,
           JSON.stringify(item),
           scopeItemId,
+          status === "resolved",
         ]
       );
     }
