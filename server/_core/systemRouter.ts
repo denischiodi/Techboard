@@ -3,6 +3,11 @@ import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
 import { checkDatabaseReadiness } from "../db";
 import { ENV } from "./env";
+import { flushActivityEmailOutbox } from "../activityMailer";
+import {
+  getActivityEmailNotificationsEnabled,
+  setActivityEmailNotificationsEnabled,
+} from "../systemSettings";
 
 export const systemRouter = router({
   health: publicProcedure
@@ -16,7 +21,10 @@ export const systemRouter = router({
     })),
 
   diagnostics: adminProcedure.query(async () => {
-    const database = await checkDatabaseReadiness();
+    const [database, activityEmailNotificationsEnabled] = await Promise.all([
+      checkDatabaseReadiness(),
+      getActivityEmailNotificationsEnabled(),
+    ]);
     return {
       checkedAt: new Date().toISOString(),
       version: process.env.npm_package_version || "1.0.0",
@@ -26,35 +34,73 @@ export const systemRouter = router({
           id: "database",
           label: "Banco de dados",
           status: database.ok ? "operational" : "error",
-          detail: database.ok ? `Resposta em ${database.latencyMs} ms` : database.reason,
+          detail: database.ok
+            ? `Resposta em ${database.latencyMs} ms`
+            : database.reason,
         },
         {
           id: "storage",
           label: "Armazenamento",
           status: ENV.forgeApiUrl && ENV.forgeApiKey ? "configured" : "warning",
-          detail: ENV.forgeApiUrl && ENV.forgeApiKey ? "Serviço configurado" : "Credenciais de armazenamento ausentes",
+          detail:
+            ENV.forgeApiUrl && ENV.forgeApiKey
+              ? "Serviço configurado"
+              : "Credenciais de armazenamento ausentes",
         },
         {
           id: "email",
           label: "E-mail",
-          status: ENV.emailDeliveryMode === "log" || (ENV.resendApiKey && ENV.emailFrom) ? "configured" : "warning",
-          detail: ENV.emailDeliveryMode === "log" ? "Modo de desenvolvimento" : ENV.resendApiKey && ENV.emailFrom ? "Provedor configurado" : "Provedor não configurado",
+          status:
+            !activityEmailNotificationsEnabled ||
+            ENV.emailDeliveryMode === "log" ||
+            (ENV.resendApiKey && ENV.emailFrom)
+              ? "configured"
+              : "warning",
+          detail: !activityEmailNotificationsEnabled
+            ? "Notificações por e-mail desativadas"
+            : ENV.emailDeliveryMode === "log"
+              ? "Modo de desenvolvimento"
+              : ENV.resendApiKey && ENV.emailFrom
+                ? "Provedor configurado"
+                : "Provedor não configurado",
         },
         {
           id: "ai",
           label: "Inteligência artificial",
           status: ENV.forgeApiUrl && ENV.forgeApiKey ? "configured" : "warning",
-          detail: ENV.forgeApiUrl && ENV.forgeApiKey ? "Gateway configurado" : "Gateway não configurado",
+          detail:
+            ENV.forgeApiUrl && ENV.forgeApiKey
+              ? "Gateway configurado"
+              : "Gateway não configurado",
         },
         {
           id: "authentication",
           label: "Autenticação",
-          status: ENV.emailAuthEnabled || ENV.demoAuthEnabled ? "operational" : "warning",
-          detail: ENV.demoAuthEnabled ? "Modo demonstração" : ENV.emailAuthEnabled ? "Código por e-mail habilitado" : "Somente OAuth",
+          status:
+            ENV.emailAuthEnabled || ENV.demoAuthEnabled
+              ? "operational"
+              : "warning",
+          detail: ENV.demoAuthEnabled
+            ? "Modo demonstração"
+            : ENV.emailAuthEnabled
+              ? "Código por e-mail habilitado"
+              : "Somente OAuth",
         },
       ] as const,
     };
   }),
+
+  emailNotificationSettings: adminProcedure.query(async () => ({
+    enabled: await getActivityEmailNotificationsEnabled(),
+  })),
+
+  updateEmailNotificationSettings: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ input }) => {
+      await setActivityEmailNotificationsEnabled(input.enabled);
+      if (!input.enabled) await flushActivityEmailOutbox();
+      return { enabled: input.enabled };
+    }),
 
   notifyOwner: adminProcedure
     .input(
