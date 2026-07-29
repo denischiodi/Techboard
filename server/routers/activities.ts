@@ -121,10 +121,6 @@ async function assertEligibleUser(activity: Pick<Activity, "scope" | "projectId"
   if (!userId) return;
   const users = await plannerStore.listAppUsers();
   if (!users.some(user => user.id === userId && user.active)) throw new TRPCError({ code: "BAD_REQUEST", message: "Usuário responsável inválido" });
-  if (activity.scope === "project") {
-    const project = await plannerStore.getProjectById(activity.projectId);
-    if (!project || !(await projectMemberIds(project)).has(userId)) throw new TRPCError({ code: "BAD_REQUEST", message: "O responsável deve participar do projeto" });
-  }
 }
 
 async function notify(activity: Activity, actor: AppUser, eventType: string, message: string, extraUserIds: string[] = []) {
@@ -293,11 +289,16 @@ export const activitiesRouter = router({
 
   eligibleUsers: activityViewProcedure.input(z.object({ scope: z.enum(["project", "internal"]), projectId: z.string().default("") })).query(async ({ ctx, input }) => {
     const users = (await plannerStore.listAppUsers()).filter(user => user.active);
-    if (input.scope === "internal") return users;
+    if (input.scope === "internal") return users.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     const project = await plannerStore.getProjectById(input.projectId);
     if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
-    const ids = await projectMemberIds(project);
-    return users.filter(user => ids.has(user.id));
+    const allocations = await plannerStore.listAllocations();
+    const allocatedResourceIds = new Set(allocations.filter(item => item.projectId === project.id).map(item => item.resourceId));
+    return users.sort((a, b) => {
+      const aAllocated = allocatedResourceIds.has(a.resourceId || "");
+      const bAllocated = allocatedResourceIds.has(b.resourceId || "");
+      return Number(bAllocated) - Number(aAllocated) || a.name.localeCompare(b.name, "pt-BR");
+    });
   }),
 
   create: activityCreateProcedure.input(z.object({
@@ -313,7 +314,8 @@ export const activitiesRouter = router({
       if (ctx.appUser.role !== "admin" && !members.has(ctx.appUser.id)) forbidden("Somente membros do projeto podem criar atividades nele");
       const membership = await projectAccess.getProjectMembership(input.projectId, ctx.appUser.id);
       if (membership && !membership.capabilities?.createActivity) forbidden("Seu perfil não permite criar atividades neste projeto");
-      for (const userId of [input.assigneeUserId, ...input.participantUserIds]) if (userId && !members.has(userId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Todos os envolvidos devem participar do projeto" });
+      await assertEligibleUser({ scope: "project", projectId: project.id }, input.assigneeUserId);
+      for (const userId of input.participantUserIds) if (userId && !members.has(userId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Todos os participantes devem participar do projeto" });
     } else {
       for (const userId of [input.assigneeUserId, ...input.participantUserIds]) await assertEligibleUser({ scope: "internal", projectId: "" }, userId);
     }
@@ -335,7 +337,8 @@ export const activitiesRouter = router({
           if (!project) throw new Error("Projeto não encontrado");
           const members = await projectMemberIds(project);
           if (ctx.appUser.role !== "admin" && !members.has(ctx.appUser.id)) throw new Error("Usuário não participa do projeto");
-          for (const userId of [row.assigneeUserId, ...participantUserIds]) if (userId && !members.has(userId)) throw new Error(`Usuário ${userId} não participa do projeto`);
+          await assertEligibleUser({ scope: "project", projectId: project.id }, row.assigneeUserId);
+          for (const userId of participantUserIds) if (userId && !members.has(userId)) throw new Error(`Participante ${userId} não participa do projeto`);
         } else {
           for (const userId of [row.assigneeUserId, ...participantUserIds]) await assertEligibleUser({ scope: "internal", projectId: "" }, userId);
         }

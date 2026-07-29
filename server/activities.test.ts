@@ -15,6 +15,24 @@ function context(email: string): TrpcContext {
 }
 
 describe("kanban de atividades", () => {
+  it("lista todos os recursos ativos, priorizando os alocados no projeto", async () => {
+    const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    const users = await caller.activities.eligibleUsers({ scope: "project", projectId: "p1" });
+
+    expect(users.map(user => user.id)).toContain("u1");
+    expect(users.findIndex(user => user.id === "u3")).toBeLessThan(users.findIndex(user => user.id === "u1"));
+  });
+
+  it("permite atribuir uma atividade do projeto a um recurso ativo não alocado", async () => {
+    const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    const created = await caller.activities.create({
+      scope: "project", projectId: "p1", title: "Apoio externo ao projeto", description: "",
+      priority: "Média", assigneeUserId: "u1", participantUserIds: [], dueDate: "",
+    });
+
+    expect(created.assigneeUserId).toBe("u1");
+  });
+
   it("permite ao membro do projeto criar e acompanhar uma atividade", async () => {
     const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const created = await caller.activities.create({
