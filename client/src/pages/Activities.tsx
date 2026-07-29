@@ -7,16 +7,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
-  AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, Bookmark, CalendarDays, CheckCircle2, Circle, Download, ExternalLink, FileUp,
-  GripVertical, History, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users, X,
+  AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, Bookmark, CalendarDays, Check, CheckCircle2, ChevronsUpDown, Circle, Download,
+  ExternalLink, FileUp, GripVertical, History, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users, X,
 } from "lucide-react";
 import type { Activity, ActivityPriority, ActivityScope, ActivityStage, ActivityStatus } from "../../../shared/types";
 
@@ -24,6 +27,63 @@ const STATUSES: ActivityStatus[] = ["A fazer", "Em andamento", "Bloqueada", "Em 
 const PRIORITIES: ActivityPriority[] = ["Baixa", "Média", "Alta", "Crítica"];
 const STAGES: ActivityStage[] = ["DCD", "BDCQ", "TESTE", "GERAL"];
 const SAVED_VIEWS_KEY = "techtask-saved-views";
+
+type EligibleUser = {
+  id: string;
+  name: string;
+  email: string;
+  profile?: string;
+  modules?: string[];
+  allocatedToProject?: boolean;
+};
+
+function AssigneePicker({ value, people, onChange, disabled = false }: { value: string; people: EligibleUser[]; onChange: (value: string) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const selected = people.find(person => person.id === value);
+  const allocated = people.filter(person => person.allocatedToProject);
+  const others = people.filter(person => !person.allocatedToProject);
+  const renderPerson = (person: EligibleUser) => (
+    <CommandItem
+      key={person.id}
+      value={`${person.name} ${person.email} ${person.profile || ""} ${(person.modules || []).join(" ")}`}
+      onSelect={() => { onChange(person.id); setOpen(false); }}
+      className="gap-2 py-2"
+    >
+      <Check className={cn("h-4 w-4 shrink-0", value === person.id ? "opacity-100" : "opacity-0")} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">{person.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{[person.profile, person.email].filter(Boolean).join(" · ")}</p>
+      </div>
+      {(person.modules || []).length > 0 && <div className="flex max-w-32 flex-wrap justify-end gap-1">{person.modules!.slice(0, 2).map(module => <Badge key={module} variant="secondary" className="px-1.5 text-[10px]">{module}</Badge>)}</div>}
+    </CommandItem>
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled} className="w-full justify-between font-normal">
+          <span className={cn("truncate", !selected && "text-muted-foreground")}>{selected?.name || "Sem responsável"}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(460px,var(--radix-popover-trigger-width))] min-w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Buscar nome, e-mail, perfil ou módulo..." />
+          <CommandList className="max-h-80">
+            <CommandEmpty>Nenhum recurso encontrado.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="sem responsável" onSelect={() => { onChange(""); setOpen(false); }}>
+                <Check className={cn("mr-2 h-4 w-4", !value ? "opacity-100" : "opacity-0")} />
+                Sem responsável
+              </CommandItem>
+            </CommandGroup>
+            {allocated.length > 0 && <><CommandSeparator /><CommandGroup heading={`Alocados no projeto (${allocated.length})`}>{allocated.map(renderPerson)}</CommandGroup></>}
+            {others.length > 0 && <><CommandSeparator /><CommandGroup heading={`Demais recursos (${others.length})`}>{others.map(renderPerson)}</CommandGroup></>}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 type SavedActivityView = {
   id: string;
@@ -367,7 +427,7 @@ export default function Activities() {
         {createForm.scope === "project" && <div><Label>Etapa de origem</Label><Select value={createForm.stage} onValueChange={(stage: ActivityStage) => setCreateForm(form => ({ ...form, stage }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STAGES.map(stage => <SelectItem key={stage} value={stage}>{stage}</SelectItem>)}</SelectContent></Select></div>}
         <div><Label>Título</Label><Input value={createForm.title} onChange={event => setCreateForm(form => ({ ...form, title: event.target.value }))} /></div>
         <div><Label>Descrição</Label><Textarea value={createForm.description} onChange={event => setCreateForm(form => ({ ...form, description: event.target.value }))} /></div>
-        <div className="grid gap-3 sm:grid-cols-2"><div><Label>Responsável</Label><Select value={createForm.assigneeUserId || "none"} onValueChange={value => setCreateForm(form => ({ ...form, assigneeUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligibleUsers.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prioridade</Label><Select value={createForm.priority} onValueChange={(priority: ActivityPriority) => setCreateForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div></div>
+        <div className="grid gap-3 sm:grid-cols-2"><div><Label>Responsável</Label><AssigneePicker value={createForm.assigneeUserId} people={eligibleUsers.data || []} disabled={eligibleUsers.isLoading || (createForm.scope === "project" && !createForm.projectId)} onChange={assigneeUserId => setCreateForm(form => ({ ...form, assigneeUserId }))} /><p className="mt-1 text-xs text-muted-foreground">Alocados no projeto aparecem primeiro. Busque também por módulo.</p></div><div><Label>Prioridade</Label><Select value={createForm.priority} onValueChange={(priority: ActivityPriority) => setCreateForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div></div>
         <div><Label>Prazo</Label><Input type="date" value={createForm.dueDate} onChange={event => setCreateForm(form => ({ ...form, dueDate: event.target.value }))} /></div>
       </div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button disabled={!createForm.title.trim() || (createForm.scope === "project" && !createForm.projectId) || createActivity.isPending} onClick={() => createActivity.mutate({ ...createForm, participantUserIds: [] })}>Criar</Button></DialogFooter></DialogContent></Dialog>
 
@@ -454,13 +514,13 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}{isAdmin && <Button className="ml-auto" size="sm" variant="destructive" disabled={archive.isPending} onClick={() => setArchiveOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Arquivar item</Button>}</div>
       {!canEdit && <Button variant="outline" onClick={() => join.mutate({ id: activity.id })}><UserPlus className="mr-2 h-4 w-4" />Participar para colaborar</Button>}
-      <div className="grid gap-3 sm:grid-cols-3"><div><Label>Status</Label><Select disabled={!canEdit} value={activity.status} onValueChange={(status: ActivityStatus) => saveUpdate({ status })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div><Label>Responsável</Label><Select disabled={!canEdit} value={activity.assigneeUserId || "none"} onValueChange={assigneeUserId => saveUpdate({ assigneeUserId: assigneeUserId === "none" ? "" : assigneeUserId })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligible.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></div><div><Label>Prazo</Label><Input disabled={!canEdit} type="date" value={activity.dueDate} onChange={event => saveUpdate({ dueDate: event.target.value })} /></div></div>
+      <div className="grid gap-3 sm:grid-cols-3"><div><Label>Status</Label><Select disabled={!canEdit} value={activity.status} onValueChange={(status: ActivityStatus) => saveUpdate({ status })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div><Label>Responsável</Label><AssigneePicker disabled={!canEdit || eligible.isLoading} value={activity.assigneeUserId} people={eligible.data || []} onChange={assigneeUserId => saveUpdate({ assigneeUserId })} /></div><div><Label>Prazo</Label><Input disabled={!canEdit} type="date" value={activity.dueDate} onChange={event => saveUpdate({ dueDate: event.target.value })} /></div></div>
       {(activity.sourceType === "manual" || isAdmin) && canEdit ? <section className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">Conteúdo {activity.sourceType !== "manual" && <Badge variant="outline" className="ml-2">Personalização administrativa</Badge>}</h3><div><Label>Título</Label><Input value={contentForm.title} onChange={event => setContentForm(form => ({ ...form, title: event.target.value }))} /></div><div><Label>Descrição</Label><Textarea value={contentForm.description} onChange={event => setContentForm(form => ({ ...form, description: event.target.value }))} /></div><div className="max-w-48"><Label>Prioridade</Label><Select value={contentForm.priority} onValueChange={(priority: ActivityPriority) => setContentForm(form => ({ ...form, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></div><Button disabled={!contentForm.title.trim()} onClick={() => saveUpdate(contentForm)}>Salvar conteúdo</Button></section> : <div><Label>Descrição</Label><p className="mt-1 whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 text-sm">{activity.description || "Sem descrição"}</p></div>}
       {activity.sourceUrl && <Button variant="outline" onClick={() => onNavigate(activity.sourceUrl)}><ExternalLink className="mr-2 h-4 w-4" />Abrir origem</Button>}
 
       <section className="space-y-3 rounded-xl border p-4"><div className="flex items-center justify-between"><h3 className="flex items-center gap-2 font-semibold"><ListChecks className="h-4 w-4" />Checklist</h3><span className="text-sm text-muted-foreground">{completeCount} de {activity.checklist.length}</span></div>{activity.checklist.length > 0 && <Progress value={(completeCount / activity.checklist.length) * 100} />}
         <div className="space-y-2">{activity.checklist.map((item, index) => <div key={item.id} className="flex items-start gap-2 rounded-lg border p-2"><Checkbox disabled={!canEdit} checked={item.completed} onCheckedChange={completed => checklistUpdate.mutate({ activityId: activity.id, itemId: item.id, data: { completed: Boolean(completed) } })} className="mt-1" /><div className="min-w-0 flex-1"><p className={`text-sm ${item.completed ? "text-muted-foreground line-through" : ""}`}>{item.description}{item.required && <span className="ml-1 text-red-500">*</span>}</p><p className="text-xs text-muted-foreground">{item.assigneeName || "Sem responsável"}{item.dueDate ? ` · ${item.dueDate}` : ""}</p></div>{canEdit && <div className="flex"><Button variant="ghost" size="icon" onClick={() => moveItem(index, -1)} disabled={index === 0}><ArrowUp className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" onClick={() => moveItem(index, 1)} disabled={index === activity.checklist.length - 1}><ArrowDown className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" onClick={() => checklistDelete.mutate({ activityId: activity.id, itemId: item.id })}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button></div>}</div>)}</div>
-        {canEdit && <div className="grid gap-2 border-t pt-3 sm:grid-cols-2"><Input value={checkForm.description} onChange={event => setCheckForm(form => ({ ...form, description: event.target.value }))} placeholder="Novo item do checklist" /><Select value={checkForm.assigneeUserId || "none"} onValueChange={value => setCheckForm(form => ({ ...form, assigneeUserId: value === "none" ? "" : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{(eligible.data || []).map(person => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select><Input type="date" value={checkForm.dueDate} onChange={event => setCheckForm(form => ({ ...form, dueDate: event.target.value }))} /><label className="flex items-center gap-2 text-sm"><Checkbox checked={checkForm.required} onCheckedChange={required => setCheckForm(form => ({ ...form, required: Boolean(required) }))} />Item obrigatório</label><Button className="sm:col-span-2" disabled={!checkForm.description.trim()} onClick={() => checklistCreate.mutate({ activityId: activity.id, ...checkForm })}><Plus className="mr-2 h-4 w-4" />Adicionar item</Button></div>}
+        {canEdit && <div className="grid gap-2 border-t pt-3 sm:grid-cols-2"><Input value={checkForm.description} onChange={event => setCheckForm(form => ({ ...form, description: event.target.value }))} placeholder="Novo item do checklist" /><AssigneePicker value={checkForm.assigneeUserId} people={eligible.data || []} disabled={eligible.isLoading} onChange={assigneeUserId => setCheckForm(form => ({ ...form, assigneeUserId }))} /><Input type="date" value={checkForm.dueDate} onChange={event => setCheckForm(form => ({ ...form, dueDate: event.target.value }))} /><label className="flex items-center gap-2 text-sm"><Checkbox checked={checkForm.required} onCheckedChange={required => setCheckForm(form => ({ ...form, required: Boolean(required) }))} />Item obrigatório</label><Button className="sm:col-span-2" disabled={!checkForm.description.trim()} onClick={() => checklistCreate.mutate({ activityId: activity.id, ...checkForm })}><Plus className="mr-2 h-4 w-4" />Adicionar item</Button></div>}
         {activity.checklist.some(item => item.required && !item.completed) && <p className="flex items-center gap-2 text-xs text-amber-700"><AlertTriangle className="h-4 w-4" />Itens obrigatórios pendentes impedem a conclusão da atividade.</p>}
       </section>
 

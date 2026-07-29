@@ -152,7 +152,7 @@ function rowFromDb(row: any): ActivityRow {
 
 function checklistFromDb(
   row: any,
-  users: Map<string, AppUser>
+  users: Map<string, Pick<AppUser, "id" | "name" | "email">>
 ): ActivityChecklistItem {
   return {
     id: row.id,
@@ -173,11 +173,19 @@ function checklistFromDb(
 
 async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
   if (rows.length === 0) return [];
-  const [users, projects] = await Promise.all([
+  const [users, projects, resources] = await Promise.all([
     plannerStore.listAppUsers(),
     plannerStore.listProjects(),
+    plannerStore.listResources(),
   ]);
-  const usersById = new Map(users.map(user => [user.id, user]));
+  const usersById = new Map<string, Pick<AppUser, "id" | "name" | "email">>(users.map(user => [user.id, user]));
+  for (const resource of resources) {
+    usersById.set(`resource:${resource.id}`, {
+      id: `resource:${resource.id}`,
+      name: resource.name,
+      email: resource.email,
+    });
+  }
   const projectsById = new Map(projects.map(project => [project.id, project]));
   const db = getPgPool();
 

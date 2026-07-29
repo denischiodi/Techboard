@@ -20,17 +20,23 @@ describe("kanban de atividades", () => {
     const users = await caller.activities.eligibleUsers({ scope: "project", projectId: "p1" });
 
     expect(users.map(user => user.id)).toContain("u1");
+    expect(users.map(user => user.id)).toContain("resource:r5");
     expect(users.findIndex(user => user.id === "u3")).toBeLessThan(users.findIndex(user => user.id === "u1"));
+    expect(users.find(user => user.id === "u3")).toMatchObject({
+      allocatedToProject: true,
+      profile: "Funcional",
+      modules: expect.arrayContaining(["MM"]),
+    });
   });
 
   it("permite atribuir uma atividade do projeto a um recurso ativo não alocado", async () => {
     const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const created = await caller.activities.create({
       scope: "project", projectId: "p1", title: "Apoio externo ao projeto", description: "",
-      priority: "Média", assigneeUserId: "u1", participantUserIds: [], dueDate: "",
+      priority: "Média", assigneeUserId: "resource:r5", participantUserIds: [], dueDate: "",
     });
 
-    expect(created.assigneeUserId).toBe("u1");
+    expect(created).toMatchObject({ assigneeUserId: "resource:r5", assigneeName: "Carlos Ferreira" });
   });
 
   it("permite ao membro do projeto criar e acompanhar uma atividade", async () => {

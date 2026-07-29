@@ -78,7 +78,9 @@ async function managedProject(user: AppUser, project: Project) {
 }
 
 function involved(activity: Activity, user: AppUser) {
-  return activity.creatorUserId === user.id || activity.assigneeUserId === user.id || activity.participantUserIds.includes(user.id);
+  return activity.creatorUserId === user.id || activity.assigneeUserId === user.id ||
+    Boolean(user.resourceId && activity.assigneeUserId === `resource:${user.resourceId}`) ||
+    activity.participantUserIds.includes(user.id);
 }
 
 async function canView(activity: Activity, user: AppUser) {
@@ -119,6 +121,11 @@ async function projectMemberIds(project: Project) {
 
 async function assertEligibleUser(activity: Pick<Activity, "scope" | "projectId">, userId: string) {
   if (!userId) return;
+  if (userId.startsWith("resource:")) {
+    const resource = await plannerStore.getResourceById(userId.slice("resource:".length));
+    if (!resource || resource.status !== "Ativo") throw new TRPCError({ code: "BAD_REQUEST", message: "Recurso responsável inválido" });
+    return;
+  }
   const users = await plannerStore.listAppUsers();
   if (!users.some(user => user.id === userId && user.active)) throw new TRPCError({ code: "BAD_REQUEST", message: "Usuário responsável inválido" });
 }
@@ -289,15 +296,47 @@ export const activitiesRouter = router({
 
   eligibleUsers: activityViewProcedure.input(z.object({ scope: z.enum(["project", "internal"]), projectId: z.string().default("") })).query(async ({ ctx, input }) => {
     const users = (await plannerStore.listAppUsers()).filter(user => user.active);
-    if (input.scope === "internal") return users.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    const resources = (await plannerStore.listResources()).filter(resource => resource.status === "Ativo");
+    const usersByResourceId = new Map(users.filter(user => user.resourceId).map(user => [user.resourceId, user]));
+    const usersByEmail = new Map(users.map(user => [normalize(user.email), user]));
+    const resourceCandidates = resources.map(resource => {
+      const user = usersByResourceId.get(resource.id) || usersByEmail.get(normalize(resource.email));
+      return {
+        id: user?.id || `resource:${resource.id}`,
+        name: resource.name,
+        email: resource.email,
+        resourceId: resource.id,
+        allocatedToProject: false,
+        modules: [...new Set([...(resource.fronts || []), resource.front].filter((module): module is string => Boolean(module)))],
+        profile: resource.profile || "",
+      };
+    });
+    const linkedUserIds = new Set(resourceCandidates.map(candidate => {
+      const linked = usersByResourceId.get(candidate.resourceId) || usersByEmail.get(normalize(candidate.email));
+      return linked?.id;
+    }).filter(Boolean));
+    const candidates = [
+      ...resourceCandidates,
+      ...users.filter(user => !linkedUserIds.has(user.id)).map(user => ({
+        id: user.id, name: user.name, email: user.email, resourceId: user.resourceId || "",
+        allocatedToProject: false, modules: user.teamFronts || [], profile: "",
+      })),
+    ];
+    if (input.scope === "internal") return candidates.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     const project = await plannerStore.getProjectById(input.projectId);
     if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "Projeto não encontrado" });
     const allocations = await plannerStore.listAllocations();
-    const allocatedResourceIds = new Set(allocations.filter(item => item.projectId === project.id).map(item => item.resourceId));
-    return users.sort((a, b) => {
-      const aAllocated = allocatedResourceIds.has(a.resourceId || "");
-      const bAllocated = allocatedResourceIds.has(b.resourceId || "");
-      return Number(bAllocated) - Number(aAllocated) || a.name.localeCompare(b.name, "pt-BR");
+    const projectAllocations = allocations.filter(item => item.projectId === project.id);
+    const allocatedResourceIds = new Set(projectAllocations.map(item => item.resourceId));
+    return candidates.map(candidate => {
+      const allocationModules = projectAllocations.filter(item => item.resourceId === candidate.resourceId).map(item => item.front).filter(Boolean);
+      return {
+        ...candidate,
+        allocatedToProject: allocatedResourceIds.has(candidate.resourceId || ""),
+        modules: [...new Set([...allocationModules, ...candidate.modules])],
+      };
+    }).sort((a, b) => {
+      return Number(b.allocatedToProject) - Number(a.allocatedToProject) || a.name.localeCompare(b.name, "pt-BR");
     });
   }),
 
