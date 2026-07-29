@@ -94,9 +94,9 @@ export async function createManualScope(input: {
   module?: string;
   processArea?: string;
   userId: string;
-  fileName: string;
-  contentType: string;
-  buffer: Buffer;
+  fileName?: string;
+  contentType?: string;
+  buffer?: Buffer;
 }) {
   const pool = getPgPool();
   if (!pool) throw new Error("Banco de dados indisponível");
@@ -124,19 +124,21 @@ export async function createManualScope(input: {
       `${code} ${input.name} ${input.summary || ""} ${input.module || ""} ${input.processArea || ""}`,
     ]
   );
-  try {
-    await addWordAsset({
-      scopeId,
-      userId: input.userId,
-      fileName: input.fileName,
-      contentType: input.contentType,
-      buffer: input.buffer,
-    });
-  } catch (error) {
-    await pool.query('DELETE FROM "sap_scope_catalog" WHERE "id"=$1', [
-      scopeId,
-    ]);
-    throw error;
+  if (input.fileName && input.buffer?.length) {
+    try {
+      await addWordAsset({
+        scopeId,
+        userId: input.userId,
+        fileName: input.fileName,
+        contentType: input.contentType || "",
+        buffer: input.buffer,
+      });
+    } catch (error) {
+      await pool.query('DELETE FROM "sap_scope_catalog" WHERE "id"=$1', [
+        scopeId,
+      ]);
+      throw error;
+    }
   }
   return (
     await pool.query('SELECT * FROM "sap_scope_catalog" WHERE "id"=$1', [

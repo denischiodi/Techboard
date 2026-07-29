@@ -39,20 +39,22 @@ export const sapLibraryRouter = router({
         fileName: z
           .string()
           .trim()
-          .min(1)
           .max(512)
-          .regex(/\.(doc|docx)$/i),
+          .refine(value => !value || /\.(doc|docx)$/i.test(value), "O arquivo deve ser Word")
+          .default(""),
         contentType: z.string().max(255).default(""),
-        fileData: z.string().min(1).max(70_000_000),
+        fileData: z.string().max(70_000_000).default(""),
       })
     )
     .mutation(({ ctx, input }) => {
+      if (Boolean(input.fileName) !== Boolean(input.fileData))
+        throw new Error("Informe o nome e o conteúdo do documento Word");
       const buffer = Buffer.from(
         input.fileData.replace(/^data:[^;]+;base64,/, ""),
         "base64"
       );
-      if (!buffer.length || buffer.length > 50 * 1024 * 1024)
-        throw new Error("O documento Word deve ter entre 1 byte e 50 MB");
+      if (buffer.length > 50 * 1024 * 1024)
+        throw new Error("O documento Word deve ter no máximo 50 MB");
       return library.createManualScope({
         ...input,
         userId: ctx.appUser.id,

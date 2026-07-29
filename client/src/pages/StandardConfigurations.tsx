@@ -1969,7 +1969,7 @@ function SapScopeLibrary() {
         processArea: "",
         wordFile: undefined,
       });
-      toast.success("Scope item cadastrado com documento Word");
+      toast.success("Scope item cadastrado");
     },
     onError: error => toast.error(error.message),
   });
@@ -2076,17 +2076,16 @@ function SapScopeLibrary() {
       reader.readAsDataURL(file);
     });
   const saveScope = async () => {
-    if (!scopeForm.wordFile)
-      return toast.error("Anexe o documento Word do scope item");
+    const wordFile = scopeForm.wordFile;
     createScope.mutate({
       code: scopeForm.code,
       name: scopeForm.name,
       summary: scopeForm.summary,
       module: scopeForm.module,
       processArea: scopeForm.processArea,
-      fileName: scopeForm.wordFile.name,
-      contentType: scopeForm.wordFile.type,
-      fileData: await fileAsDataUrl(scopeForm.wordFile),
+      fileName: wordFile?.name || "",
+      contentType: wordFile?.type || "",
+      fileData: wordFile ? await fileAsDataUrl(wordFile) : "",
     });
   };
   const statusLabel: Record<string, string> = {
@@ -2321,7 +2320,7 @@ function SapScopeLibrary() {
               />
             </div>
             <div className="sm:col-span-2">
-              <Label>Documento Word obrigatório</Label>
+              <Label>Documento Word (opcional)</Label>
               <Input
                 type="file"
                 accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -2342,7 +2341,6 @@ function SapScopeLibrary() {
               disabled={
                 !scopeForm.code ||
                 !scopeForm.name ||
-                !scopeForm.wordFile ||
                 createScope.isPending
               }
               onClick={() => void saveScope()}
