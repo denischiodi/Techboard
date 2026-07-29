@@ -78,12 +78,6 @@ const ownerRoles = [
   { value: "key_user", label: "Key User" },
   { value: "approver", label: "Aprovador" },
 ];
-const approvalModes = [
-  { value: "none", label: "Sem aprovação" },
-  { value: "any", label: "Qualquer aprovador" },
-  { value: "all", label: "Todos os aprovadores" },
-  { value: "minimum", label: "Quórum mínimo" },
-] as const;
 const defaultStages: Record<DeliveryType, string> = {
   activity: "preparation",
   bdcq: "bdcq",
@@ -210,18 +204,27 @@ export default function DeliveryTemplateCatalog({
   const { user } = useAuth();
   const { data: appUser } = trpc.access.getByEmail.useQuery(
     { email: user?.email || "" },
-    { enabled: Boolean(user?.email) },
+    { enabled: Boolean(user?.email) }
   );
   const isTechnicalLead = appUser?.role === "technical_lead";
   const isAdmin = appUser?.role === "admin";
   const managedModules = isTechnicalLead
     ? moduleOptions.filter(module =>
-        (appUser.teamFronts || []).some(front =>
-          String(front).toLocaleUpperCase("pt-BR") === module.toLocaleUpperCase("pt-BR")))
+        (appUser.teamFronts || []).some(
+          front =>
+            String(front).toLocaleUpperCase("pt-BR") ===
+            module.toLocaleUpperCase("pt-BR")
+        )
+      )
     : moduleOptions;
   const visibleScopeOptions = isTechnicalLead
-    ? scopeOptions.filter(item => managedModules.some(module =>
-        module.toLocaleUpperCase("pt-BR") === item.module.toLocaleUpperCase("pt-BR")))
+    ? scopeOptions.filter(item =>
+        managedModules.some(
+          module =>
+            module.toLocaleUpperCase("pt-BR") ===
+            item.module.toLocaleUpperCase("pt-BR")
+        )
+      )
     : scopeOptions;
   const utils = trpc.useUtils();
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -266,20 +269,22 @@ export default function DeliveryTemplateCatalog({
     },
     onError: error => toast.error(error.message),
   });
-  const uploadAttachment = trpc.workflow.delivery.templates.attachments.upload.useMutation({
-    onSuccess: async () => {
-      await utils.workflow.delivery.templates.attachments.list.invalidate();
-      toast.success("Anexo incluído no padrão");
-    },
-    onError: error => toast.error(error.message),
-  });
-  const removeAttachment = trpc.workflow.delivery.templates.attachments.remove.useMutation({
-    onSuccess: async () => {
-      await utils.workflow.delivery.templates.attachments.list.invalidate();
-      toast.success("Anexo removido da versão atual");
-    },
-    onError: error => toast.error(error.message),
-  });
+  const uploadAttachment =
+    trpc.workflow.delivery.templates.attachments.upload.useMutation({
+      onSuccess: async () => {
+        await utils.workflow.delivery.templates.attachments.list.invalidate();
+        toast.success("Anexo incluído no padrão");
+      },
+      onError: error => toast.error(error.message),
+    });
+  const removeAttachment =
+    trpc.workflow.delivery.templates.attachments.remove.useMutation({
+      onSuccess: async () => {
+        await utils.workflow.delivery.templates.attachments.list.invalidate();
+        toast.success("Anexo removido da versão atual");
+      },
+      onError: error => toast.error(error.message),
+    });
   const attachFile = async (file?: File) => {
     if (!file || !form.id) return;
     if (file.size > 50 * 1024 * 1024) {
@@ -329,10 +334,12 @@ export default function DeliveryTemplateCatalog({
 
   const catalogTemplates = useMemo(
     () =>
-      (templates as any[]).filter(template => allowedTypes.includes(template.type)).map(template => ({
-        ...template,
-        _source: "delivery" as const,
-      })),
+      (templates as any[])
+        .filter(template => allowedTypes.includes(template.type))
+        .map(template => ({
+          ...template,
+          _source: "delivery" as const,
+        })),
     [templates, allowedTypes]
   );
 
@@ -405,13 +412,28 @@ export default function DeliveryTemplateCatalog({
       completionCriteria: template.completionCriteria || "",
       effectiveFrom: template.effectiveFrom || "",
       active: template.active !== false,
-      workshopObjective: template.objective || template.payload?.objective || "",
+      workshopObjective:
+        template.objective || template.payload?.objective || "",
       workshopContent: template.content || template.payload?.content || "",
       workshopDuration: template.duration || template.payload?.duration || "",
-      workshopAgenda: (template.agenda || template.payload?.agenda || []).join("\n"),
-      workshopExpectedOutcomes: (template.expectedOutcomes || template.payload?.expectedOutcomes || []).join("\n"),
-      workshopPrerequisites: (template.prerequisites || template.payload?.prerequisites || []).join("\n"),
-      workshopRequiredRoles: (template.requiredRoles || template.payload?.requiredRoles || []).join("\n"),
+      workshopAgenda: (template.agenda || template.payload?.agenda || []).join(
+        "\n"
+      ),
+      workshopExpectedOutcomes: (
+        template.expectedOutcomes ||
+        template.payload?.expectedOutcomes ||
+        []
+      ).join("\n"),
+      workshopPrerequisites: (
+        template.prerequisites ||
+        template.payload?.prerequisites ||
+        []
+      ).join("\n"),
+      workshopRequiredRoles: (
+        template.requiredRoles ||
+        template.payload?.requiredRoles ||
+        []
+      ).join("\n"),
       category: template.payload?.category || "",
       impact: template.payload?.impact || "Médio",
       priority: template.payload?.priority || "Média",
@@ -419,7 +441,9 @@ export default function DeliveryTemplateCatalog({
       weekday: Number(template.payload?.weekday ?? 1),
       monthDay: Number(template.payload?.monthDay ?? 1),
       preconditions: template.payload?.preconditions || "",
-      testSteps: Array.isArray(template.payload?.steps) ? template.payload.steps.join("\n") : template.payload?.steps || "",
+      testSteps: Array.isArray(template.payload?.steps)
+        ? template.payload.steps.join("\n")
+        : template.payload?.steps || "",
       expectedResult: template.payload?.expectedResult || "",
       requiresKeyUser: Boolean(template.payload?.requiresKeyUser),
       source: template._source || "delivery",
@@ -464,38 +488,53 @@ export default function DeliveryTemplateCatalog({
       projectIds: form.projectIds,
       required: form.required,
       sortOrder: form.sortOrder,
-      dependencyTemplateIds: form.dependencyTemplateIds,
+      dependencyTemplateIds: [],
       ownerRole: form.ownerRole,
       dueOffsetDays: form.dueOffsetDays,
-      evidenceRequirements: form.evidenceText
-        .split("\n")
-        .map(item => item.trim())
-        .filter(Boolean),
+      evidenceRequirements: [],
       approvalPolicy: {
-        mode: form.approvalMode,
-        minimumApprovals: form.minimumApprovals,
+        mode: "none" as const,
+        minimumApprovals: 1,
       },
-      completionCriteria: form.completionCriteria,
-      payload: form.type === "workshop" ? {
-        objective: form.workshopObjective,
-        content: form.workshopContent,
-        duration: form.workshopDuration,
-        agenda: form.workshopAgenda.split("\n").map(item => item.trim()).filter(Boolean),
-        expectedOutcomes: form.workshopExpectedOutcomes.split("\n").map(item => item.trim()).filter(Boolean),
-        prerequisites: form.workshopPrerequisites.split("\n").map(item => item.trim()).filter(Boolean),
-        requiredRoles: form.workshopRequiredRoles.split("\n").map(item => item.trim()).filter(Boolean),
-      } : {
-        category: form.category,
-        impact: form.impact,
-        priority: form.priority,
-        recurrence: form.recurrence,
-        weekday: form.weekday,
-        monthDay: form.monthDay,
-        preconditions: form.preconditions,
-        steps: form.testSteps.split("\n").map(item => item.trim()).filter(Boolean),
-        expectedResult: form.expectedResult,
-        requiresKeyUser: form.requiresKeyUser,
-      },
+      completionCriteria: "",
+      payload:
+        form.type === "workshop"
+          ? {
+              objective: form.workshopObjective,
+              content: form.workshopContent,
+              duration: form.workshopDuration,
+              agenda: form.workshopAgenda
+                .split("\n")
+                .map(item => item.trim())
+                .filter(Boolean),
+              expectedOutcomes: form.workshopExpectedOutcomes
+                .split("\n")
+                .map(item => item.trim())
+                .filter(Boolean),
+              prerequisites: form.workshopPrerequisites
+                .split("\n")
+                .map(item => item.trim())
+                .filter(Boolean),
+              requiredRoles: form.workshopRequiredRoles
+                .split("\n")
+                .map(item => item.trim())
+                .filter(Boolean),
+            }
+          : {
+              category: form.category,
+              impact: form.impact,
+              priority: form.priority,
+              recurrence: form.recurrence,
+              weekday: form.weekday,
+              monthDay: form.monthDay,
+              preconditions: form.preconditions,
+              steps: form.testSteps
+                .split("\n")
+                .map(item => item.trim())
+                .filter(Boolean),
+              expectedResult: form.expectedResult,
+              requiresKeyUser: form.requiresKeyUser,
+            },
       effectiveFrom: form.effectiveFrom,
       active: form.active,
     };
@@ -514,59 +553,89 @@ export default function DeliveryTemplateCatalog({
   };
   const canManage = (template: any) => {
     if (!isTechnicalLead) return true;
-    if (template.type === "activity" || template._source === "workshop" || !template.modules?.length) return false;
+    if (
+      template.type === "activity" ||
+      template._source === "workshop" ||
+      !template.modules?.length
+    )
+      return false;
     return template.modules.every((module: string) =>
-      managedModules.some(owned => owned.toLocaleUpperCase("pt-BR") === module.toLocaleUpperCase("pt-BR")));
+      managedModules.some(
+        owned =>
+          owned.toLocaleUpperCase("pt-BR") === module.toLocaleUpperCase("pt-BR")
+      )
+    );
   };
 
   return (
     <div className="space-y-3">
-      {!compactHeader && <Card className="border-blue-200 bg-blue-50/50">
-        <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div>
-            <div className="flex items-center gap-2 font-semibold text-blue-950">
-              <ShieldCheck className="h-5 w-5" />
-              Trilha Mestre de Delivery
+      {!compactHeader && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="grid gap-4 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <div className="flex items-center gap-2 font-semibold text-blue-950">
+                <ShieldCheck className="h-5 w-5" />
+                Trilha Mestre de Delivery
+              </div>
+              <p className="mt-1 text-sm text-blue-900/75">
+                Defina uma vez o que deve ser executado. A trilha combina itens
+                gerais, módulos e scope items sem sobrescrever personalizações
+                dos projetos.
+              </p>
             </div>
-            <p className="mt-1 text-sm text-blue-900/75">
-              Defina uma vez o que deve ser executado. A trilha combina itens
-              gerais, módulos e scope items sem sobrescrever personalizações dos
-              projetos.
-            </p>
+            <Button onClick={() => openNew()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo item da trilha
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {compactHeader && (
+        <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-muted-foreground">
+              {allowedTypes.length === 1
+                ? typeLabels[allowedTypes[0]]
+                : "Padrões desta categoria"}
+            </span>
+            <Badge variant="secondary">
+              {filtered.length} de{" "}
+              {
+                templates.filter((template: any) =>
+                  allowedTypes.includes(template.type)
+                ).length
+              }
+            </Badge>
           </div>
-          <Button onClick={() => openNew()}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo item da trilha
-          </Button>
-        </CardContent>
-      </Card>}
-      {compactHeader && <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">
-            {allowedTypes.length === 1 ? typeLabels[allowedTypes[0]] : "Padrões desta categoria"}
-          </span>
-          <Badge variant="secondary">{filtered.length} de {templates.filter((template: any) => allowedTypes.includes(template.type)).length}</Badge>
-        </div>
-        <Button className="w-full shrink-0 sm:w-auto" onClick={() => openNew()}><Plus className="mr-2 h-4 w-4" />Novo padrão</Button>
-      </div>}
-
-      {allowedTypes.length > 1 && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {allowedTypes.map(type => (
-          <button
-            key={type}
-            type="button"
-            onClick={() => setTypeFilter(type)}
-            className="rounded-lg border bg-card p-3 text-left transition hover:border-primary"
+          <Button
+            className="w-full shrink-0 sm:w-auto"
+            onClick={() => openNew()}
           >
-            <span className="text-xs text-muted-foreground">
-              {typeLabels[type]}
-            </span>
-            <span className="mt-1 block text-2xl font-semibold">
-              {groupedCount.get(type) || 0}
-            </span>
-          </button>
-        ))}
-      </div>}
+            <Plus className="mr-2 h-4 w-4" />
+            Novo padrão
+          </Button>
+        </div>
+      )}
+
+      {allowedTypes.length > 1 && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {allowedTypes.map(type => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setTypeFilter(type)}
+              className="rounded-lg border bg-card p-3 text-left transition hover:border-primary"
+            >
+              <span className="text-xs text-muted-foreground">
+                {typeLabels[type]}
+              </span>
+              <span className="mt-1 block text-2xl font-semibold">
+                {groupedCount.get(type) || 0}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_220px_180px_auto]">
         <div className="relative">
@@ -656,22 +725,28 @@ export default function DeliveryTemplateCatalog({
                     {template.dueOffsetDays || 0}
                   </Badge>
                   <Badge variant="outline">v{template.version || 1}</Badge>
-                  <Badge variant="outline">{template.publicationProjectCount || 0} projeto(s) publicado(s)</Badge>
-                  {template.blockedPublicationCount > 0 && <Badge className="bg-amber-100 text-amber-900">{template.blockedPublicationCount} pendente(s)</Badge>}
-                  {template.lastPublicationStatus && <Badge variant="secondary">Publicação: {template.lastPublicationStatus === "completed" ? "Concluída" : template.lastPublicationStatus === "completed_with_warnings" ? "Com alertas" : template.lastPublicationStatus === "failed" ? "Falhou" : template.lastPublicationStatus === "processing" ? "Processando" : "Aguardando"}</Badge>}
-                  {template.approvalPolicy?.mode !== "none" && (
+                  <Badge variant="outline">
+                    {template.publicationProjectCount || 0} projeto(s)
+                    publicado(s)
+                  </Badge>
+                  {template.blockedPublicationCount > 0 && (
                     <Badge className="bg-amber-100 text-amber-900">
-                      Aprovação:{" "}
-                      {
-                        approvalModes.find(
-                          mode => mode.value === template.approvalPolicy.mode
-                        )?.label
-                      }
+                      {template.blockedPublicationCount} pendente(s)
                     </Badge>
                   )}
-                  {template.evidenceRequirements?.length > 0 && (
-                    <Badge className="bg-emerald-100 text-emerald-900">
-                      {template.evidenceRequirements.length} evidência(s)
+                  {template.lastPublicationStatus && (
+                    <Badge variant="secondary">
+                      Publicação:{" "}
+                      {template.lastPublicationStatus === "completed"
+                        ? "Concluída"
+                        : template.lastPublicationStatus ===
+                            "completed_with_warnings"
+                          ? "Com alertas"
+                          : template.lastPublicationStatus === "failed"
+                            ? "Falhou"
+                            : template.lastPublicationStatus === "processing"
+                              ? "Processando"
+                              : "Aguardando"}
                     </Badge>
                   )}
                 </div>
@@ -706,7 +781,11 @@ export default function DeliveryTemplateCatalog({
                   <Button
                     variant="ghost"
                     size="icon"
-                    title={isAdmin ? "Arquivar padrão" : "Somente administradores podem arquivar padrões"}
+                    title={
+                      isAdmin
+                        ? "Arquivar padrão"
+                        : "Somente administradores podem arquivar padrões"
+                    }
                     disabled={!isAdmin}
                     onClick={() => setArchiveTarget(template)}
                   >
@@ -738,10 +817,12 @@ export default function DeliveryTemplateCatalog({
               <FieldSelect
                 label="Tipo *"
                 value={form.type}
-                values={allowedTypes.filter(value => !isTechnicalLead || value !== "activity").map(value => ({
-                  value,
-                  label: typeLabels[value],
-                }))}
+                values={allowedTypes
+                  .filter(value => !isTechnicalLead || value !== "activity")
+                  .map(value => ({
+                    value,
+                    label: typeLabels[value],
+                  }))}
                 onChange={value =>
                   setForm(current => ({
                     ...current,
@@ -797,7 +878,9 @@ export default function DeliveryTemplateCatalog({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <Label>Anexos do modelo</Label>
-                    <p className="text-xs text-muted-foreground">Word, PDF, PowerPoint ou Excel · até 20 arquivos de 50 MB.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Word, PDF, PowerPoint ou Excel · até 20 arquivos de 50 MB.
+                    </p>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted">
                     <Paperclip className="mr-2 h-4 w-4" />
@@ -816,16 +899,43 @@ export default function DeliveryTemplateCatalog({
                 </div>
                 <div className="space-y-2">
                   {(attachments as any[]).map(file => (
-                    <div key={file.id} className="flex items-center gap-3 rounded-md border p-2 text-sm">
+                    <div
+                      key={file.id}
+                      className="flex items-center gap-3 rounded-md border p-2 text-sm"
+                    >
                       <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <a className="min-w-0 flex-1 truncate text-primary hover:underline" href={file.url} target="_blank" rel="noreferrer">{file.fileName}</a>
-                      <span className="text-xs text-muted-foreground">{Math.max(1, Math.round(Number(file.sizeBytes) / 1024))} KB · v{file.templateVersion}</span>
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeAttachment.mutate({ templateId: form.id, id: file.id })}>
+                      <a
+                        className="min-w-0 flex-1 truncate text-primary hover:underline"
+                        href={file.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {file.fileName}
+                      </a>
+                      <span className="text-xs text-muted-foreground">
+                        {Math.max(1, Math.round(Number(file.sizeBytes) / 1024))}{" "}
+                        KB · v{file.templateVersion}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          removeAttachment.mutate({
+                            templateId: form.id,
+                            id: file.id,
+                          })
+                        }
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
-                  {!attachments.length && <p className="text-sm text-muted-foreground">Nenhum anexo incluído.</p>}
+                  {!attachments.length && (
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum anexo incluído.
+                    </p>
+                  )}
                 </div>
               </section>
             )}
@@ -930,33 +1040,171 @@ export default function DeliveryTemplateCatalog({
 
             {form.type === "bdcq" && (
               <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-                <div><Label>Categoria da pergunta</Label><Input value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value }))} placeholder="Ex.: Compras, Fiscal, Pricing" /></div>
-                <label className="flex items-center gap-2 pt-6"><Switch checked={form.requiresKeyUser} onCheckedChange={requiresKeyUser => setForm(current => ({ ...current, requiresKeyUser }))} /><span className="text-sm font-medium">Exigir Key User responsável</span></label>
-                <p className="text-xs text-muted-foreground sm:col-span-2">Use o título como o texto da pergunta. Ela será publicada diretamente na tabela respondível do BDCQ.</p>
+                <div>
+                  <Label>Categoria da pergunta</Label>
+                  <Input
+                    value={form.category}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        category: event.target.value,
+                      }))
+                    }
+                    placeholder="Ex.: Compras, Fiscal, Pricing"
+                  />
+                </div>
+                <label className="flex items-center gap-2 pt-6">
+                  <Switch
+                    checked={form.requiresKeyUser}
+                    onCheckedChange={requiresKeyUser =>
+                      setForm(current => ({ ...current, requiresKeyUser }))
+                    }
+                  />
+                  <span className="text-sm font-medium">
+                    Exigir Key User responsável
+                  </span>
+                </label>
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Use o título como o texto da pergunta. Ela será publicada
+                  diretamente na tabela respondível do BDCQ.
+                </p>
               </section>
             )}
 
             {form.type === "gap" && (
               <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-                <div><Label>Categoria</Label><Input value={form.category} onChange={event => setForm(current => ({ ...current, category: event.target.value }))} /></div>
-                <FieldSelect label="Impacto inicial" value={form.impact} values={["Baixo", "Médio", "Alto", "Crítico"].map(value => ({ value, label: value }))} onChange={impact => setForm(current => ({ ...current, impact }))} />
+                <div>
+                  <Label>Categoria</Label>
+                  <Input
+                    value={form.category}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        category: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <FieldSelect
+                  label="Impacto inicial"
+                  value={form.impact}
+                  values={["Baixo", "Médio", "Alto", "Crítico"].map(value => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={impact =>
+                    setForm(current => ({ ...current, impact }))
+                  }
+                />
               </section>
             )}
 
             {["unit_test", "cycle_1", "cycle_2"].includes(form.type) && (
               <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-                <div className="sm:col-span-2"><Label>Pré-condições</Label><Textarea rows={2} value={form.preconditions} onChange={event => setForm(current => ({ ...current, preconditions: event.target.value }))} /></div>
-                <div><Label>Passos (um por linha)</Label><Textarea rows={5} value={form.testSteps} onChange={event => setForm(current => ({ ...current, testSteps: event.target.value }))} /></div>
-                <div><Label>Resultado esperado</Label><Textarea rows={5} value={form.expectedResult} onChange={event => setForm(current => ({ ...current, expectedResult: event.target.value }))} /></div>
+                <div className="sm:col-span-2">
+                  <Label>Pré-condições</Label>
+                  <Textarea
+                    rows={2}
+                    value={form.preconditions}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        preconditions: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Passos (um por linha)</Label>
+                  <Textarea
+                    rows={5}
+                    value={form.testSteps}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        testSteps: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label>Resultado esperado</Label>
+                  <Textarea
+                    rows={5}
+                    value={form.expectedResult}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        expectedResult: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
               </section>
             )}
 
             {form.type === "activity" && (
               <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-3">
-                <FieldSelect label="Prioridade" value={form.priority} values={["Baixa", "Média", "Alta", "Crítica"].map(value => ({ value, label: value }))} onChange={priority => setForm(current => ({ ...current, priority }))} />
-                <FieldSelect label="Recorrência" value={form.recurrence} values={[{ value: "none", label: "Única" }, { value: "weekly", label: "Semanal" }, { value: "monthly", label: "Mensal" }]} onChange={recurrence => setForm(current => ({ ...current, recurrence: recurrence as TemplateForm["recurrence"] }))} />
-                {form.recurrence === "weekly" && <div><Label>Dia da semana (0–6)</Label><Input type="number" min={0} max={6} value={form.weekday} onChange={event => setForm(current => ({ ...current, weekday: Number(event.target.value) }))} /></div>}
-                {form.recurrence === "monthly" && <div><Label>Dia do mês</Label><Input type="number" min={1} max={31} value={form.monthDay} onChange={event => setForm(current => ({ ...current, monthDay: Number(event.target.value) }))} /></div>}
+                <FieldSelect
+                  label="Prioridade"
+                  value={form.priority}
+                  values={["Baixa", "Média", "Alta", "Crítica"].map(value => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={priority =>
+                    setForm(current => ({ ...current, priority }))
+                  }
+                />
+                <FieldSelect
+                  label="Recorrência"
+                  value={form.recurrence}
+                  values={[
+                    { value: "none", label: "Única" },
+                    { value: "weekly", label: "Semanal" },
+                    { value: "monthly", label: "Mensal" },
+                  ]}
+                  onChange={recurrence =>
+                    setForm(current => ({
+                      ...current,
+                      recurrence: recurrence as TemplateForm["recurrence"],
+                    }))
+                  }
+                />
+                {form.recurrence === "weekly" && (
+                  <div>
+                    <Label>Dia da semana (0–6)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={6}
+                      value={form.weekday}
+                      onChange={event =>
+                        setForm(current => ({
+                          ...current,
+                          weekday: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                {form.recurrence === "monthly" && (
+                  <div>
+                    <Label>Dia do mês</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={form.monthDay}
+                      onChange={event =>
+                        setForm(current => ({
+                          ...current,
+                          monthDay: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                )}
               </section>
             )}
 
@@ -1141,105 +1389,12 @@ export default function DeliveryTemplateCatalog({
               </p>
               {isTechnicalLead && (
                 <p className="text-xs font-medium text-blue-700">
-                  Você publica diretamente padrões dos seus módulos: {managedModules.join(", ") || "nenhum módulo atribuído"}.
-                  Padrões gerais e da Trilha do GP são mantidos pelo administrador.
+                  Você publica diretamente padrões dos seus módulos:{" "}
+                  {managedModules.join(", ") || "nenhum módulo atribuído"}.
+                  Padrões gerais e da Trilha do GP são mantidos pelo
+                  administrador.
                 </p>
               )}
-            </section>
-
-            <section className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-              <div>
-                <Label>Evidências obrigatórias (uma por linha)</Label>
-                <Textarea
-                  rows={4}
-                  value={form.evidenceText}
-                  onChange={event =>
-                    setForm(current => ({
-                      ...current,
-                      evidenceText: event.target.value,
-                    }))
-                  }
-                  placeholder={
-                    "Captura de tela\nDocumento aprovado\nLog de execução"
-                  }
-                />
-              </div>
-              <div>
-                <Label>Critério de conclusão</Label>
-                <Textarea
-                  rows={4}
-                  value={form.completionCriteria}
-                  onChange={event =>
-                    setForm(current => ({
-                      ...current,
-                      completionCriteria: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <FieldSelect
-                label="Política de aprovação"
-                value={form.approvalMode}
-                values={[...approvalModes]}
-                onChange={approvalMode =>
-                  setForm(current => ({
-                    ...current,
-                    approvalMode: approvalMode as TemplateForm["approvalMode"],
-                  }))
-                }
-              />
-              {form.approvalMode === "minimum" && (
-                <div>
-                  <Label>Quantidade mínima</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={form.minimumApprovals}
-                    onChange={event =>
-                      setForm(current => ({
-                        ...current,
-                        minimumApprovals: Math.max(
-                          1,
-                          Number(event.target.value)
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-              )}
-            </section>
-
-            <section>
-              <Label>Dependências de outros modelos</Label>
-              <div className="mt-2 grid max-h-48 gap-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-2">
-                {(templates as any[])
-                  .filter(item => item.id !== form.id && !item.archivedAt)
-                  .map(item => (
-                    <label
-                      key={item.id}
-                      className="flex cursor-pointer items-start gap-2 rounded p-1.5 text-sm hover:bg-muted"
-                    >
-                      <Checkbox
-                        className="mt-0.5"
-                        checked={form.dependencyTemplateIds.includes(item.id)}
-                        onCheckedChange={() =>
-                          setForm(current => ({
-                            ...current,
-                            dependencyTemplateIds: toggle(
-                              current.dependencyTemplateIds,
-                              item.id
-                            ),
-                          }))
-                        }
-                      />
-                      <span>
-                        <strong>{typeLabels[item.type as DeliveryType]}</strong>
-                        <br />
-                        {item.title}
-                      </span>
-                    </label>
-                  ))}
-              </div>
             </section>
           </div>
           <DialogFooter>
@@ -1251,7 +1406,8 @@ export default function DeliveryTemplateCatalog({
               disabled={
                 !form.title.trim() ||
                 !form.stage.trim() ||
-                (isTechnicalLead && (!form.modules.length || form.type === "activity")) ||
+                (isTechnicalLead &&
+                  (!form.modules.length || form.type === "activity")) ||
                 createTemplate.isPending ||
                 updateTemplate.isPending ||
                 createWorkshopTemplate.isPending ||

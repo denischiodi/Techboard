@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { getPgPool } from "./db";
 import { localStoragePath, storageGetSignedUrl, storagePut } from "./storage";
+import { reprocessDdaImportsForRelease } from "./ddaImportStore";
 
 export async function listReleases() {
   const pool = getPgPool();
@@ -27,7 +28,9 @@ export async function listScopes(input: {
   ];
   if (input.search?.trim()) {
     values.push(`%${input.search.trim()}%`);
-    clauses.push(`("code" ILIKE $${values.length} OR "name" ILIKE $${values.length} OR "searchText" ILIKE $${values.length})`);
+    clauses.push(
+      `("code" ILIKE $${values.length} OR "name" ILIKE $${values.length} OR "searchText" ILIKE $${values.length})`
+    );
   }
   values.push(Math.min(input.limit || 200, 500));
   const result = await pool.query(
@@ -64,13 +67,43 @@ export async function registerRelease(input: {
     'SELECT * FROM "sap_content_releases" WHERE "checksum"=$1 OR "releaseCode"=$2',
     [input.checksum, input.releaseCode]
   );
-  if (existing.rows[0]) return existing.rows[0];
+  if (existing.rows[0]) {
+    const release = existing.rows[0];
+    if (release.status === "failed") {
+      const refreshed = await pool.query(
+        `UPDATE "sap_content_releases"
+         SET "status"='uploaded',"fileName"=$2,"storageKey"=$3,"checksum"=$4,
+             "sizeBytes"=$5,"uploadedBy"=$6,"lastError"=NULL,"summary"='{}'::jsonb,"updatedAt"=now()
+         WHERE "id"=$1 RETURNING *`,
+        [
+          release.id,
+          input.fileName,
+          input.storageKey,
+          input.checksum,
+          input.sizeBytes,
+          input.uploadedBy,
+        ]
+      );
+      void processRelease(release.id);
+      return refreshed.rows[0];
+    }
+    return release;
+  }
   const id = `sapr_${nanoid(20)}`;
   const result = await pool.query(
     `INSERT INTO "sap_content_releases"
       ("id","releaseCode","country","status","fileName","storageKey","checksum","sizeBytes","uploadedBy")
      VALUES ($1,$2,$3,'uploaded',$4,$5,$6,$7,$8) RETURNING *`,
-    [id, input.releaseCode, input.country, input.fileName, input.storageKey, input.checksum, input.sizeBytes, input.uploadedBy]
+    [
+      id,
+      input.releaseCode,
+      input.country,
+      input.fileName,
+      input.storageKey,
+      input.checksum,
+      input.sizeBytes,
+      input.uploadedBy,
+    ]
   );
   void processRelease(id);
   return result.rows[0];
@@ -108,12 +141,19 @@ function cleanOpenXml(xml: string) {
 }
 
 function summarizeText(code: string, text: string) {
-  const lines = text.split(/\n+/).map(line => line.trim()).filter(line => line.length > 8);
-  const title = lines.find(line =>
-    !line.toUpperCase().includes("SAP") &&
-    !line.toUpperCase().includes("TEST SCRIPT") &&
-    !line.includes(code)
-  ) || lines[0] || `Scope Item ${code}`;
+  const lines = text
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(line => line.length > 8);
+  const title =
+    lines.find(
+      line =>
+        !line.toUpperCase().includes("SAP") &&
+        !line.toUpperCase().includes("TEST SCRIPT") &&
+        !line.includes(code)
+    ) ||
+    lines[0] ||
+    `Scope Item ${code}`;
   return {
     title: title.slice(0, 512),
     summary: lines.slice(0, 8).join(" ").slice(0, 3000),
@@ -124,8 +164,15 @@ export async function processRelease(releaseId: string) {
   const pool = getPgPool();
   if (!pool) return;
   try {
-    await pool.query('UPDATE "sap_content_releases" SET "status"=\'processing\',"updatedAt"=now() WHERE "id"=$1', [releaseId]);
-    const release = (await pool.query('SELECT * FROM "sap_content_releases" WHERE "id"=$1', [releaseId])).rows[0];
+    await pool.query(
+      'UPDATE "sap_content_releases" SET "status"=\'processing\',"updatedAt"=now() WHERE "id"=$1',
+      [releaseId]
+    );
+    const release = (
+      await pool.query('SELECT * FROM "sap_content_releases" WHERE "id"=$1', [
+        releaseId,
+      ])
+    ).rows[0];
     // O parser central reconhece o diretório do ZIP sem extrair arquivos no servidor.
     // A leitura usa o utilitário nativo disponível na imagem de produção.
     const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
@@ -142,24 +189,41 @@ export async function processRelease(releaseId: string) {
     const signedUrl = await storageGetSignedUrl(release.storageKey);
     if (signedUrl.startsWith("local-file://")) {
       const { copyFile } = await import("node:fs/promises");
-      await copyFile(localStoragePath(release.storageKey), zipPath);
+      try {
+        await copyFile(localStoragePath(release.storageKey), zipPath);
+      } catch (error: any) {
+        if (error?.code === "ENOENT") {
+          throw new Error(
+            "O ZIP original não está mais disponível no servidor. Envie o arquivo novamente para continuar.",
+            { cause: error }
+          );
+        }
+        throw error;
+      }
     } else {
       const response = await fetch(signedUrl);
-      if (!response.ok) throw new Error(`Não foi possível ler o ZIP (${response.status})`);
-      if (!response.body) throw new Error("A fonte do ZIP retornou conteúdo vazio");
+      if (!response.ok)
+        throw new Error(`Não foi possível ler o ZIP (${response.status})`);
+      if (!response.body)
+        throw new Error("A fonte do ZIP retornou conteúdo vazio");
       await pipeline(
         Readable.fromWeb(response.body as any),
         createWriteStream(zipPath, { flags: "wx" })
       );
     }
     try {
-      const { stdout } = await exec("unzip", ["-Z1", zipPath], { maxBuffer: 64 * 1024 * 1024 });
+      const { stdout } = await exec("unzip", ["-Z1", zipPath], {
+        maxBuffer: 64 * 1024 * 1024,
+      });
       const names = stdout.split(/\r?\n/).filter(Boolean);
-      const supported = names.filter(name => /\.(docx|xlsx|pdf|pptx|doc|xls|ppt)$/i.test(name));
+      const supported = names.filter(name =>
+        /\.(docx|xlsx|pdf|pptx|doc|xls|ppt)$/i.test(name)
+      );
       const codes = new Map<string, string[]>();
       let processedAssets = 0;
       for (const name of supported) {
-        if (name.includes("..") || name.startsWith("/") || name.includes("\\")) continue;
+        if (name.includes("..") || name.startsWith("/") || name.includes("\\"))
+          continue;
         const code = scopeCodeFromName(name);
         if (!code) continue;
         codes.set(code, [...(codes.get(code) || []), name]);
@@ -172,16 +236,25 @@ export async function processRelease(releaseId: string) {
            ON CONFLICT ("releaseId","code") DO NOTHING`,
           [scopeId, releaseId, code, `Scope Item ${code}`]
         );
-        const actualScope = (await pool.query(
-          'SELECT "id" FROM "sap_scope_catalog" WHERE "releaseId"=$1 AND "code"=$2',
-          [releaseId, code]
-        )).rows[0];
+        const actualScope = (
+          await pool.query(
+            'SELECT "id" FROM "sap_scope_catalog" WHERE "releaseId"=$1 AND "code"=$2',
+            [releaseId, code]
+          )
+        ).rows[0];
         for (const name of files) {
           processedAssets++;
           if (processedAssets % 25 === 0)
             await pool.query(
               `UPDATE "sap_content_releases" SET "summary"=$2::jsonb,"updatedAt"=now() WHERE "id"=$1`,
-              [releaseId, JSON.stringify({ discovered: supported.length, processed: processedAssets, scopeItems: codes.size })]
+              [
+                releaseId,
+                JSON.stringify({
+                  discovered: supported.length,
+                  processed: processedAssets,
+                  scopeItems: codes.size,
+                }),
+              ]
             );
           const extracted = await exec("unzip", ["-p", zipPath, name], {
             encoding: "buffer",
@@ -195,10 +268,16 @@ export async function processRelease(releaseId: string) {
             const documentPath = join(dir, `${assetId}.docx`);
             await writeFile(documentPath, buffer);
             try {
-              const documentXml = await exec("unzip", ["-p", documentPath, "word/document.xml"], {
-                maxBuffer: 32 * 1024 * 1024,
-              });
-              extractedText = cleanOpenXml(String(documentXml.stdout || "")).slice(0, 250_000);
+              const documentXml = await exec(
+                "unzip",
+                ["-p", documentPath, "word/document.xml"],
+                {
+                  maxBuffer: 32 * 1024 * 1024,
+                }
+              );
+              extractedText = cleanOpenXml(
+                String(documentXml.stdout || "")
+              ).slice(0, 250_000);
             } catch {
               extractedText = "";
             }
@@ -213,7 +292,20 @@ export async function processRelease(releaseId: string) {
              ("id","releaseId","scopeId","scopeCode","fileName","assetType","language","sizeBytes","checksum","storageKey","url","extractedText")
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              ON CONFLICT ("releaseId","checksum") DO NOTHING`,
-            [assetId, releaseId, actualScope.id, code, name.split("/").pop(), assetType(name), languageFromName(name), buffer.length, checksum, stored.key, stored.url, extractedText]
+            [
+              assetId,
+              releaseId,
+              actualScope.id,
+              code,
+              name.split("/").pop(),
+              assetType(name),
+              languageFromName(name),
+              buffer.length,
+              checksum,
+              stored.key,
+              stored.url,
+              extractedText,
+            ]
           );
           if (extractedText) {
             const chunks = extractedText.match(/[\s\S]{1,3500}(?:\s|$)/g) || [];
@@ -221,7 +313,15 @@ export async function processRelease(releaseId: string) {
               await pool.query(
                 `INSERT INTO "sap_knowledge_chunks" ("id","releaseId","scopeCode","assetId","chunkIndex","content","language")
                  VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT ("assetId","chunkIndex") DO NOTHING`,
-                [`sapk_${nanoid(20)}`, releaseId, code, assetId, index, chunks[index], languageFromName(name)]
+                [
+                  `sapk_${nanoid(20)}`,
+                  releaseId,
+                  code,
+                  assetId,
+                  index,
+                  chunks[index],
+                  languageFromName(name),
+                ]
               );
             }
             if (languageFromName(name) === "PT_BR") {
@@ -229,7 +329,13 @@ export async function processRelease(releaseId: string) {
               await pool.query(
                 `UPDATE "sap_scope_catalog" SET "name"=$3,"summary"=$4,"searchText"=$5,
                  "reviewStatus"='review_required',"updatedAt"=now() WHERE "releaseId"=$1 AND "code"=$2`,
-                [releaseId, code, summary.title, summary.summary, `${code} ${summary.title} ${summary.summary}`]
+                [
+                  releaseId,
+                  code,
+                  summary.title,
+                  summary.summary,
+                  `${code} ${summary.title} ${summary.summary}`,
+                ]
               );
             }
           }
@@ -237,7 +343,14 @@ export async function processRelease(releaseId: string) {
       }
       await pool.query(
         `UPDATE "sap_content_releases" SET "status"='ready',"summary"=$2::jsonb,"updatedAt"=now() WHERE "id"=$1`,
-        [releaseId, JSON.stringify({ files: supported.length, scopeItems: codes.size, ignored: names.length - supported.length })]
+        [
+          releaseId,
+          JSON.stringify({
+            files: supported.length,
+            scopeItems: codes.size,
+            ignored: names.length - supported.length,
+          }),
+        ]
       );
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -264,15 +377,18 @@ export async function resumePendingSapImports() {
 export async function activateRelease(id: string, userId: string) {
   const pool = getPgPool();
   if (!pool) return { id };
-  return pool.query("BEGIN").then(async () => {
+  const release = await pool.query("BEGIN").then(async () => {
     try {
-      await pool.query('UPDATE "sap_content_releases" SET "status"=\'archived\' WHERE "status"=\'active\'');
+      await pool.query(
+        'UPDATE "sap_content_releases" SET "status"=\'archived\' WHERE "status"=\'active\''
+      );
       const result = await pool.query(
         `UPDATE "sap_content_releases" SET "status"='active',"activatedBy"=$2,"activatedAt"=now(),"updatedAt"=now()
          WHERE "id"=$1 AND "status"='ready' RETURNING *`,
         [id, userId]
       );
-      if (!result.rows[0]) throw new Error("A release precisa estar pronta antes da ativação");
+      if (!result.rows[0])
+        throw new Error("A release precisa estar pronta antes da ativação");
       await pool.query("COMMIT");
       return result.rows[0];
     } catch (error) {
@@ -280,14 +396,18 @@ export async function activateRelease(id: string, userId: string) {
       throw error;
     }
   });
+  const reprocessed = await reprocessDdaImportsForRelease(id);
+  return { ...release, ddaReprocessed: reprocessed };
 }
 
 export async function getKnowledgeContext(scopeCodes: string[]) {
   const pool = getPgPool();
   if (!pool || !scopeCodes.length) return { releaseCode: "", entries: [] };
-  const release = (await pool.query(
-    'SELECT * FROM "sap_content_releases" WHERE "status"=\'active\' ORDER BY "activatedAt" DESC LIMIT 1'
-  )).rows[0];
+  const release = (
+    await pool.query(
+      'SELECT * FROM "sap_content_releases" WHERE "status"=\'active\' ORDER BY "activatedAt" DESC LIMIT 1'
+    )
+  ).rows[0];
   if (!release) return { releaseCode: "", entries: [] };
   const result = await pool.query(
     `SELECT c."code",c."name",c."summary",

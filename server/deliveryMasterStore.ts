@@ -107,10 +107,12 @@ export async function listTemplates(
      ORDER BY t."type",t."sortOrder",t."title"`,
     values
   );
-  return Promise.all(result.rows.map(async template => ({
-    ...template,
-    attachments: await listTemplateAttachments(template.id),
-  })));
+  return Promise.all(
+    result.rows.map(async template => ({
+      ...template,
+      attachments: await listTemplateAttachments(template.id),
+    }))
+  );
 }
 
 export async function getTemplate(id: string) {
@@ -140,7 +142,10 @@ export async function createTemplateAttachment(data: Record<string, unknown>) {
   return insert("delivery_template_attachments", data);
 }
 
-export async function archiveTemplateAttachment(id: string, templateId: string) {
+export async function archiveTemplateAttachment(
+  id: string,
+  templateId: string
+) {
   const pool = getPgPool();
   if (!pool) return { id };
   const result = await pool.query(
@@ -250,6 +255,52 @@ export async function listItems(projectId: string) {
 export async function updateItem(id: string, patch: Record<string, unknown>) {
   const pool = getPgPool();
   if (!pool) return { id, ...patch };
+  if (
+    typeof patch.status === "string" &&
+    ["completed", "approved"].includes(patch.status)
+  ) {
+    const currentResult = await pool.query(
+      `SELECT i.*, t."dependencyTemplateIds"
+         FROM "delivery_items" i
+         LEFT JOIN "delivery_templates" t ON t."id"=i."templateId"
+        WHERE i."id"=$1 AND i."archivedAt" IS NULL`,
+      [id]
+    );
+    const current = currentResult.rows[0];
+    if (!current) throw new Error("Item da trilha não encontrado");
+    const requirements = Array.isArray(current.evidenceRequirements)
+      ? current.evidenceRequirements
+      : [];
+    const evidences = Array.isArray(patch.evidences)
+      ? patch.evidences
+      : Array.isArray(current.evidences)
+        ? current.evidences
+        : [];
+    if (requirements.length > evidences.length) {
+      throw new Error(
+        `Inclua todas as evidências obrigatórias antes de concluir (${evidences.length}/${requirements.length}).`
+      );
+    }
+    const dependencyItemIds = Array.isArray(current.dependencyItemIds)
+      ? current.dependencyItemIds
+      : [];
+    if (dependencyItemIds.length) {
+      const dependencyResult = await pool.query(
+        `SELECT "title","status" FROM "delivery_items"
+          WHERE "id"=ANY($1::text[])
+            AND "archivedAt" IS NULL
+            AND "status" NOT IN ('completed','approved')`,
+        [dependencyItemIds]
+      );
+      if (dependencyResult.rows.length) {
+        throw new Error(
+          `Conclua primeiro as dependências: ${dependencyResult.rows
+            .map((item: any) => item.title)
+            .join(", ")}.`
+        );
+      }
+    }
+  }
   const allowed = new Set([
     "status",
     "responsibleId",
@@ -310,13 +361,13 @@ export function applicableOccurrences(
   scopeItems: TrailScopeItem[]
 ) {
   const normalizeKey = (value: unknown) =>
-    String(value || "").trim().toLocaleUpperCase("pt-BR");
+    String(value || "")
+      .trim()
+      .toLocaleUpperCase("pt-BR");
   if (!template.active) return [];
   if (template.projectIds?.length && !template.projectIds.includes(projectId))
     return [];
-  const allowedModules = new Set(
-    (template.modules || []).map(normalizeKey)
-  );
+  const allowedModules = new Set((template.modules || []).map(normalizeKey));
   const allowedScopes = new Set(
     (template.scopeItemKeys || []).map(normalizeKey)
   );
@@ -326,8 +377,7 @@ export function applicableOccurrences(
       .filter(item => allowedScopes.has(normalizeKey(item.key)))
       .filter(
         item =>
-          !allowedModules.size ||
-          allowedModules.has(normalizeKey(item.module))
+          !allowedModules.size || allowedModules.has(normalizeKey(item.module))
       )
       .map(item => ({
         key: occurrenceKey(template.id, item.module || "", [item.id]),
@@ -371,7 +421,11 @@ export async function previewTrail(
   const existingByOccurrence = new Map(
     existing.map((item: any) => [
       item.occurrenceKey ||
-        occurrenceKey(item.templateId, item.module || "", item.scopeItemIds || []),
+        occurrenceKey(
+          item.templateId,
+          item.module || "",
+          item.scopeItemIds || []
+        ),
       item,
     ])
   );

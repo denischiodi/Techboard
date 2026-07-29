@@ -64,8 +64,12 @@ export const projects = mysqlTable("projects", {
   client: varchar("client", { length: 255 }).notNull().default(""),
   manager: varchar("manager", { length: 255 }).notNull().default(""),
   projectCode: varchar("projectCode", { length: 255 }).notNull().default(""),
-  clientManager: varchar("clientManager", { length: 255 }).notNull().default(""),
-  seidorExecutive: varchar("seidorExecutive", { length: 255 }).notNull().default(""),
+  clientManager: varchar("clientManager", { length: 255 })
+    .notNull()
+    .default(""),
+  seidorExecutive: varchar("seidorExecutive", { length: 255 })
+    .notNull()
+    .default(""),
   sponsor: varchar("sponsor", { length: 255 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Planejado"),
   startDate: varchar("startDate", { length: 10 }).notNull().default(""),
@@ -343,6 +347,41 @@ export const scopeItems = mysqlTable("scope_items", {
   processArea: varchar("processArea", { length: 256 }).notNull().default(""),
   description: text("description"),
   active: int("active").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const ddaImportBatches = mysqlTable("dda_import_batches", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  fileName: varchar("fileName", { length: 512 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("processing"),
+  total: int("total").notNull().default(0),
+  created: int("created").notNull().default(0),
+  updated: int("updated").notNull().default(0),
+  pending: int("pending").notNull().default(0),
+  importedBy: varchar("importedBy", { length: 64 }).notNull().default(""),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const ddaImportItems = mysqlTable("dda_import_items", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  batchId: varchar("batchId", { length: 64 }).notNull(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  code: varchar("code", { length: 128 }).notNull().default(""),
+  normalizedCode: varchar("normalizedCode", { length: 128 })
+    .notNull()
+    .default(""),
+  status: varchar("status", { length: 32 }).notNull().default("pending"),
+  result: varchar("result", { length: 32 }).notNull().default(""),
+  errorCode: varchar("errorCode", { length: 64 }).notNull().default(""),
+  errorMessage: text("errorMessage").notNull().default(""),
+  payload: json("payload").$type<Record<string, unknown>>().default({}),
+  attempts: int("attempts").notNull().default(0),
+  scopeItemId: varchar("scopeItemId", { length: 64 }).notNull().default(""),
+  resolvedAt: timestamp("resolvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -636,7 +675,9 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   id: varchar("id", { length: 64 }).primaryKey(),
   workshopId: varchar("workshopId", { length: 64 }).notNull(),
   content: text("content").notNull(),
-  structuredContent: json("structuredContent").$type<Record<string, unknown>>().default({}),
+  structuredContent: json("structuredContent")
+    .$type<Record<string, unknown>>()
+    .default({}),
   docxUrl: varchar("docxUrl", { length: 1024 }).notNull().default(""),
   pdfUrl: varchar("pdfUrl", { length: 1024 }).notNull().default(""),
   generatedBy: varchar("generatedBy", { length: 64 }).notNull().default("ai"),
@@ -677,8 +718,37 @@ export const dcdDocuments = mysqlTable("dcd_documents", {
   module: varchar("module", { length: 128 }).notNull().default(""),
   title: varchar("title", { length: 512 }).notNull(),
   content: text("content").notNull(),
+  sourceSnapshot: json("sourceSnapshot")
+    .$type<Record<string, unknown>>()
+    .default({}),
+  templateId: varchar("templateId", { length: 64 }).notNull().default(""),
+  templateVersion: int("templateVersion").notNull().default(0),
+  docxUrl: varchar("docxUrl", { length: 1024 }).notNull().default(""),
+  pdfUrl: varchar("pdfUrl", { length: 1024 }).notNull().default(""),
+  versionReason: varchar("versionReason", { length: 64 })
+    .notNull()
+    .default("generated"),
+  restoredFromId: varchar("restoredFromId", { length: 64 })
+    .notNull()
+    .default(""),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
   version: int("version").notNull().default(1),
   status: varchar("status", { length: 64 }).notNull().default("Rascunho"),
+  archivedAt: timestamp("archivedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const dcdTemplates = mysqlTable("dcd_templates", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: int("version").notNull().default(1),
+  fileUrl: varchar("fileUrl", { length: 1024 }).notNull().default(""),
+  fileHash: varchar("fileHash", { length: 64 }).notNull().default(""),
+  active: mysqlBoolean("active").notNull().default(false),
+  structure: json("structure").$type<Record<string, unknown>>().default({}),
+  createdBy: varchar("createdBy", { length: 255 }).notNull().default(""),
+  publishedAt: timestamp("publishedAt"),
   archivedAt: timestamp("archivedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -700,6 +770,16 @@ export const gaps = mysqlTable("gaps", {
   technicalHours: int("technicalHours").notNull().default(0),
   attachments: json("attachments").$type<string[]>().default([]),
   resolution: text("resolution"),
+  smdStatus: varchar("smdStatus", { length: 64 })
+    .notNull()
+    .default("Não necessário"),
+  smdVersion: int("smdVersion").notNull().default(0),
+  smdUrl: text("smdUrl"),
+  smdChangeRequest: varchar("smdChangeRequest", { length: 128 })
+    .notNull()
+    .default(""),
+  smdNotes: text("smdNotes"),
+  smdApprovedAt: varchar("smdApprovedAt", { length: 10 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),

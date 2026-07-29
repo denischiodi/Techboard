@@ -208,10 +208,21 @@ export default function WorkshopsPage() {
   });
   const suggestAgenda = trpc.workflow.workshops.suggestAgenda.useMutation({
     onSuccess: (data: any) => {
-      setAgendaSuggestion(data.suggestion);
+      const suggestion =
+        typeof data?.suggestion === "string" ? data.suggestion.trim() : "";
+      if (!suggestion) {
+        toast.error("A IA não retornou sugestões. Tente novamente.");
+        return;
+      }
+      setAgendaSuggestion(suggestion);
       setShowAgenda(true);
+      if (data.generatedBy === "project-data")
+        toast.info(
+          "A IA está indisponível; sugestão criada com os dados do projeto."
+        );
     },
-    onError: () => toast.error("Erro ao gerar sugestão"),
+    onError: error =>
+      toast.error(error.message || "Erro ao gerar sugestão de workshops"),
   });
   const uploadPresentation =
     trpc.workflow.workshops.uploadPresentation.useMutation({

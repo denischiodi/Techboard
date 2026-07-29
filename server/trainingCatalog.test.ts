@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { TRAINING_CATALOG, TRAINING_COVERAGE } from "./trainingCatalog";
 
 describe("training catalog", () => {
-  it("covers the eight planned training areas", () => {
-    expect(TRAINING_CATALOG).toHaveLength(8);
+  it("covers the planned training areas and the functional consultant manual", () => {
+    expect(TRAINING_CATALOG).toHaveLength(9);
     expect(TRAINING_CATALOG.map(course => course.category)).toEqual(
       expect.arrayContaining([
         "Portal Tech",
