@@ -10,12 +10,15 @@ import { validateRuntimeEnv } from "./env";
 import { serveStatic, setupVite } from "./vite";
 import { ensureDatabaseSchema } from "../plannerStore";
 import { checkDatabaseReadiness } from "../db";
-import { registerTechEduca } from "../techeduca";
+import { registerTrainingPortal } from "../trainingPortal";
 import { registerWorkflowStream } from "../workflowStream";
 import { syncActivitiesFromSources } from "../activitySync";
 import { flushActivityEmailOutbox } from "../activityMailer";
 import { startDashboardSnapshotScheduler } from "../dashboardSnapshots";
-import { enqueueReconciliation, resumePendingPublications } from "../deliveryPublisher";
+import {
+  enqueueReconciliation,
+  resumePendingPublications,
+} from "../deliveryPublisher";
 import { resumePendingSapImports } from "../sapLibraryStore";
 
 function isAllowedOrigin(req: express.Request) {
@@ -80,7 +83,7 @@ async function startServer() {
       createContext,
     })
   );
-  await registerTechEduca(app);
+  await registerTrainingPortal(app);
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

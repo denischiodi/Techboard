@@ -3,1093 +3,387 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TechEduca+</title>
+    <meta name="color-scheme" content="light" />
+    <title>TechEduca+ · Central de treinamento</title>
     <style>
       :root {
-        --ink: #162033;
-        --muted: #64748b;
-        --line: #d9e2ee;
-        --soft: #f5f8fc;
+        --ink: #142033;
+        --muted: #637083;
+        --line: #dbe3ec;
+        --soft: #f4f7fb;
         --panel: #fff;
-        --dark: #101827;
-        --brand: #7ac943;
-        --blue: #3285d7;
-        --red: #dc2626;
-        --shadow: 0 18px 42px rgba(17, 24, 39, 0.09);
+        --dark: #111827;
+        --brand: #73c13d;
+        --blue: #2563eb;
+        --shadow: 0 16px 42px rgba(15, 23, 42, .08);
       }
       * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        color: var(--ink);
-        background: var(--soft);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      button, input, select, textarea { font: inherit; }
+      html { scroll-behavior: smooth; }
+      body { margin: 0; color: var(--ink); background: var(--soft); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      button, input, textarea, select { font: inherit; }
       button { cursor: pointer; }
+      a { color: inherit; }
       .hidden { display: none !important; }
-      .login {
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
-        background:
-          linear-gradient(120deg, rgba(16, 24, 39, .94), rgba(16, 24, 39, .74)),
-          radial-gradient(circle at 20% 10%, rgba(122, 201, 67, .7), transparent 34%),
-          #101827;
-      }
-      .login-brand {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        padding: 48px;
-        color: white;
-      }
-      .login-brand img { width: min(620px, 100%); margin-bottom: 28px; }
-      .wordmark {
-        width: min(620px, 100%);
-        margin-bottom: 28px;
-        color: #f8fafc;
-        font-size: clamp(42px, 8vw, 96px);
-        font-weight: 950;
-        line-height: 0.9;
-      }
-      .wordmark span { color: var(--brand); }
-      .login-brand h1 { margin: 0; font-size: clamp(36px, 7vw, 82px); line-height: .95; }
-      .login-brand p { max-width: 660px; color: #dbe7f7; font-size: 18px; line-height: 1.6; }
-      .login-panel {
-        display: flex;
-        align-items: center;
-        padding: 28px;
-        background: white;
-      }
-      .login-card { width: 100%; }
-      .login-card h2 { margin: 0 0 8px; font-size: 28px; }
-      .login-card p { margin: 0 0 18px; color: var(--muted); }
-      .app { min-height: 100vh; display: grid; grid-template-columns: 282px minmax(0, 1fr); }
-      aside {
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        overflow-y: auto;
-        padding: 22px 16px;
-        background: var(--dark);
-        color: white;
-      }
-      .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-      .brand img {
-        width: 72px;
-        height: 48px;
-        object-fit: contain;
-        padding: 5px;
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 8px;
-        background: #000;
-      }
-      .brand-icon {
-        width: 72px;
-        height: 48px;
-        display: grid;
-        place-items: center;
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 8px;
-        background: #000;
-        color: #fff;
-        font-weight: 950;
-      }
-      .brand-icon span { color: var(--brand); }
-      .brand strong, .brand span { display: block; }
-      .brand span { color: #aab6ca; font-size: 13px; }
-      .nav-title {
-        margin: 22px 10px 8px;
-        color: #8f9bb3;
-        font-size: 12px;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: .08em;
-      }
-      .nav {
-        width: 100%;
-        min-height: 42px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin: 4px 0;
-        padding: 10px 12px;
-        border: 0;
-        border-radius: 8px;
-        color: #d8def0;
-        background: transparent;
-        text-align: left;
-      }
-      .nav.active, .nav:hover { color: #fff; background: rgba(255,255,255,.1); }
-      .topbar {
-        position: sticky;
-        top: 0;
-        z-index: 4;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 18px 26px;
-        border-bottom: 1px solid var(--line);
-        background: rgba(245,248,252,.92);
-        backdrop-filter: blur(14px);
-      }
-      h1, h2, h3, h4 { letter-spacing: 0; }
-      .topbar h1 { margin: 0; font-size: clamp(22px, 3vw, 34px); }
-      .topbar p { margin: 5px 0 0; color: var(--muted); }
-      .main { padding: 24px 26px 44px; }
-      .section { display: none; }
-      .section.active { display: block; }
-      .btn {
-        min-height: 40px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 9px 14px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        color: var(--ink);
-        background: white;
-        font-weight: 800;
-        text-decoration: none;
-      }
-      .btn.primary { border-color: var(--brand); background: var(--brand); color: #10200b; }
-      .btn.blue { border-color: var(--blue); background: var(--blue); color: white; }
-      .btn.danger { border-color: #fecaca; color: #991b1b; background: #fef2f2; }
-      .btn.mini { min-height: 32px; padding: 6px 9px; font-size: 12px; }
-      .btn:disabled { opacity: .5; cursor: not-allowed; }
-      .grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(330px, .75fr); gap: 18px; }
-      .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-      .panel, .metric, .card, .row {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        box-shadow: 0 8px 20px rgba(17,24,39,.04);
-      }
-      .panel { padding: 18px; }
-      .metric { padding: 18px; }
-      .metric span { display: block; color: var(--muted); font-size: 13px; font-weight: 800; }
-      .metric strong { display: block; margin-top: 8px; font-size: 30px; }
-      .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-      .panel h2, .panel h3 { margin: 0; }
-      .muted { color: var(--muted); }
-      .stack { display: grid; gap: 12px; }
-      .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .field { display: grid; gap: 7px; }
-      .field.full { grid-column: 1 / -1; }
-      label { color: #344054; font-size: 13px; font-weight: 850; }
-      input, select, textarea {
-        width: 100%;
-        min-height: 42px;
-        padding: 10px 12px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #fff;
-        color: var(--ink);
-      }
-      textarea { min-height: 88px; resize: vertical; }
-      .card { padding: 15px; }
-      .card h3, .card h4 { margin: 0; }
-      .card p { margin: 6px 0 0; color: var(--muted); line-height: 1.45; }
-      .row {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 12px;
-        padding: 14px;
-      }
-      .avatar {
-        width: 42px; height: 42px; display: grid; place-items: center;
-        border-radius: 8px; background: #e8f7dc; color: #2f6d12; font-weight: 900;
-      }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        min-height: 28px;
-        padding: 4px 9px;
-        border-radius: 999px;
-        color: #245b0e;
-        background: #e8f7dc;
-        font-size: 12px;
-        font-weight: 850;
-        white-space: nowrap;
-      }
-      .badge.blue { color: #075985; background: #e0f2fe; }
-      .badge.orange { color: #9a3412; background: #ffedd5; }
-      .bar { height: 9px; margin-top: 10px; border-radius: 999px; background: #e7edf6; overflow: hidden; }
-      .bar i { display: block; height: 100%; width: var(--value); border-radius: inherit; background: linear-gradient(90deg, var(--brand), var(--blue)); }
-      .course-layout { display: grid; grid-template-columns: 340px minmax(0,1fr); gap: 18px; }
-      .lesson {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 12px;
-        align-items: start;
-        padding: 13px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: white;
-      }
-      .video {
-        width: 100%;
-        min-height: 360px;
-        display: grid;
-        place-items: center;
-        border-radius: 8px;
-        overflow: hidden;
-        background: linear-gradient(135deg, #0f172a, #1f7a41);
-        color: white;
-      }
-      video { width: 100%; max-height: 460px; background: #000; }
-      .play { width: 88px; height: 88px; display: grid; place-items: center; border: 2px solid rgba(255,255,255,.75); border-radius: 50%; font-size: 36px; background: rgba(255,255,255,.12); }
-      .resources { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-      .resources a {
-        display: inline-flex; align-items: center; min-height: 38px; padding: 8px 12px;
-        border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; text-decoration: none; font-weight: 800;
-      }
-      .quiz { margin-top: 14px; display: grid; gap: 10px; }
-      .option { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; }
-      .notice { padding: 12px 14px; border-radius: 8px; background: #e0f2fe; color: #075985; font-weight: 750; }
-      .error { background: #fef2f2; color: #991b1b; }
+      .shell { min-height: 100vh; display: grid; grid-template-columns: 286px minmax(0, 1fr); }
+      aside { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 18px 14px; color: white; background: var(--dark); }
+      .brand { display: flex; align-items: center; gap: 12px; padding: 5px 8px 20px; }
+      .brand-mark { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; font-size: 17px; font-weight: 950; background: #050a12; }
+      .brand-mark span { color: var(--brand); }
+      .brand strong, .brand small { display: block; }
+      .brand small { color: #9eacc1; }
+      .back { width: 100%; margin-bottom: 16px; color: #dce5f2 !important; border-color: rgba(255,255,255,.16) !important; background: rgba(255,255,255,.06) !important; text-decoration: none; }
+      .side-label { margin: 18px 10px 8px; color: #7f8ca3; font-size: 11px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+      .nav { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 9px; margin: 3px 0; padding: 9px 11px; border: 0; border-radius: 9px; color: #cdd6e4; background: transparent; text-align: left; }
+      .nav:hover, .nav.active { color: white; background: rgba(255,255,255,.1); }
+      .course-nav { border-left: 3px solid var(--course, #64748b); }
+      main { min-width: 0; }
+      .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.92); backdrop-filter: blur(14px); }
+      .search-wrap { position: relative; min-width: 240px; flex: 1; }
+      .search-wrap span { position: absolute; left: 13px; top: 10px; color: var(--muted); }
+      input, textarea, select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
+      .search-wrap input { padding-left: 38px; }
+      textarea { min-height: 100px; resize: vertical; }
+      .user { display: flex; align-items: center; gap: 10px; }
+      .avatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: #1e3a0c; background: #dcf8c8; font-weight: 900; }
+      .user small { display: block; color: var(--muted); }
+      .content { max-width: 1440px; margin: auto; padding: 26px; }
+      .hero { position: relative; overflow: hidden; padding: 28px; border-radius: 18px; color: white; background: linear-gradient(120deg, #101827, #1d3b2a); box-shadow: var(--shadow); }
+      .hero::after { content: ""; position: absolute; width: 330px; height: 330px; top: -190px; right: -80px; border-radius: 50%; background: rgba(115,193,61,.32); }
+      .hero h1 { margin: 0; max-width: 800px; font-size: clamp(28px, 4vw, 48px); line-height: 1.05; }
+      .hero p { max-width: 800px; margin: 12px 0 0; color: #dce7f4; line-height: 1.55; }
+      .hero-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+      .hero-stats span { padding: 7px 11px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(255,255,255,.08); font-size: 13px; font-weight: 750; }
+      .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 28px 0 14px; }
+      .section-head h2, .section-head p { margin: 0; }
+      .section-head p { margin-top: 5px; color: var(--muted); }
+      .grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+      .card, .panel, .result, .module { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 7px 20px rgba(15,23,42,.04); }
+      .card { min-height: 205px; display: flex; flex-direction: column; padding: 18px; border-top: 5px solid var(--course, #64748b); transition: transform .16s, box-shadow .16s; }
+      .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+      .card h3 { margin: 8px 0; }
+      .card p { margin: 0; color: var(--muted); line-height: 1.45; }
+      .card .meta { margin-top: auto; padding-top: 14px; color: var(--muted); font-size: 12px; }
+      .btn { min-height: 39px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font-weight: 800; text-decoration: none; }
+      .btn:hover { filter: brightness(.98); }
+      .btn.primary { color: white; border-color: var(--blue); background: var(--blue); }
+      .btn.green { color: #18330c; border-color: var(--brand); background: var(--brand); }
+      .btn.danger { color: #991b1b; border-color: #fecaca; background: #fff1f2; }
+      .btn.small { min-height: 32px; padding: 5px 9px; font-size: 12px; }
       .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-      .split { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-      .lesson-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-      .lesson-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
-      .empty-state { border: 1px dashed var(--line); border-radius: 8px; padding: 12px; color: var(--muted); }
-      .modal {
-        position: fixed;
-        inset: 0;
-        z-index: 20;
-        display: grid;
-        place-items: center;
-        padding: 20px;
-        background: rgba(15, 23, 42, .55);
-      }
-      .modal-card {
-        width: min(760px, 100%);
-        max-height: min(880px, 92vh);
-        overflow: auto;
-        border-radius: 8px;
-        background: white;
-        box-shadow: var(--shadow);
-        padding: 18px;
-      }
-      @media (max-width: 1020px) {
-        .login, .app, .grid, .course-layout { grid-template-columns: 1fr; }
+      .panel { padding: 18px; }
+      .catalog-layout { display: grid; grid-template-columns: 320px minmax(0,1fr); gap: 18px; align-items: start; }
+      .module-list { position: sticky; top: 88px; max-height: calc(100vh - 112px); overflow-y: auto; }
+      .module-title { margin: 0 0 10px; font-size: 20px; }
+      .lesson-link { width: 100%; display: block; padding: 11px; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); background: transparent; text-align: left; }
+      .lesson-link:hover, .lesson-link.active { background: #eef5ff; }
+      .lesson-link strong, .lesson-link small { display: block; }
+      .lesson-link small { margin-top: 4px; color: var(--muted); }
+      .lesson { min-height: 600px; padding: 26px; }
+      .lesson h1 { margin: 0; font-size: clamp(25px, 3vw, 37px); }
+      .lesson-summary { color: var(--muted); font-size: 16px; line-height: 1.55; }
+      .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+      .badge { display: inline-flex; align-items: center; min-height: 27px; padding: 4px 9px; border-radius: 999px; color: #1e40af; background: #e8efff; font-size: 12px; font-weight: 800; }
+      .badge.gray { color: #475569; background: #eef2f6; }
+      .article { margin-top: 22px; line-height: 1.65; }
+      .article h2 { margin: 26px 0 8px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 20px; }
+      .article ol, .article ul { padding-left: 24px; }
+      .article li { margin: 8px 0; }
+      .article code { padding: 2px 5px; border-radius: 4px; background: #eef2f6; }
+      .video { width: 100%; max-height: 520px; margin-top: 18px; border-radius: 10px; background: #050a12; }
+      .materials { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+      .empty { padding: 36px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
+      .search-results { display: grid; gap: 10px; }
+      .result { padding: 15px; cursor: pointer; }
+      .result:hover { border-color: #93b4ec; }
+      .result h3, .result p { margin: 0; }
+      .result p { margin-top: 5px; color: var(--muted); }
+      .admin-grid { display: grid; grid-template-columns: minmax(320px,.75fr) minmax(0,1.25fr); gap: 16px; }
+      .form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+      .field { display: grid; gap: 6px; }
+      .field.full { grid-column: 1/-1; }
+      label { color: #334155; font-size: 13px; font-weight: 850; }
+      .tree-course { margin-bottom: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: white; }
+      .tree-course > button { width: 100%; display: flex; justify-content: space-between; padding: 12px; border: 0; background: #f8fafc; text-align: left; font-weight: 900; }
+      .tree-module { padding: 10px 12px; border-top: 1px solid var(--line); }
+      .tree-lesson { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0 0 12px; color: var(--muted); font-size: 13px; }
+      .coverage { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; }
+      th { color: var(--muted); background: #f8fafc; }
+      .loading { min-height: 100vh; display: grid; place-items: center; color: var(--muted); }
+      .modal { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.58); }
+      .modal-card { width: min(920px,100%); max-height: 92vh; overflow-y: auto; padding: 20px; border-radius: 14px; background: white; box-shadow: var(--shadow); }
+      .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+      .modal-head h2, .modal-head p { margin: 0; }
+      .modal-head p { margin-top: 4px; color: var(--muted); }
+      .notice { padding: 12px 14px; border-radius: 8px; color: #075985; background: #e0f2fe; }
+      .notice.error { color: #991b1b; background: #fee2e2; }
+      @media (max-width: 1180px) { .grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+      @media (max-width: 900px) {
+        .shell, .catalog-layout, .admin-grid { grid-template-columns: 1fr; }
         aside { position: static; height: auto; }
-        .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        aside .side-label, aside #courseNav { display: none !important; }
+        .module-list { position: static; max-height: none; }
+        .topbar { position: static; flex-wrap: wrap; }
+        .search-wrap { flex-basis: 100%; order: 3; }
       }
-      @media (max-width: 680px) {
-        .login-brand, .login-panel, .topbar, .main { padding-left: 16px; padding-right: 16px; }
-        .topbar { align-items: flex-start; flex-direction: column; }
-        .metrics, .form { grid-template-columns: 1fr; }
-        .row { grid-template-columns: auto minmax(0,1fr); }
-        .row .badge, .row .btn { grid-column: 1 / -1; justify-self: start; }
+      @media (max-width: 620px) {
+        .content, .topbar { padding: 16px; }
+        .grid, .form { grid-template-columns: 1fr; }
+        .field.full { grid-column: auto; }
+        .user div:not(.avatar) { display: none; }
       }
     </style>
   </head>
   <body>
-    <div id="login" class="login">
-      <div class="login-brand">
-        <div class="wordmark">TechEduca<span>+</span></div>
-        <h1>Plataforma de treinamentos completa.</h1>
-        <p>Cadastre cursos, suba vídeos e arquivos, libere acesso para alunos e acompanhe o progresso de cada trilha.</p>
-      </div>
-      <div class="login-panel">
-        <form id="loginForm" class="login-card">
-          <h2>Entrar</h2>
-          <p>Use o acesso de administrador ou aluno para testar.</p>
-          <div id="loginMsg"></div>
-          <div class="field">
-            <label for="email">E-mail</label>
-            <input id="email" name="email" type="email" value="admin@techeduca.com" required />
-          </div>
-          <div class="field" style="margin-top: 12px">
-            <label for="password">Senha</label>
-            <input id="password" name="password" type="password" value="admin123" required />
-          </div>
-          <button class="btn primary" style="width:100%; margin-top: 16px" type="submit">Entrar</button>
-          <p style="margin-top: 14px">Admin: admin@techeduca.com / admin123<br />Aluno: aluno@techeduca.com / aluno123</p>
-        </form>
-      </div>
-    </div>
-
-    <div id="app" class="app hidden">
+    <div id="loading" class="loading">Abrindo a Central de treinamento…</div>
+    <div id="app" class="shell hidden">
       <aside>
         <div class="brand">
-          <div class="brand-icon">TE<span>+</span></div>
-          <div>
-            <strong>TechEduca+</strong>
-            <span id="roleLabel">Plataforma</span>
-          </div>
+          <div class="brand-mark">TE<span>+</span></div>
+          <div><strong>TechEduca+</strong><small>Central de treinamento</small></div>
         </div>
-        <div id="adminNav">
-          <div class="nav-title">Administrador</div>
-          <button class="nav active" data-page="dashboard" onclick="showPage('dashboard')">Painel</button>
-          <button class="nav" data-page="courses" onclick="showPage('courses')">Cursos</button>
-          <button class="nav" data-page="students" onclick="showPage('students')">Alunos</button>
-          <button class="nav" data-page="reports" onclick="showPage('reports')">Relatórios</button>
+        <a class="btn back" href="/">← Voltar ao Portal Tech</a>
+        <button class="nav active" data-view="home">⌂ Início</button>
+        <button class="nav" data-view="catalog">▦ Todos os treinamentos</button>
+        <button class="nav" data-view="profiles">◎ Trilhas por perfil</button>
+        <div class="side-label">Produtos</div>
+        <div id="courseNav"></div>
+        <div id="adminNav" class="hidden">
+          <div class="side-label">Administração</div>
+          <button class="nav" data-view="admin">✎ Editar conteúdos</button>
+          <button class="nav" data-view="coverage">✓ Matriz de cobertura</button>
         </div>
-        <div id="studentNav">
-          <div class="nav-title">Aluno</div>
-          <button class="nav active" data-page="studentHome" onclick="showPage('studentHome')">Minha trilha</button>
-        </div>
-        <div class="nav-title">Conta</div>
-        <button class="nav" id="logout">Sair</button>
       </aside>
-
       <main>
         <header class="topbar">
-          <div>
-            <h1 id="title">Painel</h1>
-            <p id="subtitle">Gestão dos treinamentos e alunos.</p>
-          </div>
-          <div id="userBox" class="badge blue"></div>
+          <div class="search-wrap"><span>⌕</span><input id="globalSearch" aria-label="Buscar treinamentos" placeholder="Buscar tela, tarefa, campo, código, erro ou perfil…" /></div>
+          <button id="clearSearch" class="btn small hidden">Limpar busca</button>
+          <div class="user"><div id="avatar" class="avatar">U</div><div><strong id="userName">Usuário</strong><small id="userRole">Perfil</small></div></div>
         </header>
-
-        <div class="main">
-          <section id="dashboard" class="section active">
-            <div class="metrics">
-              <div class="metric"><span>Cursos</span><strong id="mCourses">0</strong></div>
-              <div class="metric"><span>Alunos</span><strong id="mStudents">0</strong></div>
-              <div class="metric"><span>Matrículas</span><strong id="mEnrollments">0</strong></div>
-              <div class="metric"><span>Média concluída</span><strong id="mProgress">0%</strong></div>
-            </div>
-            <div class="grid">
-              <div class="panel">
-                <div class="panel-head"><div><h2>Cursos publicados</h2><p class="muted">Trilhas disponíveis para liberar aos alunos.</p></div></div>
-                <div id="dashboardCourses" class="stack"></div>
-              </div>
-              <div class="panel">
-                <div class="panel-head"><div><h2>Primeiros passos</h2><p class="muted">Fluxo recomendado para usar a plataforma.</p></div></div>
-                <div class="stack">
-                  <div class="notice">1. Crie o curso e os módulos.</div>
-                  <div class="notice">2. Suba aulas com vídeo, link ou arquivos.</div>
-                  <div class="notice">3. Cadastre alunos e libere acesso.</div>
-                  <div class="notice">4. Acompanhe progresso nos relatórios.</div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section id="courses" class="section">
-            <div class="grid">
-              <div class="panel">
-                <div class="panel-head"><div><h2>Novo curso</h2><p class="muted">Crie a trilha principal.</p></div></div>
-                <form id="courseForm" class="form">
-                  <div class="field"><label>Nome do curso</label><input name="title" required /></div>
-                  <div class="field"><label>Categoria</label><input name="category" value="Treinamento" /></div>
-                  <div class="field full"><label>Descrição</label><textarea name="description"></textarea></div>
-                  <div class="field"><label>Status</label><select name="published"><option value="true">Publicado</option><option value="false">Rascunho</option></select></div>
-                  <div class="field"><label>&nbsp;</label><button class="btn primary" type="submit">Criar curso</button></div>
-                </form>
-              </div>
-              <div class="panel">
-                <div class="panel-head"><div><h2>Adicionar módulo</h2><p class="muted">Escolha um curso e crie uma etapa.</p></div></div>
-                <form id="moduleForm" class="form">
-                  <div class="field full"><label>Curso</label><select name="courseId" id="moduleCourse"></select></div>
-                  <div class="field full"><label>Nome do módulo</label><input name="title" required /></div>
-                  <div class="field full"><label>Descrição do módulo</label><textarea name="description"></textarea></div>
-                  <div class="field full"><button class="btn primary" type="submit">Adicionar módulo</button></div>
-                </form>
-              </div>
-            </div>
-
-            <div class="panel" style="margin-top:18px">
-              <div class="panel-head"><div><h2>Adicionar aula, vídeo e arquivos</h2><p class="muted">Você pode subir um vídeo gravado, usar link externo e anexar materiais.</p></div></div>
-              <form id="lessonForm" class="form">
-                <div class="field"><label>Curso</label><select name="courseId" id="lessonCourse"></select></div>
-                <div class="field"><label>Módulo</label><select name="moduleId" id="lessonModule"></select></div>
-                <div class="field"><label>Título da aula</label><input name="title" required /></div>
-                <div class="field"><label>Link de vídeo externo</label><input name="videoUrl" placeholder="Vimeo, YouTube privado, Bunny..." /></div>
-                <div class="field full"><label>Descrição</label><textarea name="description"></textarea></div>
-                <div class="field"><label>Status da aula</label><select name="published"><option value="true">Publicado</option><option value="false">Rascunho</option></select></div>
-                <div class="field"><label>Liberação</label><select name="releaseType"><option value="immediate">Imediata</option><option value="date">Por data</option><option value="days">Dias após matrícula</option></select></div>
-                <div class="field"><label>Data ou dias</label><input name="releaseValue" placeholder="2026-12-31 ou 7" /></div>
-                <div class="field"><label>Vídeo gravado</label><input name="video" type="file" accept="video/*" /></div>
-                <div class="field"><label>Materiais para download</label><input name="files" type="file" multiple /></div>
-                <div class="field full"><button class="btn primary" type="submit">Adicionar aula</button></div>
-              </form>
-            </div>
-
-            <div class="panel" style="margin-top:18px">
-              <div class="panel-head"><div><h2>Adicionar pergunta</h2><p class="muted">Perguntas ficam dentro de cada módulo.</p></div></div>
-              <form id="quizForm" class="form">
-                <div class="field"><label>Curso</label><select name="courseId" id="quizCourse"></select></div>
-                <div class="field"><label>Módulo</label><select name="moduleId" id="quizModule"></select></div>
-                <div class="field full"><label>Pergunta</label><input name="question" required /></div>
-                <div class="field"><label>Alternativa A</label><input name="optionA" required /></div>
-                <div class="field"><label>Alternativa B</label><input name="optionB" required /></div>
-                <div class="field"><label>Alternativa C</label><input name="optionC" /></div>
-                <div class="field"><label>Resposta correta</label><select name="answer"><option value="0">A</option><option value="1">B</option><option value="2">C</option></select></div>
-                <div class="field full"><button class="btn primary" type="submit">Adicionar pergunta</button></div>
-              </form>
-            </div>
-
-            <div class="panel" style="margin-top:18px">
-              <div class="panel-head"><div><h2>Cursos cadastrados</h2><p class="muted">Estrutura atual dos treinamentos.</p></div></div>
-              <div id="courseList" class="stack"></div>
-            </div>
-          </section>
-
-          <div id="lessonModal" class="modal hidden">
-            <form id="lessonEditForm" class="modal-card" onsubmit="saveLessonEdit(event)">
-              <div class="panel-head">
-                <div><h2>Editar aula</h2><p class="muted">Altere dados, substitua vídeo e anexe novos materiais.</p></div>
-                <button class="btn mini" type="button" data-close-modal>Fechar</button>
-              </div>
-              <input type="hidden" name="courseId" />
-              <input type="hidden" name="currentModuleId" />
-              <input type="hidden" name="lessonId" />
-              <input type="hidden" name="videoName" />
-              <div class="form">
-                <div class="field"><label>Módulo</label><select name="moduleId" id="editLessonModule"></select></div>
-                <div class="field"><label>Status</label><select name="published"><option value="true">Publicado</option><option value="false">Rascunho</option></select></div>
-                <div class="field full"><label>Título</label><input name="title" required /></div>
-                <div class="field full"><label>Descrição</label><textarea name="description"></textarea></div>
-                <div class="field full"><label>Link de vídeo externo</label><input name="videoUrl" /></div>
-                <div class="field"><label>Substituir vídeo</label><input name="video" type="file" accept="video/*" /></div>
-                <div class="field"><label>Novos materiais</label><input name="files" type="file" multiple /></div>
-                <div class="field"><label>Liberação</label><select name="releaseType"><option value="immediate">Imediata</option><option value="date">Por data</option><option value="days">Dias após matrícula</option></select></div>
-                <div class="field"><label>Data ou dias</label><input name="releaseValue" placeholder="2026-12-31 ou 7" /></div>
-                <div class="field full">
-                  <label>Materiais atuais</label>
-                  <div id="editLessonFiles" class="stack"></div>
-                </div>
-                <div id="lessonEditMsg" class="field full"></div>
-                <div class="field full toolbar">
-                  <button class="btn primary" type="submit" id="saveLessonButton">Salvar alterações</button>
-                  <button class="btn danger" type="button" id="deleteLesson">Excluir aula</button>
-                </div>
-              </div>
-            </form>
-          </div>
-
-          <section id="students" class="section">
-            <div class="grid">
-              <div class="panel">
-                <div class="panel-head"><div><h2>Novo aluno</h2><p class="muted">Cadastre e libere um curso.</p></div></div>
-                <form id="studentForm" class="form">
-                  <div class="field"><label>Nome</label><input name="name" required /></div>
-                  <div class="field"><label>E-mail</label><input name="email" type="email" required /></div>
-                  <div class="field"><label>Senha inicial</label><input name="password" value="123456" /></div>
-                  <div class="field"><label>Validade</label><input name="expiresAt" type="date" /></div>
-                  <div class="field full"><label>Curso liberado</label><select name="courseId" id="studentCourse"></select></div>
-                  <div class="field full"><button class="btn primary" type="submit">Cadastrar e liberar</button></div>
-                </form>
-              </div>
-              <div class="panel">
-                <div class="panel-head"><div><h2>Nova liberação</h2><p class="muted">Libere outro curso para aluno existente.</p></div></div>
-                <form id="enrollmentForm" class="form">
-                  <div class="field full"><label>Aluno</label><select name="userId" id="enrollStudent"></select></div>
-                  <div class="field full"><label>Curso</label><select name="courseId" id="enrollCourse"></select></div>
-                  <div class="field full"><label>Validade</label><input name="expiresAt" type="date" /></div>
-                  <div class="field full"><button class="btn primary" type="submit">Liberar curso</button></div>
-                </form>
-              </div>
-            </div>
-            <div class="panel" style="margin-top:18px">
-              <div class="panel-head"><div><h2>Alunos</h2><p class="muted">Acessos cadastrados na plataforma.</p></div></div>
-              <div id="studentList" class="stack"></div>
-            </div>
-          </section>
-
-          <section id="reports" class="section">
-            <div class="panel">
-              <div class="panel-head"><div><h2>Progresso por aluno</h2><p class="muted">Percentual de aulas concluídas por curso.</p></div></div>
-              <div id="reportList" class="stack"></div>
-            </div>
-          </section>
-
-          <section id="studentHome" class="section">
-            <div class="course-layout">
-              <div class="panel">
-                <div class="panel-head"><div><h2>Meus cursos</h2><p class="muted">Cursos liberados para seu acesso.</p></div></div>
-                <div id="studentCourses" class="stack"></div>
-              </div>
-              <div class="panel">
-                <div class="panel-head">
-                  <div><h2 id="studentLessonTitle">Selecione uma aula</h2><p id="studentLessonDesc" class="muted">Abra um curso para começar.</p></div>
-                  <span id="studentLessonStatus" class="badge blue">Aguardando</span>
-                </div>
-                <div id="videoBox" class="video"><div class="play">▶</div></div>
-                <div id="resourceBox" class="resources"></div>
-                <div id="quizBox" class="quiz"></div>
-                <button id="completeLesson" class="btn primary" style="margin-top:14px" disabled>Marcar aula como concluída</button>
-              </div>
-            </div>
-          </section>
-        </div>
+        <div id="content" class="content"></div>
       </main>
     </div>
-
+    <div id="editorModal" class="modal hidden">
+      <form id="editorForm" class="modal-card">
+        <div class="modal-head"><div><h2 id="editorTitle">Editar aula</h2><p>Textos, rota, palavras-chave, público, vídeo e materiais.</p></div><button type="button" class="btn small" data-close>Fechar</button></div>
+        <input type="hidden" name="courseId" />
+        <input type="hidden" name="moduleId" />
+        <input type="hidden" name="lessonId" />
+        <input type="hidden" name="videoName" />
+        <div class="form">
+          <div class="field full"><label>Título *</label><input name="title" required /></div>
+          <div class="field full"><label>Resumo *</label><textarea name="description" required></textarea></div>
+          <div class="field full"><label>Conteúdo detalhado *</label><textarea name="content" rows="18" required placeholder="Use ## para títulos, 1. para passos e - para listas."></textarea></div>
+          <div class="field"><label>Rota relacionada</label><input name="routePath" placeholder="/techmove/bdcq" /></div>
+          <div class="field"><label>Versão revisada</label><input name="versionLabel" placeholder="2026.07" /></div>
+          <div class="field full"><label>Palavras-chave</label><input name="keywords" placeholder="BDCQ, aprovação, key user, erro…" /></div>
+          <div class="field full"><label>Públicos</label><input name="audiences" placeholder="Administrador, Gestor, Consultor…" /></div>
+          <div class="field full"><label>Link de vídeo</label><input name="videoUrl" placeholder="https://…" /></div>
+          <div class="field"><label>Substituir vídeo</label><input name="video" type="file" accept="video/*" /></div>
+          <div class="field"><label>Adicionar materiais</label><input name="files" type="file" multiple /></div>
+          <div class="field full"><label><input name="published" type="checkbox" style="width:auto; min-height:0" checked /> Conteúdo publicado</label></div>
+          <div id="editorFiles" class="field full"></div>
+          <div id="editorMsg" class="field full"></div>
+          <div class="field full toolbar"><button class="btn primary" type="submit">Salvar conteúdo</button></div>
+        </div>
+      </form>
+    </div>
     <script>
-      const basePath = location.pathname.startsWith("/techeduca") ? "/techeduca" : "";
-      let user = null;
-      let admin = null;
-      let student = null;
-      let selected = null;
-      const $ = (s) => document.querySelector(s);
-      const $$ = (s) => Array.from(document.querySelectorAll(s));
-
-      const pages = {
-        dashboard: ["Painel", "Gestão dos treinamentos e alunos."],
-        courses: ["Cursos", "Crie cursos, módulos, aulas, vídeos, arquivos e perguntas."],
-        students: ["Alunos", "Cadastre alunos e libere acesso aos cursos."],
-        reports: ["Relatórios", "Acompanhe progresso, aulas concluídas e liberações."],
-        studentHome: ["Minha trilha", "Assista aulas, baixe materiais e conclua módulos."]
+      const base = "/techeduca";
+      const state = { user: null, courses: [], coverage: [], history: [], view: "home", courseId: "", moduleId: "", lessonId: "", search: "" };
+      const $ = selector => document.querySelector(selector);
+      const $$ = selector => Array.from(document.querySelectorAll(selector));
+      const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+      const api = async (path, options = {}) => {
+        const response = await fetch(`${base}${path}`, { ...options, headers: options.body instanceof FormData ? options.headers : { "Content-Type": "application/json", ...(options.headers || {}) } });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
+        return data;
       };
+      const lessons = () => state.courses.flatMap(course => course.modules.flatMap(module => module.lessons.map(item => ({ ...item, course, module }))));
+      const countCourseLessons = course => course.modules.reduce((total, module) => total + module.lessons.length, 0);
+      const initials = name => String(name || "U").split(" ").map(part => part[0]).slice(0, 2).join("").toUpperCase();
+      const csv = value => String(value || "").split(",").map(item => item.trim()).filter(Boolean);
 
-      function api(path, options = {}) {
-        return fetch(`${basePath}${path}`, {
-          ...options,
-          headers: options.body instanceof FormData ? options.headers : { "Content-Type": "application/json", ...(options.headers || {}) }
-        }).then(async (res) => {
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || "Erro na solicitação.");
-          return data;
-        });
-      }
-
-      function formJson(form) {
-        return Object.fromEntries(new FormData(form).entries());
-      }
-
-      function initials(name) {
-        return String(name || "?").split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-      }
-
-      function bar(value) {
-        return `<div class="bar"><i style="--value:${value}%"></i></div>`;
-      }
-
-      function showMessage(el, text, error = false) {
-        el.innerHTML = `<div class="notice ${error ? "error" : ""}" style="margin-bottom:12px">${text}</div>`;
-        setTimeout(() => { el.innerHTML = ""; }, 2600);
-      }
-
-      function esc(value) {
-        return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
-      }
-
-      function releaseLabel(lesson) {
-        if (lesson.releaseType === "date" && lesson.releaseValue) return `Libera em ${lesson.releaseValue}`;
-        if (lesson.releaseType === "days" && lesson.releaseValue) return `${lesson.releaseValue} dia(s) após matrícula`;
-        return "Liberação imediata";
-      }
-
-      function findCourse(courseId) {
-        return admin.courses.find((course) => course.id === courseId);
-      }
-
-      function findModule(courseId, moduleId) {
-        return findCourse(courseId)?.modules.find((module) => module.id === moduleId);
-      }
-
-      function findLesson(courseId, moduleId, lessonId) {
-        return findModule(courseId, moduleId)?.lessons.find((lesson) => lesson.id === lessonId);
-      }
-
-      async function boot() {
-        try {
-          const data = await api("/api/me");
-          user = data.user;
-          $("#login").classList.add("hidden");
-          $("#app").classList.remove("hidden");
-          $("#userBox").textContent = `${user.name} · ${user.role === "admin" ? "Admin" : "Aluno"}`;
-          $("#roleLabel").textContent = user.role === "admin" ? "Administração" : "Portal do aluno";
-          $("#adminNav").classList.toggle("hidden", user.role !== "admin");
-          $("#studentNav").classList.toggle("hidden", user.role !== "student");
-          if (user.role === "admin") {
-            showPage("dashboard");
-            await loadAdmin();
-          } else {
-            showPage("studentHome");
-            await loadStudent();
-          }
-        } catch {
-          $("#login").classList.remove("hidden");
-          $("#app").classList.add("hidden");
+      function markdown(value) {
+        const lines = esc(value).split("\n");
+        let html = "", list = "";
+        const close = () => { if (list) { html += `</${list}>`; list = ""; } };
+        for (const line of lines) {
+          if (/^## /.test(line)) { close(); html += `<h2>${line.slice(3)}</h2>`; continue; }
+          if (/^### /.test(line)) { close(); html += `<h3>${line.slice(4)}</h3>`; continue; }
+          if (/^\d+\. /.test(line)) { if (list !== "ol") { close(); list = "ol"; html += "<ol>"; } html += `<li>${line.replace(/^\d+\. /,"")}</li>`; continue; }
+          if (/^- /.test(line)) { if (list !== "ul") { close(); list = "ul"; html += "<ul>"; } html += `<li>${line.slice(2)}</li>`; continue; }
+          close();
+          if (line.trim()) html += `<p>${line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/`(.+?)`/g,"<code>$1</code>")}</p>`;
         }
+        close();
+        return html;
       }
 
-      function showPage(page) {
-        $$(".section").forEach((section) => section.classList.toggle("active", section.id === page));
-        $$(".nav").forEach((button) => button.classList.toggle("active", button.dataset.page === page));
-        $("#title").textContent = pages[page]?.[0] || "TechEduca+";
-        $("#subtitle").textContent = pages[page]?.[1] || "";
+      function setView(view) {
+        state.view = view;
+        $$("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === view));
+        render();
       }
 
-      async function loadAdmin() {
-        admin = await api("/api/admin");
-        renderAdmin();
+      function renderNav() {
+        $("#courseNav").innerHTML = state.courses.map(course => `<button class="nav course-nav ${state.courseId === course.id ? "active" : ""}" style="--course:${esc(course.color)}" data-course="${course.id}">${esc(course.title.replace(" completo",""))}</button>`).join("");
+        $$("[data-course]").forEach(button => button.onclick = () => { state.courseId = button.dataset.course; state.moduleId = ""; state.lessonId = ""; state.view = "course"; renderNav(); render(); });
+        $("#adminNav").classList.toggle("hidden", !state.user.isAdmin);
       }
 
-      async function loadStudent() {
-        student = await api("/api/student");
-        renderStudent();
+      function home() {
+        const totalLessons = lessons().length;
+        return `<section class="hero"><h1>Aprenda o sistema completo, no momento em que precisar.</h1><p>Procedimentos por produto, perfil e fluxo de trabalho. Use a busca para localizar uma tela, tarefa, campo, código ou mensagem de erro.</p><div class="hero-stats"><span>${state.courses.length} treinamentos</span><span>${totalLessons} aulas detalhadas</span><span>${state.coverage.length} itens na matriz de cobertura</span><span>Consulta livre</span></div></section>
+          <div class="section-head"><div><h2>Treinamentos por produto</h2><p>Do Portal Tech à administração funcional.</p></div></div>
+          <div class="grid">${state.courses.map(courseCard).join("")}</div>
+          <div class="section-head"><div><h2>Fluxos recomendados</h2><p>Sequências completas para executar o trabalho sem perder dependências.</p></div></div>
+          <div class="grid">${["flow-project-start","flow-discovery-design","flow-test-go-live"].map(id => {
+            const item = lessons().find(lesson => lesson.id === id); return item ? lessonCard(item) : "";
+          }).join("")}</div>`;
       }
 
-      function renderAdmin() {
-        const courses = admin.courses;
-        const students = admin.students;
-        const progressItems = admin.progress;
-        const completions = progressItems.map((item) => {
-          const course = courses.find((c) => c.id === item.courseId);
-          const total = course ? course.modules.flatMap((m) => m.lessons).length : 0;
-          return total ? Math.round((item.completedLessons.length / total) * 100) : 0;
-        });
-        const average = completions.length ? Math.round(completions.reduce((a, b) => a + b, 0) / completions.length) : 0;
-        $("#mCourses").textContent = courses.length;
-        $("#mStudents").textContent = students.length;
-        $("#mEnrollments").textContent = admin.enrollments.length;
-        $("#mProgress").textContent = `${average}%`;
-
-        const courseOptions = courses.map((course) => `<option value="${course.id}">${course.title}</option>`).join("");
-        ["#moduleCourse", "#lessonCourse", "#quizCourse", "#studentCourse", "#enrollCourse"].forEach((id) => { $(id).innerHTML = courseOptions; });
-        $("#enrollStudent").innerHTML = students.map((student) => `<option value="${student.id}">${student.name}</option>`).join("");
-        updateModuleSelects();
-
-        const courseCards = courses.map((course) => {
-          const lessons = course.modules.flatMap((m) => m.lessons).length;
-          return `<article class="card">
-            <div class="panel-head">
-              <div><h3>${course.title}</h3><p>${course.description || "Sem descrição."}</p></div>
-              <span class="badge ${course.published ? "" : "orange"}">${course.published ? "Publicado" : "Rascunho"}</span>
-            </div>
-            <p><strong>${course.modules.length}</strong> módulos · <strong>${lessons}</strong> aulas · ${course.category}</p>
-          </article>`;
-        }).join("") || `<div class="notice">Nenhum curso cadastrado ainda.</div>`;
-        $("#dashboardCourses").innerHTML = courseCards;
-        $("#courseList").innerHTML = courses.map(courseDetail).join("") || `<div class="notice">Crie o primeiro curso para começar.</div>`;
-
-        $("#studentList").innerHTML = students.map((student) => `
-          <article class="row">
-            <div class="avatar">${initials(student.name)}</div>
-            <div><h3>${student.name}</h3><p class="muted">${student.email} · ${student.enrollments.length} curso(s) liberado(s)</p></div>
-            <span class="badge blue">Aluno</span>
-          </article>
-        `).join("") || `<div class="notice">Nenhum aluno cadastrado ainda.</div>`;
-
-        $("#reportList").innerHTML = admin.enrollments.map((enrollment) => {
-          const student = students.find((s) => s.id === enrollment.userId);
-          const course = courses.find((c) => c.id === enrollment.courseId);
-          const progress = progressItems.find((p) => p.userId === enrollment.userId && p.courseId === enrollment.courseId) || { completedLessons: [] };
-          const total = course ? course.modules.flatMap((m) => m.lessons).length : 0;
-          const percent = total ? Math.round((progress.completedLessons.length / total) * 100) : 0;
-          return `<article class="row">
-            <div class="avatar">${initials(student?.name)}</div>
-            <div>
-              <h3>${student?.name || "Aluno removido"}</h3>
-              <p class="muted">${course?.title || "Curso removido"} · validade ${enrollment.expiresAt || "sem data"}</p>
-              ${bar(percent)}
-            </div>
-            <span class="badge">${percent}%</span>
-          </article>`;
-        }).join("") || `<div class="notice">Sem matrículas para relatório.</div>`;
+      function courseCard(course) {
+        return `<article class="card" style="--course:${esc(course.color)}" data-open-course="${course.id}"><span class="badge gray">${esc(course.category)}</span><h3>${esc(course.title)}</h3><p>${esc(course.description)}</p><div class="meta">${course.modules.length} módulos · ${countCourseLessons(course)} aulas</div></article>`;
+      }
+      function lessonCard(item) {
+        return `<article class="card" style="--course:${esc(item.course.color)}" data-open-lesson="${item.id}"><span class="badge gray">${esc(item.course.category)}</span><h3>${esc(item.title)}</h3><p>${esc(item.description)}</p><div class="meta">${esc(item.module.title)} · ${esc(item.routePath || "Ajuda geral")}</div></article>`;
       }
 
-      function courseDetail(course) {
-        return `<article class="card">
-          <div class="panel-head">
-            <div><h3>${esc(course.title)}</h3><p>${esc(course.description || "Sem descrição.")}</p></div>
-            <div class="toolbar">
-              <span class="badge ${course.published ? "blue" : "orange"}">${course.published ? "Publicado" : "Rascunho"}</span>
-              <button class="btn mini" data-action="edit-course" data-course="${course.id}">Editar curso</button>
-            </div>
-          </div>
-          <div class="stack">
-            ${course.modules.map((module, moduleIndex) => `
-              <div class="card">
-                <div class="split">
-                  <div>
-                    <h4>${esc(module.title)}</h4>
-                    <p>${esc(module.description || `${module.lessons.length} aula(s) · ${module.quiz.length} pergunta(s)`)}</p>
-                  </div>
-                  <div class="toolbar">
-                    <button class="btn mini" data-action="move-module" data-direction="up" data-course="${course.id}" data-module="${module.id}" ${moduleIndex === 0 ? "disabled" : ""}>↑</button>
-                    <button class="btn mini" data-action="move-module" data-direction="down" data-course="${course.id}" data-module="${module.id}" ${moduleIndex === course.modules.length - 1 ? "disabled" : ""}>↓</button>
-                    <button class="btn mini" data-action="edit-module" data-course="${course.id}" data-module="${module.id}">Editar módulo</button>
-                    <button class="btn mini danger" data-action="delete-module" data-course="${course.id}" data-module="${module.id}">Excluir</button>
-                  </div>
-                </div>
-                <div class="stack" style="margin-top:10px">
-                  ${module.lessons.map((lesson, lessonIndex) => `<div class="lesson">
-                    <div>
-                      <strong>${esc(lesson.title)}</strong>
-                      <p>${esc(lesson.description || "Sem descrição.")}</p>
-                      <div class="lesson-meta">
-                        <span class="badge ${lesson.published ? "" : "orange"}">${lesson.published ? "Publicado" : "Rascunho"}</span>
-                        <span class="badge blue">${esc(releaseLabel(lesson))}</span>
-                        <span class="badge">${lesson.files.length} arquivo(s)</span>
-                        ${lesson.videoUrl ? `<span class="badge">Vídeo</span>` : ""}
-                      </div>
-                    </div>
-                    <div class="lesson-actions">
-                      <button class="btn mini" data-action="move-lesson" data-direction="up" data-course="${course.id}" data-module="${module.id}" data-lesson="${lesson.id}" ${lessonIndex === 0 ? "disabled" : ""}>↑</button>
-                      <button class="btn mini" data-action="move-lesson" data-direction="down" data-course="${course.id}" data-module="${module.id}" data-lesson="${lesson.id}" ${lessonIndex === module.lessons.length - 1 ? "disabled" : ""}>↓</button>
-                      <button class="btn mini" data-action="edit-lesson" data-course="${course.id}" data-module="${module.id}" data-lesson="${lesson.id}">Editar</button>
-                    </div>
-                  </div>`).join("") || `<div class="empty-state">Nenhuma aula neste módulo.</div>`}
-                </div>
-              </div>
-            `).join("") || `<div class="notice">Adicione módulos para montar a trilha.</div>`}
-          </div>
-        </article>`;
+      function catalog() {
+        return `<div class="section-head"><div><h2>Todos os treinamentos</h2><p>Catálogo completo em consulta livre.</p></div></div><div class="grid">${state.courses.map(courseCard).join("")}</div>`;
       }
 
-      async function editCourse(courseId) {
-        const course = findCourse(courseId);
-        const title = prompt("Nome do curso", course.title);
-        if (title === null) return;
-        const category = prompt("Categoria", course.category || "Treinamento");
-        if (category === null) return;
-        const description = prompt("Descrição", course.description || "");
-        if (description === null) return;
-        const published = confirm("Deixar este curso publicado para alunos?");
-        await api(`/api/courses/${course.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ title, category, description, published }),
-        });
-        await loadAdmin();
+      function profiles() {
+        const profiles = [
+          ["Administrador funcional", ["Administrador"]],
+          ["Gestor de projetos", ["Gestor"]],
+          ["Líder técnico", ["Líder técnico"]],
+          ["Consultor", ["Consultor"]],
+          ["Key user e aprovador", ["Key user","Aprovador"]],
+          ["Usuário de consulta", ["Visualizador"]],
+        ];
+        return `<div class="section-head"><div><h2>Trilhas por perfil</h2><p>As mesmas aulas são reutilizadas conforme as responsabilidades de cada pessoa.</p></div></div><div class="grid">${profiles.map(([name,tags]) => {
+          const total = lessons().filter(item => tags.some(tag => item.audiences.includes(tag))).length;
+          return `<article class="card" data-profile="${esc(tags[0])}"><span class="badge gray">Perfil</span><h3>${name}</h3><p>Conteúdos compatíveis com as tarefas e permissões deste perfil.</p><div class="meta">${total} aulas relacionadas</div></article>`;
+        }).join("")}</div>`;
       }
 
-      async function editModule(courseId, moduleId) {
-        const module = findModule(courseId, moduleId);
-        const title = prompt("Nome do módulo", module.title);
-        if (title === null) return;
-        const description = prompt("Descrição do módulo", module.description || "");
-        if (description === null) return;
-        await api(`/api/courses/${courseId}/modules/${moduleId}`, {
-          method: "PATCH",
-          body: JSON.stringify({ title, description }),
-        });
-        await loadAdmin();
+      function courseView() {
+        const course = state.courses.find(item => item.id === state.courseId) || state.courses[0];
+        if (!course) return `<div class="empty">Nenhum treinamento publicado.</div>`;
+        if (!state.courseId) state.courseId = course.id;
+        const currentModule = course.modules.find(item => item.id === state.moduleId) || course.modules[0];
+        const currentLesson = currentModule?.lessons.find(item => item.id === state.lessonId) || currentModule?.lessons[0];
+        if (currentModule) state.moduleId = currentModule.id;
+        if (currentLesson) state.lessonId = currentLesson.id;
+        return `<div class="section-head"><div><span class="badge" style="color:${esc(course.color)}">${esc(course.category)}</span><h2>${esc(course.title)}</h2><p>${esc(course.description)}</p></div></div>
+          <div class="catalog-layout"><aside class="panel module-list" style="position:sticky;height:auto;color:inherit;background:white;padding:16px">
+            ${course.modules.map(module => `<section><h3 class="module-title">${esc(module.title)}</h3><p style="color:var(--muted)">${esc(module.description)}</p>${module.lessons.map(item => `<button class="lesson-link ${item.id === state.lessonId ? "active" : ""}" data-lesson="${item.id}" data-module="${module.id}"><strong>${esc(item.title)}</strong><small>${esc(item.routePath || "Ajuda geral")}</small></button>`).join("")}</section>`).join("")}
+          </aside>${currentLesson ? lessonView(currentLesson, course) : `<div class="empty">Este módulo ainda não possui aulas.</div>`}</div>`;
       }
 
-      async function deleteModule(courseId, moduleId) {
-        const module = findModule(courseId, moduleId);
-        if (!confirm(`Excluir o módulo "${module.title}" e todas as aulas dentro dele?`)) return;
-        await api(`/api/courses/${courseId}/modules/${moduleId}`, { method: "DELETE" });
-        await loadAdmin();
+      function lessonView(item, course) {
+        const routeLink = item.routePath ? `<a class="btn primary" href="${esc(item.routePath)}">Abrir tela relacionada ↗</a>` : "";
+        const edit = state.user.isAdmin ? `<button class="btn" data-edit-lesson="${item.id}">Editar conteúdo</button>` : "";
+        const video = item.videoUrl ? (/\.(mp4|webm|ogg)(\?|$)/i.test(item.videoUrl) || item.videoUrl.startsWith("/techeduca/api/files/") ? `<video class="video" controls src="${esc(item.videoUrl)}"></video>` : `<a class="btn" target="_blank" rel="noreferrer" href="${esc(item.videoUrl)}">Assistir ao vídeo ↗</a>`) : "";
+        return `<article class="panel lesson"><div class="toolbar">${routeLink}${edit}</div><div class="badges">${item.audiences.map(tag => `<span class="badge">${esc(tag)}</span>`).join("")}<span class="badge gray">Revisão ${esc(item.versionLabel || "não informada")}</span></div><h1>${esc(item.title)}</h1><p class="lesson-summary">${esc(item.description)}</p>${video}<div class="article">${markdown(item.content)}</div>${item.files.length ? `<div class="materials">${item.files.map(file => `<a class="btn" href="${esc(file.url)}">${esc(file.name)} ↓</a>`).join("")}</div>` : ""}</article>`;
       }
 
-      async function moveModule(courseId, moduleId, direction) {
-        await api(`/api/courses/${courseId}/modules/${moduleId}/move`, {
-          method: "POST",
-          body: JSON.stringify({ direction }),
-        });
-        await loadAdmin();
+      function searchView() {
+        const term = state.search.trim().toLocaleLowerCase("pt-BR");
+        const results = lessons().filter(item => [item.title,item.description,item.content,item.routePath,item.keywords.join(" "),item.audiences.join(" "),item.course.title,item.module.title].join(" ").toLocaleLowerCase("pt-BR").includes(term));
+        return `<div class="section-head"><div><h2>Resultados para “${esc(state.search)}”</h2><p>${results.length} aula(s) encontrada(s).</p></div></div><div class="search-results">${results.map(item => `<article class="result" data-open-lesson="${item.id}"><div class="badges"><span class="badge gray">${esc(item.course.title)}</span><span class="badge gray">${esc(item.routePath || "Ajuda geral")}</span></div><h3>${esc(item.title)}</h3><p>${esc(item.description)}</p></article>`).join("") || `<div class="empty">Nenhum resultado. Tente o nome da tela, uma ação, um campo ou a mensagem de erro.</div>`}</div>`;
       }
 
-      async function moveLesson(courseId, moduleId, lessonId, direction) {
-        await api(`/api/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/move`, {
-          method: "POST",
-          body: JSON.stringify({ direction }),
-        });
-        await loadAdmin();
+      function adminView() {
+        return `<div class="section-head"><div><h2>Administração de conteúdos</h2><p>Crie cursos, módulos e aulas; edite as aulas existentes diretamente na árvore.</p></div></div>
+          <div class="admin-grid"><div class="panel"><h3>Novo curso</h3><form id="courseForm" class="form"><div class="field full"><label>Nome *</label><input name="title" required /></div><div class="field"><label>Categoria</label><input name="category" value="Treinamento" /></div><div class="field"><label>Cor</label><input name="color" type="color" value="#2563eb" /></div><div class="field full"><label>Descrição</label><textarea name="description"></textarea></div><div class="field full"><label><input name="published" type="checkbox" style="width:auto;min-height:0" checked /> Publicado</label></div><div class="field full"><button class="btn primary">Criar curso</button></div></form>
+          <hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Novo módulo</h3><form id="moduleForm" class="form"><div class="field full"><label>Curso</label><select name="courseId">${state.courses.map(course => `<option value="${course.id}">${esc(course.title)}</option>`).join("")}</select></div><div class="field full"><label>Nome *</label><input name="title" required /></div><div class="field full"><label>Descrição</label><textarea name="description"></textarea></div><div class="field full"><button class="btn primary">Criar módulo</button></div></form>
+          <hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Nova aula</h3><p style="color:var(--muted)">Escolha o módulo na árvore e use Nova aula.</p></div>
+          <div class="panel"><h3>Estrutura editorial</h3>${state.courses.map(course => `<div class="tree-course"><div class="toolbar" style="justify-content:space-between;padding:10px 12px;background:#f8fafc"><button type="button" class="btn small" data-open-course="${course.id}">${esc(course.title)}</button><div class="toolbar"><span class="badge gray">${course.published ? "Publicado" : "Rascunho"}</span><button class="btn small" data-edit-course="${course.id}">Editar curso</button></div></div>${course.modules.map(module => `<div class="tree-module"><div class="toolbar" style="justify-content:space-between"><strong>${esc(module.title)}</strong><div class="toolbar"><button class="btn small" data-move-module="${course.id}|${module.id}|up" title="Mover módulo para cima">↑</button><button class="btn small" data-move-module="${course.id}|${module.id}|down" title="Mover módulo para baixo">↓</button><button class="btn small" data-new-lesson="${course.id}|${module.id}">Nova aula</button></div></div>${module.lessons.map(item => `<div class="tree-lesson"><span>${esc(item.title)} ${item.published ? "" : "· Rascunho"}</span><div class="toolbar"><button class="btn small" data-move-lesson="${course.id}|${module.id}|${item.id}|up" title="Mover aula para cima">↑</button><button class="btn small" data-move-lesson="${course.id}|${module.id}|${item.id}|down" title="Mover aula para baixo">↓</button><button class="btn small" data-edit-lesson="${item.id}">Editar</button></div></div>`).join("")}</div>`).join("")}</div>`).join("")}<div class="section-head"><div><h3>Histórico editorial</h3><p>Últimas alterações publicadas no portal.</p></div></div>${state.history.length ? state.history.slice(0,20).map(item => `<div class="tree-lesson"><span><strong>${esc(item.actorName)}</strong> · ${esc(item.action)} · ${esc(item.entityType)}</span><small>${new Date(item.createdAt).toLocaleString("pt-BR")}</small></div>`).join("") : `<div class="empty">O histórico aparecerá após a primeira edição persistida.</div>`}</div></div>`;
       }
 
-      function openLessonEditor(courseId, moduleId, lessonId) {
-        const course = findCourse(courseId);
-        const lesson = findLesson(courseId, moduleId, lessonId);
-        const form = $("#lessonEditForm");
-        form.courseId.value = courseId;
-        form.currentModuleId.value = moduleId;
-        form.lessonId.value = lessonId;
-        form.videoName.value = lesson.videoName || "";
-        form.title.value = lesson.title || "";
-        form.description.value = lesson.description || "";
-        form.videoUrl.value = lesson.videoUrl || "";
-        form.published.value = lesson.published ? "true" : "false";
-        form.releaseType.value = lesson.releaseType || "immediate";
-        form.releaseValue.value = lesson.releaseValue || "";
-        $("#lessonEditMsg").innerHTML = "";
-        $("#saveLessonButton").disabled = false;
-        $("#saveLessonButton").textContent = "Salvar alterações";
-        $("#editLessonModule").innerHTML = course.modules.map((module) => `<option value="${module.id}">${esc(module.title)}</option>`).join("");
-        form.moduleId.value = moduleId;
-        $("#editLessonFiles").innerHTML = lesson.files.length
-          ? lesson.files.map((file) => `<div class="row">
-              <div class="avatar">ARQ</div>
-              <div><strong>${esc(file.name)}</strong><p class="muted">${Math.round((file.size || 0) / 1024)} KB</p></div>
-              <button class="btn mini danger" type="button" data-action="delete-file" data-file="${file.id}">Remover</button>
-            </div>`).join("")
-          : `<div class="empty-state">Nenhum material anexado.</div>`;
-        $("#lessonModal").classList.remove("hidden");
+      function coverageView() {
+        return `<div class="section-head"><div><h2>Matriz de cobertura</h2><p>${state.coverage.length} aulas mapeadas por produto, módulo, rota, perfil e palavra-chave.</p></div><button class="btn" id="downloadCoverage">Baixar CSV</button></div><div class="panel coverage"><table><thead><tr><th>Curso</th><th>Módulo</th><th>Aula</th><th>Rota</th><th>Públicos</th></tr></thead><tbody>${state.coverage.map(row => `<tr><td>${esc(row.course)}</td><td>${esc(row.module)}</td><td>${esc(row.lesson)}</td><td>${esc(row.route)}</td><td>${esc(row.audiences.join(", "))}</td></tr>`).join("")}</tbody></table></div>`;
       }
 
-      function closeLessonEditor() {
-        $("#lessonModal").classList.add("hidden");
-        $("#lessonEditForm").reset();
-        $("#lessonEditMsg").innerHTML = "";
-        $("#saveLessonButton").disabled = false;
-        $("#saveLessonButton").textContent = "Salvar alterações";
+      function render() {
+        let html;
+        if (state.search) html = searchView();
+        else if (state.view === "catalog") html = catalog();
+        else if (state.view === "profiles") html = profiles();
+        else if (state.view === "course") html = courseView();
+        else if (state.view === "admin") html = adminView();
+        else if (state.view === "coverage") html = coverageView();
+        else html = home();
+        $("#content").innerHTML = html;
+        bind();
       }
 
-      async function saveLessonEdit(event) {
-        event.preventDefault();
-        const formEl = event.target;
-        const saveButton = $("#saveLessonButton");
-        const message = $("#lessonEditMsg");
-        const files = [...formEl.files.files, ...formEl.video.files];
-        const maxSize = 100 * 1024 * 1024;
-        const oversized = files.find((file) => file.size > maxSize);
-        if (oversized) {
-          message.innerHTML = `<div class="notice error">O arquivo "${esc(oversized.name)}" passa de 100 MB. Envie um arquivo menor ou divida o material.</div>`;
-          return;
-        }
-        saveButton.disabled = true;
-        saveButton.textContent = "Salvando...";
-        message.innerHTML = `<div class="notice">Enviando anexo. Aguarde ate concluir.</div>`;
+      function bind() {
+        $$("[data-open-course]").forEach(node => node.onclick = () => { state.courseId = node.dataset.openCourse; state.view = "course"; state.search = ""; $("#globalSearch").value = ""; renderNav(); render(); });
+        $$("[data-open-lesson]").forEach(node => node.onclick = () => openLesson(node.dataset.openLesson));
+        $$("[data-profile]").forEach(node => node.onclick = () => { state.search = node.dataset.profile; $("#globalSearch").value = state.search; render(); });
+        $$("[data-lesson]").forEach(node => node.onclick = () => { state.moduleId = node.dataset.module; state.lessonId = node.dataset.lesson; render(); });
+        $$("[data-edit-lesson]").forEach(node => node.onclick = () => openEditor(node.dataset.editLesson));
+        $$("[data-new-lesson]").forEach(node => node.onclick = () => openNewEditor(...node.dataset.newLesson.split("|")));
+        $$("[data-edit-course]").forEach(node => node.onclick = () => editCourse(node.dataset.editCourse));
+        $$("[data-move-module]").forEach(node => node.onclick = () => moveModule(...node.dataset.moveModule.split("|")));
+        $$("[data-move-lesson]").forEach(node => node.onclick = () => moveLesson(...node.dataset.moveLesson.split("|")));
+        $("#courseForm")?.addEventListener("submit", createCourse);
+        $("#moduleForm")?.addEventListener("submit", createModule);
+        $("#downloadCoverage")?.addEventListener("click", downloadCoverage);
+      }
+
+      function openLesson(id) {
+        const item = lessons().find(lesson => lesson.id === id);
+        if (!item) return;
+        state.courseId = item.course.id; state.moduleId = item.module.id; state.lessonId = item.id; state.view = "course"; state.search = "";
+        $("#globalSearch").value = ""; $("#clearSearch").classList.add("hidden"); renderNav(); render();
+      }
+
+      function openNewEditor(courseId, moduleId) {
+        const form = $("#editorForm"); form.reset(); form.courseId.value = courseId; form.moduleId.value = moduleId; form.lessonId.value = ""; form.versionLabel.value = "2026.07"; form.published.checked = true; $("#editorTitle").textContent = "Nova aula"; $("#editorFiles").innerHTML = ""; $("#editorModal").classList.remove("hidden");
+      }
+      function openEditor(id) {
+        const item = lessons().find(lesson => lesson.id === id); if (!item) return;
+        const form = $("#editorForm"); form.courseId.value = item.course.id; form.moduleId.value = item.module.id; form.lessonId.value = item.id; form.title.value = item.title; form.description.value = item.description; form.content.value = item.content; form.routePath.value = item.routePath; form.versionLabel.value = item.versionLabel; form.keywords.value = item.keywords.join(", "); form.audiences.value = item.audiences.join(", "); form.videoUrl.value = item.videoUrl; form.videoName.value = item.videoName; form.published.checked = item.published; $("#editorTitle").textContent = "Editar aula"; $("#editorFiles").innerHTML = item.files.length ? `<label>Materiais atuais</label>${item.files.map(file => `<div class="toolbar"><a class="btn small" href="${file.url}">${esc(file.name)}</a><button type="button" class="btn danger small" data-delete-file="${file.id}">Remover</button></div>`).join("")}` : ""; $$("[data-delete-file]").forEach(button => button.onclick = () => deleteFile(button.dataset.deleteFile)); $("#editorModal").classList.remove("hidden");
+      }
+
+      async function saveEditor(event) {
+        event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); data.set("published", String(form.published.checked)); data.set("keywords", JSON.stringify(csv(form.keywords.value))); data.set("audiences", JSON.stringify(csv(form.audiences.value)));
+        const path = form.lessonId.value ? `/api/courses/${form.courseId.value}/modules/${form.moduleId.value}/lessons/${form.lessonId.value}` : `/api/courses/${form.courseId.value}/modules/${form.moduleId.value}/lessons`;
+        try { await api(path, { method: form.lessonId.value ? "PATCH" : "POST", body: data }); $("#editorModal").classList.add("hidden"); await loadCatalog(); state.view = "admin"; render(); }
+        catch (error) { $("#editorMsg").innerHTML = `<div class="notice error">${esc(error.message)}</div>`; }
+      }
+      async function deleteFile(id) { if (!confirm("Remover este material da aula?")) return; await api(`/api/files/${id}`, { method: "DELETE" }); await loadCatalog(); $("#editorModal").classList.add("hidden"); render(); }
+      async function createCourse(event) { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); data.published = form.published.checked; await api("/api/courses", { method: "POST", body: JSON.stringify(data) }); await loadCatalog(); render(); }
+      async function createModule(event) { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); await api(`/api/courses/${data.courseId}/modules`, { method: "POST", body: JSON.stringify(data) }); await loadCatalog(); render(); }
+      async function editCourse(id) { const course = state.courses.find(item => item.id === id); if (!course) return; const title = prompt("Nome do curso", course.title); if (title === null || !title.trim()) return; const description = prompt("Descrição", course.description); if (description === null) return; const published = confirm("OK para manter o curso publicado. Cancelar para deixá-lo como rascunho."); await api(`/api/courses/${id}`, { method: "PATCH", body: JSON.stringify({ ...course, title: title.trim(), description, published }) }); await loadCatalog(); render(); }
+      async function moveModule(courseId, moduleId, direction) { await api(`/api/courses/${courseId}/modules/${moduleId}/move`, { method: "POST", body: JSON.stringify({ direction }) }); await loadCatalog(); render(); }
+      async function moveLesson(courseId, moduleId, lessonId, direction) { await api(`/api/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/move`, { method: "POST", body: JSON.stringify({ direction }) }); await loadCatalog(); render(); }
+      function downloadCoverage() { const rows = [["Curso","Módulo","Aula","Rota","Públicos","Palavras-chave"], ...state.coverage.map(row => [row.course,row.module,row.lesson,row.route,row.audiences.join("; "),row.keywords.join("; ")])]; const blob = new Blob([rows.map(row => row.map(value => `"${String(value).replaceAll('"','""')}"`).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "matriz-cobertura-techeduca.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); }
+      async function loadCatalog() { const data = await api(`/api/catalog${state.user?.isAdmin ? "?drafts=1" : ""}`); state.courses = data.courses; state.coverage = data.coverage; state.history = data.history || []; renderNav(); }
+
+      $$("[data-view]").forEach(button => button.onclick = () => setView(button.dataset.view));
+      $("#globalSearch").addEventListener("input", event => { state.search = event.target.value; $("#clearSearch").classList.toggle("hidden", !state.search); render(); });
+      $("#clearSearch").onclick = () => { state.search = ""; $("#globalSearch").value = ""; $("#clearSearch").classList.add("hidden"); render(); };
+      $$("[data-close]").forEach(button => button.onclick = () => $("#editorModal").classList.add("hidden"));
+      $("#editorForm").addEventListener("submit", saveEditor);
+      $("#editorModal").addEventListener("click", event => { if (event.target === $("#editorModal")) $("#editorModal").classList.add("hidden"); });
+
+      (async () => {
         try {
-          const form = new FormData(formEl);
-          const courseId = form.get("courseId");
-          const currentModuleId = form.get("currentModuleId");
-          const lessonId = form.get("lessonId");
-          await api(`/api/courses/${courseId}/modules/${currentModuleId}/lessons/${lessonId}`, {
-            method: "PATCH",
-            body: form,
-          });
-          message.innerHTML = `<div class="notice">Aula salva com sucesso.</div>`;
-          await loadAdmin();
-          closeLessonEditor();
+          const { user } = await api("/api/me"); state.user = user; $("#userName").textContent = user.name; $("#userRole").textContent = user.role; $("#avatar").textContent = initials(user.name); await loadCatalog();
+          const route = new URLSearchParams(location.search).get("route"); if (route) { const exact = lessons().find(item => item.routePath === route); if (exact) openLesson(exact.id); }
+          $("#loading").classList.add("hidden"); $("#app").classList.remove("hidden"); render();
         } catch (error) {
-          message.innerHTML = `<div class="notice error">${esc(error.message || "Nao foi possivel salvar a aula.")}</div>`;
-          saveButton.disabled = false;
-          saveButton.textContent = "Salvar alterações";
+          $("#loading").innerHTML = `<div style="max-width:520px;padding:24px;text-align:center"><h1>Acesso pelo Portal Tech</h1><p>Entre no Portal Tech para usar a Central de treinamento com a mesma sessão.</p><a class="btn primary" href="/">Ir para o Portal Tech</a></div>`;
         }
-      }
-
-      async function deleteCurrentLesson() {
-        const form = $("#lessonEditForm");
-        if (!confirm(`Excluir a aula "${form.title.value}"?`)) return;
-        await api(`/api/courses/${form.courseId.value}/modules/${form.currentModuleId.value}/lessons/${form.lessonId.value}`, { method: "DELETE" });
-        closeLessonEditor();
-        await loadAdmin();
-      }
-
-      async function deleteFile(fileId) {
-        if (!confirm("Remover este material da aula?")) return;
-        await api(`/api/files/${fileId}`, { method: "DELETE" });
-        const form = $("#lessonEditForm");
-        const lesson = findLesson(form.courseId.value, form.currentModuleId.value, form.lessonId.value);
-        lesson.files = lesson.files.filter((file) => file.id !== fileId);
-        openLessonEditor(form.courseId.value, form.currentModuleId.value, form.lessonId.value);
-      }
-
-      function updateModuleSelects() {
-        const lessonCourse = admin.courses.find((course) => course.id === $("#lessonCourse").value) || admin.courses[0];
-        const quizCourse = admin.courses.find((course) => course.id === $("#quizCourse").value) || admin.courses[0];
-        $("#lessonModule").innerHTML = (lessonCourse?.modules || []).map((module) => `<option value="${module.id}">${module.title}</option>`).join("");
-        $("#quizModule").innerHTML = (quizCourse?.modules || []).map((module) => `<option value="${module.id}">${module.title}</option>`).join("");
-      }
-
-      function renderStudent() {
-        $("#studentCourses").innerHTML = student.courses.map((item, courseIndex) => `
-          <article class="card">
-            <div class="panel-head">
-              <div><h3>${item.course.title}</h3><p>${item.course.description || ""}</p></div>
-              <div class="toolbar">
-                <span class="badge">${item.completion}%</span>
-                <button class="btn mini primary" data-continue="${courseIndex}">Continuar</button>
-              </div>
-            </div>
-            ${bar(item.completion)}
-            <div class="stack" style="margin-top:12px">
-              ${item.course.modules.map((module) => `
-                <div class="card">
-                  <div class="split">
-                    <div><h4>${module.title}</h4><p>${module.description || ""}</p></div>
-                    <span class="badge blue">${moduleProgress(item, module)}%</span>
-                  </div>
-                  ${bar(moduleProgress(item, module))}
-                  <div class="stack" style="margin-top:10px">
-                    ${module.lessons.map((lesson) => {
-                      const done = item.progress.completedLessons.includes(lesson.id);
-                      return `<button class="lesson" data-course="${courseIndex}" data-lesson="${lesson.id}">
-                        <div><strong>${lesson.title}</strong><p>${lesson.description || "Aula do módulo."}</p></div>
-                        <span class="badge ${done ? "" : "blue"}">${done ? "Feita" : "Abrir"}</span>
-                      </button>`;
-                    }).join("") || `<p class="muted">Nenhuma aula liberada ainda.</p>`}
-                  </div>
-                </div>
-              `).join("")}
-            </div>
-          </article>
-        `).join("") || `<div class="notice">Nenhum curso liberado para este usuário.</div>`;
-
-        $$("[data-course][data-lesson]").forEach((button) => {
-          button.addEventListener("click", () => openLesson(Number(button.dataset.course), button.dataset.lesson));
-        });
-        $$("[data-continue]").forEach((button) => {
-          button.addEventListener("click", () => continueCourse(Number(button.dataset.continue)));
-        });
-      }
-
-      function moduleProgress(item, module) {
-        if (!module.lessons.length) return 0;
-        const done = module.lessons.filter((lesson) => item.progress.completedLessons.includes(lesson.id)).length;
-        return Math.round((done / module.lessons.length) * 100);
-      }
-
-      function flatLessons(item) {
-        return item.course.modules.flatMap((module) => module.lessons.map((lesson) => ({ ...lesson, module })));
-      }
-
-      function continueCourse(courseIndex) {
-        const item = student.courses[courseIndex];
-        const lessons = flatLessons(item);
-        const next = lessons.find((lesson) => !item.progress.completedLessons.includes(lesson.id)) || lessons[0];
-        if (next) openLesson(courseIndex, next.id);
-      }
-
-      function openLesson(courseIndex, lessonId) {
-        const item = student.courses[courseIndex];
-        const lessons = flatLessons(item);
-        const lesson = lessons.find((lesson) => lesson.id === lessonId);
-        selected = { item, lesson };
-        $("#studentLessonTitle").textContent = lesson.title;
-        $("#studentLessonDesc").textContent = lesson.description || lesson.module.title;
-        const done = item.progress.completedLessons.includes(lesson.id);
-        $("#studentLessonStatus").textContent = done ? "Concluída" : "Liberada";
-        $("#completeLesson").disabled = done;
-        $("#completeLesson").textContent = done ? "Aula concluída" : "Marcar aula como concluída";
-        const isUploadedVideo = lesson.videoUrl.startsWith("/uploads/") || lesson.videoUrl.startsWith("/techeduca/uploads/");
-        $("#videoBox").innerHTML = lesson.videoUrl
-          ? isUploadedVideo
-            ? `<video controls src="${lesson.videoUrl}"></video>`
-            : `<a class="btn primary" href="${lesson.videoUrl}" target="_blank" rel="noreferrer">Abrir vídeo externo</a>`
-          : `<div class="play">▶</div>`;
-        $("#resourceBox").innerHTML = lesson.files.map((file) => `<a href="${file.url}" target="_blank" download>${file.name}</a>`).join("");
-        const currentIndex = lessons.findIndex((item) => item.id === lesson.id);
-        const nextLesson = lessons[currentIndex + 1];
-        if (nextLesson) {
-          $("#resourceBox").innerHTML += `<button class="btn blue" data-next-lesson="${nextLesson.id}" data-next-course="${courseIndex}">Próxima aula</button>`;
-        }
-        const quiz = lesson.module.quiz || [];
-        $("#quizBox").innerHTML = quiz.map((question) => `
-          <div class="card">
-            <strong>${question.question}</strong>
-            ${question.options.map((option, index) => `<label class="option"><input type="radio" name="${question.id}" data-question="${question.id}" data-answer="${index}" /> ${option}</label>`).join("")}
-          </div>
-        `).join("");
-        $$("[data-question]").forEach((input) => {
-          input.addEventListener("change", async () => {
-            await api("/api/progress/quiz", { method: "POST", body: JSON.stringify({ courseId: item.course.id, questionId: input.dataset.question, answer: input.dataset.answer }) });
-          });
-        });
-        $$("[data-next-lesson]").forEach((button) => {
-          button.addEventListener("click", () => openLesson(Number(button.dataset.nextCourse), button.dataset.nextLesson));
-        });
-      }
-
-      $("#loginForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        try {
-          await api("/api/login", { method: "POST", body: JSON.stringify(formJson(event.target)) });
-          await boot();
-        } catch (error) {
-          showMessage($("#loginMsg"), error.message, true);
-        }
-      });
-
-      $("#logout").addEventListener("click", async () => {
-        await api("/api/logout", { method: "POST", body: "{}" });
-        location.reload();
-      });
-
-      $$("[data-page]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page)));
-      $("#lessonCourse").addEventListener("change", updateModuleSelects);
-      $("#quizCourse").addEventListener("change", updateModuleSelects);
-      $("#courseList").addEventListener("click", async (event) => {
-        const button = event.target.closest("[data-action]");
-        if (!button || button.disabled) return;
-        const { action, course, module, lesson, direction, file } = button.dataset;
-        if (action === "edit-course") return editCourse(course);
-        if (action === "edit-module") return editModule(course, module);
-        if (action === "delete-module") return deleteModule(course, module);
-        if (action === "move-module") return moveModule(course, module, direction);
-        if (action === "move-lesson") return moveLesson(course, module, lesson, direction);
-        if (action === "edit-lesson") return openLessonEditor(course, module, lesson);
-        if (action === "delete-file") return deleteFile(file);
-      });
-      $("#deleteLesson").addEventListener("click", deleteCurrentLesson);
-      $$("[data-close-modal]").forEach((button) => button.addEventListener("click", closeLessonEditor));
-      $("#lessonModal").addEventListener("click", (event) => {
-        const button = event.target.closest("[data-action='delete-file']");
-        if (button) {
-          event.preventDefault();
-          return deleteFile(button.dataset.file);
-        }
-        if (event.target.id === "lessonModal") closeLessonEditor();
-      });
-
-      $("#courseForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const data = formJson(event.target);
-        data.published = data.published === "true";
-        await api("/api/courses", { method: "POST", body: JSON.stringify(data) });
-        event.target.reset();
-        await loadAdmin();
-      });
-
-      $("#moduleForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const data = formJson(event.target);
-        await api(`/api/courses/${data.courseId}/modules`, { method: "POST", body: JSON.stringify({ title: data.title, description: data.description }) });
-        event.target.reset();
-        await loadAdmin();
-      });
-
-      $("#lessonForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const form = new FormData(event.target);
-        const courseId = form.get("courseId");
-        const moduleId = form.get("moduleId");
-        if (!moduleId) return alert("Crie um módulo antes de adicionar aula.");
-        await api(`/api/courses/${courseId}/modules/${moduleId}/lessons`, { method: "POST", body: form });
-        event.target.reset();
-        await loadAdmin();
-      });
-
-      $("#quizForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const data = formJson(event.target);
-        if (!data.moduleId) return alert("Crie um módulo antes de adicionar pergunta.");
-        await api(`/api/courses/${data.courseId}/modules/${data.moduleId}/quiz`, { method: "POST", body: JSON.stringify(data) });
-        event.target.reset();
-        await loadAdmin();
-      });
-
-      $("#studentForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        await api("/api/students", { method: "POST", body: JSON.stringify(formJson(event.target)) });
-        event.target.reset();
-        await loadAdmin();
-      });
-
-      $("#enrollmentForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        await api("/api/enrollments", { method: "POST", body: JSON.stringify(formJson(event.target)) });
-        await loadAdmin();
-      });
-
-      $("#completeLesson").addEventListener("click", async () => {
-        if (!selected) return;
-        const currentCourseId = selected.item.course.id;
-        const currentLessonId = selected.lesson.id;
-        const currentCourseIndex = student.courses.findIndex((item) => item.course.id === currentCourseId);
-        const lessons = flatLessons(selected.item);
-        const currentIndex = lessons.findIndex((lesson) => lesson.id === currentLessonId);
-        const nextLesson = lessons[currentIndex + 1];
-        await api("/api/progress/lesson", { method: "POST", body: JSON.stringify({ courseId: selected.item.course.id, lessonId: selected.lesson.id }) });
-        await loadStudent();
-        if (nextLesson) openLesson(currentCourseIndex, nextLesson.id);
-        else openLesson(currentCourseIndex, currentLessonId);
-      });
-
-      boot();
+      })();
     </script>
   </body>
 </html>
