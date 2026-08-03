@@ -4,8 +4,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, ChevronRight, FolderKanban, Layers, Network, Users } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, FolderKanban, Layers, Network, Users } from "lucide-react";
+import { addDays, format, parseISO, startOfWeek } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import type { Allocation, Project, Resource } from "../../../shared/types";
 import { ProjectName } from "@/components/ProjectLogo";
 
@@ -72,7 +75,7 @@ function todayIsoDate() {
   return date.toISOString().slice(0, 10);
 }
 
-function PersonNode({ resource, subtitle }: { resource: Resource; subtitle?: string }) {
+function PersonNode({ resource, subtitle, projects }: { resource: Resource; subtitle?: string; projects?: string }) {
   return (
     <div className="flex min-w-[220px] items-center gap-3 rounded-sm border-l-4 border-sky-300 bg-white/90 p-3 shadow-sm">
       <Avatar className="h-16 w-16 shrink-0 border-2 border-blue-700">
@@ -81,7 +84,10 @@ function PersonNode({ resource, subtitle }: { resource: Resource; subtitle?: str
       </Avatar>
       <div className="min-w-0">
         {subtitle ? <p className="text-xs font-semibold uppercase tracking-wide text-blue-900">{subtitle}</p> : null}
-        <p className="break-words text-base font-semibold leading-tight text-sky-700">{resource.name}</p>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <p className="break-words text-base font-semibold leading-tight text-sky-700">{resource.name}</p>
+          {projects ? <p className="break-words text-xs font-semibold text-blue-800">• {projects}</p> : null}
+        </div>
         <p className="mt-1 text-xs text-slate-500">{resource.profile}</p>
       </div>
     </div>
@@ -92,11 +98,13 @@ function CompactPersonNode({
   resource,
   subtitle,
   roleLabel,
+  projects,
   muted = false,
 }: {
   resource: Resource;
   subtitle?: string;
   roleLabel?: string;
+  projects?: string;
   muted?: boolean;
 }) {
   return (
@@ -109,6 +117,7 @@ function CompactPersonNode({
         {roleLabel ? <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-blue-900">{roleLabel}</p> : null}
         <p className="truncate text-sm font-semibold leading-tight text-sky-700">{resource.name}</p>
         {subtitle ? <p className="truncate text-[11px] text-slate-500">{subtitle}</p> : null}
+        {projects ? <p className="truncate text-[11px] font-semibold text-blue-800" title={projects}>• {projects}</p> : null}
       </div>
     </div>
   );
@@ -119,11 +128,13 @@ function Section({
   resources,
   emptyText,
   columns = "md:grid-cols-2 xl:grid-cols-1",
+  getProjects,
 }: {
   title: string;
   resources: Resource[];
   emptyText: string;
   columns?: string;
+  getProjects?: (resource: Resource) => string;
 }) {
   return (
     <div className="space-y-3">
@@ -138,6 +149,7 @@ function Section({
               key={resource.id}
               resource={resource}
               subtitle={resourceFronts(resource).slice(0, 2).join(", ") || resource.profile}
+              projects={getProjects?.(resource)}
             />
           ))}
         </div>
@@ -148,24 +160,44 @@ function Section({
   );
 }
 
+function GroupLeader({ leader }: { leader?: Resource }) {
+  if (!leader) {
+    return <p className="truncate text-sm font-semibold text-amber-700">Grupo sem líder técnico definido</p>;
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-sm bg-sky-50/80 px-2 py-1">
+      <Avatar className="h-10 w-10 shrink-0 border-2 border-blue-700">
+        <AvatarImage src={leader.photoUrl || ""} alt={leader.name} className="object-cover" />
+        <AvatarFallback className="bg-blue-50 text-[10px] font-semibold text-blue-900">{initials(leader.name)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0">
+        <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-blue-900">Líder técnico do grupo</p>
+        <p className="truncate text-sm font-semibold text-sky-700">{leader.name}</p>
+      </div>
+    </div>
+  );
+}
+
 function GroupPanel({
   group,
   resources,
   collapsed,
   onToggle,
   getSubtitle,
+  getProjects,
 }: {
   group: string;
   resources: Resource[];
   collapsed: boolean;
   onToggle: () => void;
   getSubtitle: (resource: Resource) => string;
+  getProjects: (resource: Resource) => string;
 }) {
   const leaders = resources.filter(isLeader).sort(sortByName);
-  const sortedResources = resources.slice().sort(sortForGroup);
-  const leaderText = leaders.length > 0
-    ? `Lider tecnico: ${leaders.map(resource => resource.name).join(", ")}`
-    : "Grupo sem lider tecnico definido";
+  const leader = leaders[0];
+  const sortedResources = resources.filter(resource => !isLeader(resource)).sort(sortByName);
+  const fronts = Array.from(new Set(resources.flatMap(resourceFronts))).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   return (
     <div className="rounded-sm border bg-white/75 shadow-sm">
@@ -175,23 +207,21 @@ function GroupPanel({
         className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 text-left"
       >
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-blue-700/70 bg-sky-50 text-sm font-black text-blue-900">
-          {resources.length}
+          {sortedResources.length}
         </div>
-        <div className="grid min-w-0 gap-1 md:grid-cols-[minmax(160px,0.5fr)_1fr] md:items-center">
+        <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(160px,0.35fr)_1fr] md:items-center">
           <div className="min-w-0">
             <p className="truncate text-lg font-bold text-blue-900">{group}</p>
-            <p className="text-xs text-slate-500">Clique para {collapsed ? "expandir" : "minimizar"} este grupo</p>
+            <p className="truncate text-xs text-slate-500">{fronts.length > 0 ? fronts.join(", ") : "Sem frente informada"}</p>
           </div>
-          <p className={`truncate text-sm font-semibold ${leaders.length > 0 ? "text-sky-700" : "text-amber-700"}`}>
-            {leaderText}
-          </p>
+          <GroupLeader leader={leader} />
         </div>
         {collapsed ? <ChevronRight className="h-5 w-5 text-blue-900" /> : <ChevronDown className="h-5 w-5 text-blue-900" />}
       </button>
       {!collapsed ? (
         <div className="grid gap-3 border-t p-4 md:grid-cols-2">
           {sortedResources.map(resource => (
-            <PersonNode key={`${group}-${resource.id}`} resource={resource} subtitle={getSubtitle(resource)} />
+            <PersonNode key={`${group}-${resource.id}`} resource={resource} subtitle={getSubtitle(resource)} projects={getProjects(resource)} />
           ))}
         </div>
       ) : null}
@@ -216,7 +246,9 @@ function ProjectGroupPanel({
   onToggle: () => void;
   getSubtitle: (resource: Resource) => string;
 }) {
-  const sortedResources = resources.slice().sort(sortForGroup);
+  const sortedResources = resources
+    .filter(resource => resource.id !== leader?.id && !isLeader(resource))
+    .sort(sortByName);
 
   return (
     <div className="rounded-sm border bg-white/80 shadow-sm">
@@ -226,34 +258,21 @@ function ProjectGroupPanel({
         className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left"
       >
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-blue-700/70 bg-sky-50 text-sm font-black text-blue-900">
-          {resources.length}
+          {sortedResources.length}
         </div>
         <div className="grid min-w-0 gap-2 lg:grid-cols-[minmax(140px,0.35fr)_1fr] lg:items-center">
           <div className="min-w-0">
             <p className="truncate text-base font-bold text-blue-900">{group}</p>
             <p className="truncate text-[11px] text-slate-500">{fronts.length > 0 ? fronts.join(", ") : "Sem frente informada"}</p>
           </div>
-          {leader ? (
-            <div className="flex min-w-0 items-center gap-2 rounded-sm bg-sky-50/80 px-2 py-1">
-              <Avatar className="h-9 w-9 shrink-0 border-2 border-blue-700">
-                <AvatarImage src={leader.photoUrl || ""} alt={leader.name} className="object-cover" />
-                <AvatarFallback className="bg-blue-50 text-[10px] font-semibold text-blue-900">{initials(leader.name)}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-blue-900">Lider tecnico do grupo</p>
-                <p className="truncate text-sm font-semibold text-sky-700">{leader.name}</p>
-              </div>
-            </div>
-          ) : (
-            <p className="truncate text-sm font-semibold text-amber-700">Grupo sem lider tecnico definido</p>
-          )}
+          <GroupLeader leader={leader} />
         </div>
         {collapsed ? <ChevronRight className="h-5 w-5 text-blue-900" /> : <ChevronDown className="h-5 w-5 text-blue-900" />}
       </button>
       {!collapsed ? (
         <div className="grid gap-2 border-t p-3 md:grid-cols-2 xl:grid-cols-3">
           {sortedResources.map(resource => (
-            <CompactPersonNode key={`${group}-${resource.id}`} resource={resource} roleLabel={isLeader(resource) ? "Lider tecnico alocado" : resource.profile} subtitle={getSubtitle(resource)} />
+            <CompactPersonNode key={`${group}-${resource.id}`} resource={resource} roleLabel={resource.profile} subtitle={getSubtitle(resource)} />
           ))}
         </div>
       ) : null}
@@ -284,20 +303,47 @@ export default function OrgChart() {
   const [mode, setMode] = useState<ViewMode>("team");
   const [selectedGroup, setSelectedGroup] = useState(() => groups[0] || "");
   const [selectedProjectId, setSelectedProjectId] = useState(() => activeProjects[0]?.id || "");
+  const [weekReference, setWeekReference] = useState(todayIsoDate);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const currentGroup = selectedGroup || groups[0] || "";
   const currentProject = activeProjects.find(project => project.id === selectedProjectId) || activeProjects[0];
-  const today = useMemo(() => todayIsoDate(), []);
+  const selectedWeek = useMemo(() => {
+    const start = startOfWeek(parseISO(weekReference), { weekStartsOn: 1 });
+    const end = addDays(start, 6);
+    return {
+      start: format(start, "yyyy-MM-dd"),
+      end: format(end, "yyyy-MM-dd"),
+      label: `${format(start, "dd/MM", { locale: ptBR })} a ${format(end, "dd/MM/yyyy", { locale: ptBR })}`,
+    };
+  }, [weekReference]);
+
+  const weeklyAllocations = useMemo(
+    () => (allocations as Allocation[]).filter(allocation =>
+      allocation.startDate <= selectedWeek.end &&
+      (!allocation.endDate || allocation.endDate >= selectedWeek.start)
+    ),
+    [allocations, selectedWeek]
+  );
 
   const activeProjectAllocations = useMemo(() => {
     if (mode !== "project" || !currentProject) return [];
 
-    return (allocations as Allocation[]).filter(allocation =>
-      allocation.projectId === currentProject.id &&
-      (!allocation.endDate || allocation.endDate >= today)
-    );
-  }, [allocations, currentProject, mode, today]);
+    return weeklyAllocations.filter(allocation => allocation.projectId === currentProject.id);
+  }, [currentProject, mode, weeklyAllocations]);
+
+  const projectNamesByResource = useMemo(() => {
+    const projectNames = new Map(activeProjects.map(project => [project.id, project.name]));
+    const namesByResource = new Map<string, Set<string>>();
+    weeklyAllocations.forEach(allocation => {
+      const projectName = projectNames.get(allocation.projectId);
+      if (!projectName) return;
+      const names = namesByResource.get(allocation.resourceId) || new Set<string>();
+      names.add(projectName);
+      namesByResource.set(allocation.resourceId, names);
+    });
+    return namesByResource;
+  }, [activeProjects, weeklyAllocations]);
 
   const visibleResources = useMemo(() => {
     if (mode === "group") {
@@ -344,6 +390,9 @@ export default function OrgChart() {
     const frontsForResource = projectFronts && projectFronts.size > 0 ? Array.from(projectFronts) : resourceFronts(resource);
     return [resource.profile, frontsForResource.slice(0, 2).join(", ")].filter(Boolean).join(" • ");
   };
+
+  const getResourceProjects = (resource: Resource) =>
+    Array.from(projectNamesByResource.get(resource.id) || []).sort((a, b) => a.localeCompare(b, "pt-BR")).join(", ");
 
   const groupCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -468,6 +517,17 @@ export default function OrgChart() {
           <p className="text-muted-foreground">Visualize a estrutura por time, grupo ou projeto.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <label className="flex items-center gap-2 rounded-md border bg-background px-3 py-1.5">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            <span className="whitespace-nowrap text-xs font-medium">Semana {selectedWeek.label}</span>
+            <Input
+              type="date"
+              value={weekReference}
+              onChange={event => setWeekReference(event.target.value || todayIsoDate())}
+              className="h-7 w-[132px] border-0 p-1 shadow-none"
+              aria-label="Selecionar semana do organograma"
+            />
+          </label>
           <div className="flex rounded-md border bg-background p-1">
             <Button size="sm" variant={mode === "team" ? "default" : "ghost"} onClick={() => setMode("team")} className="gap-2">
               <Users className="h-4 w-4" /> Time
@@ -612,6 +672,7 @@ export default function OrgChart() {
                     resources={directors}
                     emptyText="Nenhum diretor cadastrado no time."
                     columns="md:grid-cols-2 xl:grid-cols-2"
+                    getProjects={getResourceProjects}
                   />
                   <div className="flex justify-center">
                     <div className="flex h-44 w-44 items-center justify-center rounded-full border-4 border-blue-800/70 bg-white/20 text-center shadow-inner">
@@ -626,9 +687,9 @@ export default function OrgChart() {
                 <div className="mt-8 grid grid-cols-[1.1fr_0.9fr] gap-8">
                   <div>
                     <div className={`grid gap-8 ${mode === "group" ? "grid-cols-1" : "grid-cols-[0.95fr_1.05fr]"}`}>
-                      <Section title="Liderança técnica" resources={leaders} emptyText="Nenhum líder técnico nesta visão." />
+                      <Section title="Liderança técnica" resources={leaders} emptyText="Nenhum líder técnico nesta visão." getProjects={getResourceProjects} />
                       {mode !== "group" ? (
-                        <Section title="Gerentes de Projeto" resources={managers} emptyText="Nenhum gerente nesta visão." />
+                        <Section title="Gerentes de Projeto" resources={managers} emptyText="Nenhum gerente nesta visão." getProjects={getResourceProjects} />
                       ) : null}
                     </div>
 
@@ -653,6 +714,7 @@ export default function OrgChart() {
                               collapsed={collapsedGroups.has(group)}
                               onToggle={() => toggleGroup(group)}
                               getSubtitle={getResourceSubtitle}
+                              getProjects={getResourceProjects}
                             />
                           ))}
                         </div>
