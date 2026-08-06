@@ -98,11 +98,6 @@ function minIsoDate(...dates: Array<string | undefined>): string {
   return validDates.reduce((min, date) => (!min || date < min ? date : min), '');
 }
 
-function shouldExtendGapToProjectEnd(reason?: string) {
-  const normalized = (reason || '').toLowerCase();
-  return normalized.includes('fim do projeto') || normalized.includes('sai da consultoria');
-}
-
 function MultiFilter({
   label,
   allLabel,
@@ -1037,8 +1032,7 @@ export default function Planner() {
   };
 
   const getResolvedGapEnd = (item: ProjectMissingFrontsAlert, gap: ProjectFrontGap) => {
-    const projectEnd = getProjectEndForQuickAllocation(item.projectId);
-    if (projectEnd && shouldExtendGapToProjectEnd(gap.reason)) return maxIsoDate(gap.gapEnd, projectEnd);
+    void item;
     return gap.gapEnd;
   };
 
@@ -2791,4 +2785,3 @@ export default function Planner() {
     </div>
   );
 }
-

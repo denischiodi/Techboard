@@ -91,14 +91,6 @@ function maxIsoDate(...dates: Array<string | undefined>) {
     );
 }
 
-function shouldExtendGapToProjectEnd(reason?: string) {
-  const normalized = (reason || "").toLowerCase();
-  return (
-    normalized.includes("fim do projeto") ||
-    normalized.includes("sai da consultoria")
-  );
-}
-
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
@@ -210,9 +202,7 @@ export default function Dashboard() {
     item: ProjectMissingFrontsAlert,
     gap: ProjectFrontGap
   ) => {
-    const projectEnd = getProjectEndForAllocation(item.projectId);
-    if (projectEnd && shouldExtendGapToProjectEnd(gap.reason))
-      return maxIsoDate(gap.gapEnd, projectEnd);
+    void item;
     return gap.gapEnd;
   };
 

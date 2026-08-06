@@ -349,6 +349,21 @@ function minDate(...dates: Date[]) {
   return dates.reduce((min, date) => (date < min ? date : min));
 }
 
+function trimGapToBusinessDays(gap: ProjectFrontGap): ProjectFrontGap | null {
+  let start = parseISO(gap.gapStart);
+  let end = parseISO(gap.gapEnd);
+
+  while (start <= end && (start.getDay() === 0 || start.getDay() === 6)) {
+    start = addDays(start, 1);
+  }
+  while (end >= start && (end.getDay() === 0 || end.getDay() === 6)) {
+    end = addDays(end, -1);
+  }
+
+  if (start > end) return null;
+  return { ...gap, gapStart: isoDate(start), gapEnd: isoDate(end) };
+}
+
 function hasUsableEndDate(value: string | undefined) {
   return Boolean(value && value > "1900-01-01" && isValid(parseISO(value)));
 }
@@ -489,12 +504,12 @@ function buildProjectsMissingFronts(
       )
       .flatMap(gap => {
         if (gap.gapEnd < today) return [];
-        return [
-          {
-            ...gap,
-            gapStart: gap.gapStart < today ? today : gap.gapStart,
-          },
-        ];
+        const currentGap = {
+          ...gap,
+          gapStart: gap.gapStart < today ? today : gap.gapStart,
+        };
+        const businessDayGap = trimGapToBusinessDays(currentGap);
+        return businessDayGap ? [businessDayGap] : [];
       });
     if (gaps.length === 0) return [];
 

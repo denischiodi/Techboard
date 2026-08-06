@@ -564,6 +564,103 @@ describe("dashboard router", () => {
     expect(alert?.gaps[0]?.reason).toMatch(/Alocação termina/);
   });
 
+  it("ignores weekend-only gaps and keeps weekday gaps", async () => {
+    const ctx = createMockContext();
+    const caller = appRouter.createCaller(ctx);
+    const resource = await caller.resources.create({
+      name: "Business Day Gap Resource",
+      profile: "Funcional",
+      fronts: ["QA-BUSINESS-DAY"],
+      dailyCapacity: 8,
+      status: "Ativo",
+    });
+    const weekendProject = await caller.projects.create({
+      name: "Projeto Weekend Bridge",
+      client: "Cliente Weekend",
+      manager: "Gerente Weekend",
+      status: "Em andamento",
+      startDate: "2030-03-01",
+      endDate: "2030-03-08",
+      fronts: ["QA-BUSINESS-DAY"],
+    });
+    for (const [startDate, endDate, hoursPerDay] of [
+      ["2030-03-01", "2030-03-01", 4],
+      ["2030-03-04", "2030-03-08", 8],
+    ] as const) {
+      await caller.allocations.create({
+        resourceId: resource.id,
+        projectId: weekendProject.id,
+        phaseId: "",
+        front: "QA-BUSINESS-DAY",
+        startDate,
+        endDate,
+        hoursPerDay,
+        allocationType: "Projeto",
+        status: "Confirmado",
+        notes: "",
+      });
+    }
+
+    const weekdayProject = await caller.projects.create({
+      name: "Projeto Weekday Gap",
+      client: "Cliente Weekday",
+      manager: "Gerente Weekday",
+      status: "Em andamento",
+      startDate: "2030-03-01",
+      endDate: "2030-03-08",
+      fronts: ["QA-BUSINESS-DAY"],
+    });
+    for (const [startDate, endDate] of [
+      ["2030-03-01", "2030-03-01"],
+      ["2030-03-05", "2030-03-08"],
+    ] as const) {
+      await caller.allocations.create({
+        resourceId: resource.id,
+        projectId: weekdayProject.id,
+        phaseId: "",
+        front: "QA-BUSINESS-DAY",
+        startDate,
+        endDate,
+        hoursPerDay: 8,
+        allocationType: "Projeto",
+        status: "Confirmado",
+        notes: "",
+      });
+    }
+
+    const stats = await caller.dashboard.stats();
+    expect(stats.projectsMissingFronts).not.toContainEqual(
+      expect.objectContaining({ projectId: weekendProject.id }),
+    );
+    expect(
+      stats.projectsMissingFronts.find(item => item.projectId === weekdayProject.id)?.gaps,
+    ).toContainEqual(expect.objectContaining({
+      gapStart: "2030-03-04",
+      gapEnd: "2030-03-04",
+    }));
+  });
+
+  it("trims unallocated project boundaries to business days", async () => {
+    const caller = appRouter.createCaller(createMockContext());
+    const project = await caller.projects.create({
+      name: "Projeto Business Boundaries",
+      client: "Cliente Boundaries",
+      manager: "Gerente Boundaries",
+      status: "Em andamento",
+      startDate: "2030-03-02",
+      endDate: "2030-03-10",
+      fronts: ["QA-BOUNDARY"],
+    });
+
+    const stats = await caller.dashboard.stats();
+    expect(
+      stats.projectsMissingFronts.find(item => item.projectId === project.id)?.gaps,
+    ).toContainEqual(expect.objectContaining({
+      gapStart: "2030-03-04",
+      gapEnd: "2030-03-08",
+    }));
+  });
+
   it("reports consultant end date impact on allocation and project front", async () => {
     const ctx = createMockContext();
     const caller = appRouter.createCaller(ctx);
