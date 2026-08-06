@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChevronDown, ChevronLeft, ChevronRight, Download, AlertTriangle, Upload, Calendar, CalendarDays, CalendarRange, ArrowUpDown, ArrowUp, ArrowDown, FolderSearch, UserX, UserMinus, Workflow } from "lucide-react";
 import { toast } from "sonner";
-import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInDays, getDay, startOfYear, addMonths, isValid } from "date-fns";
+import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, parseISO, differenceInDays, getDay, getISOWeek, startOfYear, addMonths, isValid } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, useDraggable, useDroppable, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import type { Allocation, Resource, Project, Phase, Absence, ResourceFront, AllocationType, AllocationStatus, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateImpact } from "../../../shared/types";
@@ -48,6 +48,8 @@ type AnnualWeek = {
   end: Date;
   label: string;
   monthIdx: number;
+  year: number;
+  weekNumber: number;
 };
 
 function getUnallocatedResourceName(item: string | { id: string; name: string }, resources: Resource[]) {
@@ -1006,7 +1008,8 @@ export default function Planner() {
   // Filters
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
-  const [yearOffset, setYearOffset] = useState(0);
+  const [annualStartMonth, setAnnualStartMonth] = useState(() => startOfMonth(new Date()));
+  const [annualEndYear, setAnnualEndYear] = useState(() => new Date().getFullYear());
   const [filterResources, setFilterResources] = useState<string[]>([]);
   const [filterProjects, setFilterProjects] = useState<string[]>([]);
   const [filterManagers, setFilterManagers] = useState<string[]>([]);
@@ -1021,6 +1024,7 @@ export default function Planner() {
     departures: false,
   });
   const annualScrollRef = useRef<HTMLDivElement | null>(null);
+  const annualEndYearRef = useRef(annualEndYear);
 
   // Quick allocation modal (from gap cards)
   const [quickAllocModalOpen, setQuickAllocModalOpen] = useState(false);
@@ -1168,21 +1172,16 @@ export default function Planner() {
     });
   }, [currentMonth]);
 
-  // Year calculation
-  const currentYear = useMemo(() => {
-    return new Date().getFullYear() + yearOffset;
-  }, [yearOffset]);
-
   const yearWeeks = useMemo<AnnualWeek[]>(() => {
-    const yearStart = new Date(currentYear, 0, 1);
-    const yearEnd = new Date(currentYear, 11, 31);
+    const rangeStart = startOfMonth(annualStartMonth);
+    const rangeEnd = new Date(annualEndYear, 11, 31);
     const weeks: AnnualWeek[] = [];
-    let cursor = startOfWeek(yearStart, { weekStartsOn: 1 });
+    let cursor = startOfWeek(rangeStart, { weekStartsOn: 1 });
 
-    while (cursor <= yearEnd) {
+    while (cursor <= rangeEnd) {
       const rawWeekEnd = addDays(cursor, 4);
-      const start = cursor < yearStart ? yearStart : cursor;
-      const end = rawWeekEnd > yearEnd ? yearEnd : rawWeekEnd;
+      const start = cursor < rangeStart ? rangeStart : cursor;
+      const end = rawWeekEnd > rangeEnd ? rangeEnd : rawWeekEnd;
 
       if (start <= end) {
         weeks.push({
@@ -1190,6 +1189,8 @@ export default function Planner() {
           end,
           label: format(start, 'dd/MM'),
           monthIdx: start.getMonth(),
+          year: start.getFullYear(),
+          weekNumber: getISOWeek(start),
         });
       }
 
@@ -1197,16 +1198,16 @@ export default function Planner() {
     }
 
     return weeks;
-  }, [currentYear]);
+  }, [annualStartMonth, annualEndYear]);
 
   const yearMonthGroups = useMemo(() => {
-    const groups: { monthIdx: number; count: number }[] = [];
+    const groups: { monthIdx: number; year: number; count: number }[] = [];
     yearWeeks.forEach(week => {
       const last = groups[groups.length - 1];
-      if (last && last.monthIdx === week.monthIdx) {
+      if (last && last.monthIdx === week.monthIdx && last.year === week.year) {
         last.count += 1;
       } else {
-        groups.push({ monthIdx: week.monthIdx, count: 1 });
+        groups.push({ monthIdx: week.monthIdx, year: week.year, count: 1 });
       }
     });
     return groups;
@@ -1217,13 +1218,11 @@ export default function Planner() {
 
   const visiblePlannerDays = useMemo(() => {
     if (viewMode !== 'year') return activeDays;
-    const yearStart = new Date(currentYear, 0, 1);
-    const yearEnd = new Date(currentYear, 11, 31);
-    return eachDayOfInterval({ start: yearStart, end: yearEnd }).filter(d => {
+    return eachDayOfInterval({ start: annualStartMonth, end: new Date(annualEndYear, 11, 31) }).filter(d => {
       const day = getDay(d);
       return day !== 0 && day !== 6;
     });
-  }, [activeDays, currentYear, viewMode]);
+  }, [activeDays, annualStartMonth, annualEndYear, viewMode]);
 
   const allocatedResourceIdsInView = useMemo(() => {
     const ids = new Set<string>();
@@ -1241,15 +1240,8 @@ export default function Planner() {
   const overallocatedResourceIds = useMemo(() => {
     const ids = new Set<string>();
     if (viewMode === 'year') {
-      // For annual view, check entire year
-      const yearStart = new Date(currentYear, 0, 1);
-      const yearEnd = new Date(currentYear, 11, 31);
-      const allDays = eachDayOfInterval({ start: yearStart, end: yearEnd }).filter(d => {
-        const day = getDay(d);
-        return day !== 0 && day !== 6;
-      });
       resources.forEach((r: any) => {
-        for (const day of allDays) {
+        for (const day of visiblePlannerDays) {
           let totalHours = 0;
           allAllocations.forEach(a => {
             if (a.resourceId === r.id) {
@@ -1277,7 +1269,7 @@ export default function Planner() {
       });
     }
     return ids;
-  }, [resources, allAllocations, activeDays, viewMode, currentYear]);
+  }, [resources, allAllocations, activeDays, visiblePlannerDays, viewMode]);
 
   const selectedGroupResourceIds = useMemo(() => {
     if (filterGroups.length === 0) return null;
@@ -1428,63 +1420,24 @@ export default function Planner() {
   const showProjectTimeline = timelineMode === 'combined' || timelineMode === 'projects';
   const showResourceTimeline = timelineMode === 'combined' || timelineMode === 'resources';
 
-  const annualFocusDate = useMemo(() => {
-    if (viewMode !== 'year') return '';
-    const yearStart = `${currentYear}-01-01`;
-    const yearEnd = `${currentYear}-12-31`;
-    const dates: string[] = [];
-
-    if (showProjectTimeline) {
-      filteredTimelineProjects.forEach(project => {
-        const projectStartDate = project.startDate || yearStart;
-        const projectEndDate = project.endDate || yearEnd;
-        if (rangesOverlap(projectStartDate, projectEndDate, yearStart, yearEnd)) {
-          dates.push(maxIsoDate(projectStartDate, yearStart));
-        }
-        phases
-          .filter(phase => phase.projectId === project.id && rangesOverlap(phase.startDate, phase.endDate, yearStart, yearEnd))
-          .forEach(phase => dates.push(maxIsoDate(phase.startDate, yearStart)));
-      });
-    }
-
-    if (showResourceTimeline) {
-      filteredAllocations.forEach(allocation => {
-        if (filterResources.length > 0 && !filterResources.includes(allocation.resourceId)) return;
-        const allocationStartDate = allocation.startDate || yearStart;
-        const allocationEndDate = allocation.endDate || yearEnd;
-        if (!rangesOverlap(allocationStartDate, allocationEndDate, yearStart, yearEnd)) return;
-        dates.push(maxIsoDate(allocationStartDate, yearStart));
-      });
-    }
-
-    const currentYearValue = new Date().getFullYear();
-    if (dates.length === 0) return currentYear === currentYearValue ? format(new Date(), 'yyyy-MM-dd') : yearStart;
-    return minIsoDate(...dates);
-  }, [
-    viewMode,
-    currentYear,
-    showProjectTimeline,
-    showResourceTimeline,
-    filteredTimelineProjects,
-    filteredAllocations,
-    phases,
-    filterResources,
-  ]);
+  useEffect(() => {
+    annualEndYearRef.current = annualEndYear;
+  }, [annualEndYear]);
 
   useEffect(() => {
-    if (viewMode !== 'year' || !annualFocusDate || !annualScrollRef.current) return;
-    const targetIndex = yearWeeks.findIndex(week =>
-      rangesOverlap(annualFocusDate, annualFocusDate, format(week.start, 'yyyy-MM-dd'), format(week.end, 'yyyy-MM-dd'))
-    );
-    if (targetIndex < 0) return;
-
-    const weekWidth = 42;
-    const leftColumnWidth = 180;
-    const targetLeft = Math.max(0, leftColumnWidth + targetIndex * weekWidth - 260);
+    if (viewMode !== 'year' || !annualScrollRef.current) return;
     window.requestAnimationFrame(() => {
-      annualScrollRef.current?.scrollTo({ left: targetLeft, behavior: 'smooth' });
+      annualScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
     });
-  }, [viewMode, currentYear, timelineMode, annualFocusDate, yearWeeks]);
+  }, [viewMode, annualStartMonth]);
+
+  const handleAnnualScroll = useCallback(() => {
+    const container = annualScrollRef.current;
+    if (!container || container.scrollWidth - container.scrollLeft - container.clientWidth > 160) return;
+    const nextEndYear = annualEndYearRef.current + 1;
+    annualEndYearRef.current = nextEndYear;
+    setAnnualEndYear(nextEndYear);
+  }, []);
 
   // Get allocations for a specific resource and day
   const getAllocationsForCell = useCallback((resourceId: string, date: Date) => {
@@ -1853,24 +1806,50 @@ export default function Planner() {
   const handlePrev = () => {
     if (viewMode === 'week') setWeekOffset(w => w - 1);
     else if (viewMode === 'month') setMonthOffset(m => m - 1);
-    else setYearOffset(y => y - 1);
+    else {
+      const next = addMonths(annualStartMonth, -1);
+      setAnnualStartMonth(next);
+      setAnnualEndYear(next.getFullYear());
+      annualEndYearRef.current = next.getFullYear();
+    }
   };
   const handleNext = () => {
     if (viewMode === 'week') setWeekOffset(w => w + 1);
     else if (viewMode === 'month') setMonthOffset(m => m + 1);
-    else setYearOffset(y => y + 1);
+    else {
+      const next = addMonths(annualStartMonth, 1);
+      setAnnualStartMonth(next);
+      setAnnualEndYear(next.getFullYear());
+      annualEndYearRef.current = next.getFullYear();
+    }
   };
   const handleToday = () => {
     if (viewMode === 'week') setWeekOffset(0);
     else if (viewMode === 'month') setMonthOffset(0);
-    else setYearOffset(0);
+    else {
+      const todayMonth = startOfMonth(new Date());
+      setAnnualStartMonth(todayMonth);
+      setAnnualEndYear(todayMonth.getFullYear());
+      annualEndYearRef.current = todayMonth.getFullYear();
+    }
+  };
+
+  const handleAnnualStartMonthChange = (value: string) => {
+    const [year, month] = value.split('-').map(Number);
+    if (!year || !month) return;
+    const next = new Date(year, month - 1, 1);
+    setAnnualStartMonth(next);
+    setAnnualEndYear(year);
+    annualEndYearRef.current = year;
   };
 
   const periodLabel = viewMode === 'week'
     ? `${format(currentWeekStart, "dd MMM", { locale: ptBR })} - ${format(addDays(currentWeekStart, 4), "dd MMM yyyy", { locale: ptBR })}`
     : viewMode === 'month'
     ? format(currentMonth, "MMMM yyyy", { locale: ptBR })
-    : `${currentYear}`;
+    : annualStartMonth.getFullYear() === annualEndYear
+    ? `${format(annualStartMonth, 'MMM', { locale: ptBR })}–dez ${annualEndYear}`
+    : `${format(annualStartMonth, 'MMM yyyy', { locale: ptBR })}–dez ${annualEndYear}`;
 
   const resourceFilterOptions = resources
     .filter(r => r.status === 'Ativo')
@@ -2188,6 +2167,18 @@ export default function Planner() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
               <Button variant="ghost" size="sm" className="col-span-3 h-8 sm:col-span-1" onClick={handleToday}>Hoje</Button>
+              {viewMode === 'year' && (
+                <label className="col-span-3 flex h-8 items-center gap-2 text-xs sm:col-span-1">
+                  <span className="whitespace-nowrap text-muted-foreground">Início</span>
+                  <Input
+                    type="month"
+                    value={format(annualStartMonth, 'yyyy-MM')}
+                    onChange={event => handleAnnualStartMonthChange(event.target.value)}
+                    className="h-8 w-[150px] text-xs"
+                    aria-label="Mês inicial da visão anual"
+                  />
+                </label>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex sm:flex-wrap sm:items-center">
@@ -2423,8 +2414,11 @@ export default function Planner() {
             </div>
           ) : (
             /* ===== ANNUAL VIEW ===== */
-            <div ref={annualScrollRef} className="max-h-[70vh] w-full max-w-full overflow-auto overscroll-contain">
-              <table className="w-full border-collapse" style={{ minWidth: `${yearWeeks.length * 42 + 220}px` }}>
+            <div ref={annualScrollRef} onScroll={handleAnnualScroll} className="max-h-[70vh] w-full max-w-full overflow-auto overscroll-contain">
+              <table
+                className="w-full border-collapse"
+                style={{ minWidth: `max(${yearWeeks.length * 42 + 220}px, calc(100% + 42px))` }}
+              >
                 <thead className="sticky top-0 z-30">
                   <tr className="bg-muted/50">
                     <th rowSpan={2} className="sticky left-0 z-40 min-w-[220px] border-b border-r bg-muted p-2 text-left text-xs font-semibold shadow-sm">
@@ -2432,18 +2426,18 @@ export default function Planner() {
                     </th>
                     {yearMonthGroups.map((group, idx) => (
                       <th
-                        key={`${group.monthIdx}-${idx}`}
+                        key={`${group.year}-${group.monthIdx}-${idx}`}
                         colSpan={group.count}
                         className="border-b border-r bg-muted p-1.5 text-center text-xs font-semibold shadow-sm"
                       >
-                        {format(new Date(currentYear, group.monthIdx, 1), 'MMM', { locale: ptBR })}
+                        {format(new Date(group.year, group.monthIdx, 1), 'MMM yyyy', { locale: ptBR })}
                       </th>
                     ))}
                   </tr>
                   <tr className="bg-muted/30">
                     {yearWeeks.map((week, idx) => (
                       <th key={idx} className="min-w-[42px] border-b border-r bg-muted/95 p-1 text-center text-[10px] font-medium shadow-sm">
-                        <span className="block">S{idx + 1}</span>
+                        <span className="block">S{week.weekNumber}</span>
                         <span className="block text-[9px] font-normal text-muted-foreground">{week.label}</span>
                       </th>
                     ))}
