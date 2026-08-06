@@ -324,10 +324,6 @@ export default function Dashboard() {
       ),
     [allAllocations, filters]
   );
-  const filteredResourceIds = useMemo(
-    () => new Set(filteredAllocations.map(allocation => allocation.resourceId)),
-    [filteredAllocations]
-  );
   const filteredProjectIds = useMemo(
     () => new Set(filteredAllocations.map(allocation => allocation.projectId)),
     [filteredAllocations]
@@ -401,12 +397,21 @@ export default function Dashboard() {
     selectedResources
       .filter(
         resource =>
+          !resource.skipAllocationCheck &&
           (resourceHours[resource.id] || 0) > (resource.dailyCapacity || 8)
       )
       .map(resource => resource.id)
   );
-  const availableResources = selectedResources.filter(
-    resource => !filteredResourceIds.has(resource.id)
+  const unallocatedProjectFronts = selectedProjects.flatMap(project =>
+    ((project.fronts || []) as ResourceFront[])
+      .filter(
+        front =>
+          !filteredAllocations.some(
+            allocation =>
+              allocation.projectId === project.id && allocation.front === front
+          )
+      )
+      .map(front => ({ project, front }))
   );
   const analyticsMetrics: DashboardMetric[] = [
     {
@@ -442,10 +447,11 @@ export default function Dashboard() {
     },
     {
       id: "available",
-      label: "Sem alocação",
-      value: availableResources.length,
-      tone: availableResources.length ? "warning" : "positive",
-      formula: "Recursos ativos sem alocação que cruze o período selecionado.",
+      label: "Módulos sem alocação",
+      value: unallocatedProjectFronts.length,
+      tone: unallocatedProjectFronts.length ? "warning" : "positive",
+      formula:
+        "Módulos exigidos pelos projetos do escopo sem consultor alocado no período selecionado.",
     },
   ];
   const detailRowsByMetric: Record<string, DashboardDetailRow[]> = {
@@ -492,13 +498,13 @@ export default function Dashboard() {
         resourceId: resource.id,
         sourceUrl: "/techboard/resources",
       })),
-    available: availableResources.map(resource => ({
-      id: resource.id,
-      title: resource.name,
-      subtitle: resource.profile,
+    available: unallocatedProjectFronts.map(({ project, front }) => ({
+      id: `${project.id}-${front}`,
+      title: `${project.name} · ${front}`,
+      subtitle: "Nenhum consultor alocado neste módulo durante o período",
       status: "Sem alocação",
-      resourceId: resource.id,
-      sourceUrl: "/techboard/resources",
+      projectId: project.id,
+      sourceUrl: "/techboard/planner",
     })),
   };
   const selectedMetric = analyticsMetrics.find(
