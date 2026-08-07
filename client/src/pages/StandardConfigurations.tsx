@@ -200,6 +200,7 @@ export default function StandardConfigurations() {
   const [activityForm, setActivityForm] = useState<ActivityForm>(emptyActivity);
   const [bdcqOpen, setBdcqOpen] = useState(false);
   const [bdcqForm, setBdcqForm] = useState<BdcqForm>(emptyBdcq);
+  const [bdcqScopeSearch, setBdcqScopeSearch] = useState("");
   const [bdcqSearch, setBdcqSearch] = useState("");
   const [bdcqModuleFilters, setBdcqModuleFilters] = useState<string[]>([]);
   const [bdcqScopeFilters, setBdcqScopeFilters] = useState<string[]>([]);
@@ -367,6 +368,17 @@ export default function StandardConfigurations() {
       bdcqLevelFilters,
     ]
   );
+  const filteredBdcqScopeOptions = useMemo(() => {
+    const term = bdcqScopeSearch.trim().toLocaleLowerCase("pt-BR");
+    if (!term) return bdcqOptions;
+    return bdcqOptions.filter(item =>
+      [item.code, item.key, item.name, item.module]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("pt-BR")
+        .includes(term)
+    );
+  }, [bdcqOptions, bdcqScopeSearch]);
   const BDCQ_PAGE_SIZE = 100;
   const pagedBdcq = filteredBdcq.slice(
     bdcqPage * BDCQ_PAGE_SIZE,
@@ -462,6 +474,7 @@ export default function StandardConfigurations() {
           }
         : emptyBdcq()
     );
+    setBdcqScopeSearch("");
     setBdcqOpen(true);
   };
   const saveBdcq = () => {
@@ -1617,9 +1630,55 @@ export default function StandardConfigurations() {
               </div>
             </div>
             <div>
-              <Label>Scope items relacionados</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>Scope items relacionados</Label>
+                <Badge variant="secondary">
+                  {bdcqForm.scopeItemKeys.length} selecionado(s)
+                </Badge>
+              </div>
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  value={bdcqScopeSearch}
+                  onChange={event => setBdcqScopeSearch(event.target.value)}
+                  placeholder="Buscar por código, nome ou módulo"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!filteredBdcqScopeOptions.length}
+                  onClick={() =>
+                    setBdcqForm(form => ({
+                      ...form,
+                      scopeItemKeys: [
+                        ...new Set([
+                          ...form.scopeItemKeys,
+                          ...filteredBdcqScopeOptions.map(item => item.key),
+                        ]),
+                      ],
+                    }))
+                  }
+                >
+                  Selecionar resultados ({filteredBdcqScopeOptions.length})
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={!bdcqForm.scopeItemKeys.length}
+                  onClick={() =>
+                    setBdcqForm(form => ({ ...form, scopeItemKeys: [] }))
+                  }
+                >
+                  Limpar seleção
+                </Button>
+              </div>
               <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
-                {bdcqOptions.map(item => (
+                {filteredBdcqScopeOptions.map(item => (
                   <label
                     key={`${item.module}:${item.key}`}
                     className="flex cursor-pointer items-center gap-2 rounded p-1.5 text-sm hover:bg-muted"
@@ -1642,10 +1701,16 @@ export default function StandardConfigurations() {
                     </Badge>
                   </label>
                 ))}
+                {!filteredBdcqScopeOptions.length && (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    Nenhum scope item encontrado.
+                  </p>
+                )}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Sem módulos e scope items, a pergunta será geral. Com ambos, o
-                projeto deve corresponder aos dois.
+                A busca não remove os itens já selecionados. Sem módulos e scope
+                items, a pergunta será geral. Com ambos, o projeto deve
+                corresponder aos dois.
               </p>
             </div>
           </div>
@@ -2349,9 +2414,7 @@ function SapScopeLibrary() {
             </Button>
             <Button
               disabled={
-                !scopeForm.code ||
-                !scopeForm.name ||
-                createScope.isPending
+                !scopeForm.code || !scopeForm.name || createScope.isPending
               }
               onClick={() => void saveScope()}
             >
