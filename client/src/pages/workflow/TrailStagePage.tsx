@@ -32,15 +32,6 @@ const stagePhase: Record<string, (typeof PROJECT_PHASES)[number]> = {
   closure: "Run",
 };
 
-const stageLabels: Record<string, string> = {
-  cutover: "Cutover",
-  "go-live": "Go-live e estabilização",
-  go_live: "Go-live e estabilização",
-  closure: "Encerramento",
-  unit_tests: "Testes unitários",
-  cycle_1: "Ciclo 1",
-  cycle_2: "Ciclo 2",
-};
 const statuses = [
   ["not_started", "Não iniciado"],
   ["ready", "Pronto para começar"],
@@ -54,9 +45,13 @@ const statuses = [
 export default function TrailStagePage() {
   const [, setLocation] = useLocation();
   const { projectId, withProject } = useWorkflowProject();
-  const stage =
-    new URLSearchParams(window.location.search).get("stage") || "cutover";
+  const stage = new URLSearchParams(window.location.search).get("stage") || "";
   const normalizedStage = stage.replaceAll("-", "_");
+  const requestedPhase = new URLSearchParams(window.location.search).get("phase");
+  const initialPhase = PROJECT_PHASES.includes(requestedPhase as any)
+    ? requestedPhase as (typeof PROJECT_PHASES)[number]
+    : stagePhase[normalizedStage] || "Discover";
+  const [selectedPhase, setSelectedPhase] = useState<(typeof PROJECT_PHASES)[number]>(initialPhase);
   const [search, setSearch] = useState("");
   const { data: items = [], refetch } =
     trpc.workflow.delivery.trail.list.useQuery({ projectId });
@@ -81,12 +76,13 @@ export default function TrailStagePage() {
   const people = resources.filter((resource: any) =>
     allocatedIds.has(resource.id)
   );
+  const phaseForItem = (item: any): (typeof PROJECT_PHASES)[number] => {
+    if (PROJECT_PHASES.includes(item.phase)) return item.phase;
+    const itemStage = String(item.stage || item.type || "").replaceAll("-", "_");
+    return stagePhase[itemStage] || "Explore";
+  };
   const stageItems = (items as any[])
-    .filter(
-      item =>
-        String(item.stage).replaceAll("-", "_") === normalizedStage ||
-        String(item.type).replaceAll("-", "_") === normalizedStage
-    )
+    .filter(item => phaseForItem(item) === selectedPhase)
     .filter(
       item =>
         !search ||
@@ -97,11 +93,10 @@ export default function TrailStagePage() {
   const completed = stageItems.filter(item =>
     ["completed", "approved"].includes(item.status)
   ).length;
-  const currentPhase = stagePhase[normalizedStage] ||
-    (stageItems[0]?.phase as (typeof PROJECT_PHASES)[number]) || "Deploy";
+  const currentPhase = selectedPhase;
   const completedStatuses = new Set(["completed", "approved"]);
   const phaseProgress = PROJECT_PHASES.map(phase => {
-    const phaseItems = (items as any[]).filter(item => item.phase === phase);
+    const phaseItems = (items as any[]).filter(item => phaseForItem(item) === phase);
     const phaseCompleted = phaseItems.filter(item => completedStatuses.has(item.status)).length;
     return {
       phase,
@@ -124,9 +119,7 @@ export default function TrailStagePage() {
             Voltar para a trilha
           </Button>
           <h1 className="text-2xl font-bold">
-            {stageLabels[stage] ||
-              stageLabels[normalizedStage] ||
-              "Etapa da trilha"}
+            Trilha do Projeto · {selectedPhase}
           </h1>
           <p className="text-sm text-muted-foreground">
             Execute os itens gerados pelos modelos e registre responsáveis,
@@ -142,7 +135,7 @@ export default function TrailStagePage() {
           <div className="mb-3 flex items-center justify-between gap-3 px-1">
             <div>
               <p className="font-semibold">Trilha do projeto</p>
-              <p className="text-xs text-muted-foreground">Você está na fase {currentPhase} do SAP Activate</p>
+              <p className="text-xs text-muted-foreground">Selecione uma fase para visualizar suas atividades, checklists e evidências</p>
             </div>
             <Badge>{currentPhase}</Badge>
           </div>
@@ -153,7 +146,10 @@ export default function TrailStagePage() {
                 <button
                   key={phase.phase}
                   type="button"
-                  onClick={() => setLocation(withProject(`/techmove?phase=${phase.phase}`))}
+                  onClick={() => {
+                    setSelectedPhase(phase.phase);
+                    setLocation(withProject(`/techmove/trail?phase=${phase.phase}`));
+                  }}
                   className={`rounded-lg border px-3 py-2 text-left transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "bg-muted/30 hover:bg-muted"}`}
                 >
                   <span className="flex items-center gap-2 text-sm font-semibold">
