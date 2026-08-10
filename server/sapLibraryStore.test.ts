@@ -20,8 +20,31 @@ vi.mock("./ddaImportStore", () => ({
 
 import {
   createManualScope,
+  extractScopeItemTitle,
   listActiveScopeDetailsByCodes,
 } from "./sapLibraryStore";
+
+describe("extração do nome do scope item SAP", () => {
+  it.each([
+    [
+      "16R",
+      "178064 128905 0 0 Script de teste SAP S/4HANA Cloud Public Edition - 05-07-26 Integração bancária com o SAP Multi-Bank Connectivity (16R_BR) 6490970",
+      "Integração bancária com o SAP Multi-Bank Connectivity",
+    ],
+    [
+      "16T",
+      "178064 128905 0 0 Script de teste SAP - 05-07-26 Processos interempresariais – Serviços baseados em projetos (16T_BR) 6490970",
+      "Processos interempresariais – Serviços baseados em projetos",
+    ],
+    [
+      "18J",
+      "178064 128905 0 0 Script de teste SAP - 05-07-26 Requisições (18J_BR) 6490970",
+      "Requisições",
+    ],
+  ])("extrai o nome de negócio de %s", (code, text, expected) => {
+    expect(extractScopeItemTitle(code, text)).toBe(expected);
+  });
+});
 
 describe("cadastro manual da biblioteca SAP", () => {
   beforeEach(() => {

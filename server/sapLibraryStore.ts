@@ -64,6 +64,32 @@ export async function listScopes(input: {
      ORDER BY "code" LIMIT $${values.length}`,
     values
   );
+  const correctedScopes: Array<{ id: string; code: string; name: string }> = [];
+  for (const scope of result.rows) {
+    const correctedName = extractScopeItemTitle(
+      String(scope.code || ""),
+      String(scope.summary || "")
+    );
+    if (correctedName && correctedName !== scope.name) {
+      scope.name = correctedName;
+      correctedScopes.push({
+        id: scope.id,
+        code: scope.code,
+        name: correctedName,
+      });
+    }
+  }
+  if (correctedScopes.length) {
+    await pool.query(
+      `UPDATE "sap_scope_catalog" c
+       SET "name"=fixed.name,
+           "searchText"=CONCAT(fixed.code, ' ', fixed.name, ' ', c."summary"),
+           "updatedAt"=now()
+       FROM jsonb_to_recordset($1::jsonb) AS fixed(id text, code text, name text)
+       WHERE c."id"=fixed.id`,
+      [JSON.stringify(correctedScopes)]
+    );
+  }
   return result.rows;
 }
 
@@ -445,17 +471,43 @@ function cleanOpenXml(xml: string) {
     .trim();
 }
 
+export function extractScopeItemTitle(code: string, text: string) {
+  if (!code || !text) return "";
+  const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const compact = text.replace(/\s+/g, " ").trim();
+  const patterns = [
+    new RegExp(
+      `\\b\\d{2}-\\d{2}-\\d{2}\\s+(.{3,240}?)\\s*\\(\\s*${escapedCode}(?:_BR)?\\s*\\)`,
+      "i"
+    ),
+    new RegExp(
+      `\\bScope\\s+Item\\s+${escapedCode}\\s*[-–—:]\\s*(.{3,240}?)(?=\\s{2,}|\\(|$)`,
+      "i"
+    ),
+  ];
+  for (const pattern of patterns) {
+    const candidate = compact
+      .match(pattern)?.[1]
+      ?.replace(/^[\s:;,.\-–—]+|[\s:;,.\-–—]+$/g, "")
+      .trim();
+    if (candidate && /[A-Za-zÀ-ÿ]/.test(candidate)) return candidate;
+  }
+  return "";
+}
+
 function summarizeText(code: string, text: string) {
   const lines = text
     .split(/\n+/)
     .map(line => line.trim())
     .filter(line => line.length > 8);
   const title =
+    extractScopeItemTitle(code, text) ||
     lines.find(
       line =>
         !line.toUpperCase().includes("SAP") &&
         !line.toUpperCase().includes("TEST SCRIPT") &&
-        !line.includes(code)
+        !line.includes(code) &&
+        /[A-Za-zÀ-ÿ]/.test(line)
     ) ||
     lines[0] ||
     `Scope Item ${code}`;
