@@ -22,6 +22,16 @@ import {
 import { toast } from "sonner";
 import { useWorkflowProject } from "./useWorkflowProject";
 
+const PROJECT_PHASES = ["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"] as const;
+const stagePhase: Record<string, (typeof PROJECT_PHASES)[number]> = {
+  unit_tests: "Realize",
+  cycle_1: "Realize",
+  cycle_2: "Realize",
+  cutover: "Deploy",
+  go_live: "Deploy",
+  closure: "Run",
+};
+
 const stageLabels: Record<string, string> = {
   cutover: "Cutover",
   "go-live": "Go-live e estabilização",
@@ -87,6 +97,19 @@ export default function TrailStagePage() {
   const completed = stageItems.filter(item =>
     ["completed", "approved"].includes(item.status)
   ).length;
+  const currentPhase = stagePhase[normalizedStage] ||
+    (stageItems[0]?.phase as (typeof PROJECT_PHASES)[number]) || "Deploy";
+  const completedStatuses = new Set(["completed", "approved"]);
+  const phaseProgress = PROJECT_PHASES.map(phase => {
+    const phaseItems = (items as any[]).filter(item => item.phase === phase);
+    const phaseCompleted = phaseItems.filter(item => completedStatuses.has(item.status)).length;
+    return {
+      phase,
+      total: phaseItems.length,
+      completed: phaseCompleted,
+      percent: phaseItems.length ? Math.round((phaseCompleted / phaseItems.length) * 100) : 0,
+    };
+  });
 
   return (
     <div className="space-y-5 p-3 sm:p-6">
@@ -114,6 +137,40 @@ export default function TrailStagePage() {
           {completed}/{stageItems.length} concluídos
         </Badge>
       </div>
+      <Card className="overflow-hidden border-primary/20 bg-card">
+        <CardContent className="p-3">
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div>
+              <p className="font-semibold">Trilha do projeto</p>
+              <p className="text-xs text-muted-foreground">Você está na fase {currentPhase} do SAP Activate</p>
+            </div>
+            <Badge>{currentPhase}</Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6">
+            {phaseProgress.map((phase, index) => {
+              const active = phase.phase === currentPhase;
+              return (
+                <button
+                  key={phase.phase}
+                  type="button"
+                  onClick={() => setLocation(withProject(`/techmove?phase=${phase.phase}`))}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${active ? "border-primary bg-primary text-primary-foreground" : "bg-muted/30 hover:bg-muted"}`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${active ? "bg-primary-foreground/20" : "bg-background"}`}>
+                      {phase.percent >= 100 ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                    </span>
+                    {phase.phase}
+                  </span>
+                  <span className={`mt-1 block text-[10px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                    {phase.percent}% · {phase.completed}/{phase.total} itens
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
       <Input
         value={search}
         onChange={event => setSearch(event.target.value)}
