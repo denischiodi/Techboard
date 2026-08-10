@@ -13,6 +13,26 @@ import { trpc } from "@/lib/trpc";
 import { useWorkflowProject } from "./useWorkflowProject";
 import { ProjectName } from "@/components/ProjectLogo";
 import { useEffect, useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+const PHASES = ["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"] as const;
+type ProjectPhase = (typeof PHASES)[number];
+
+const stepPhase: Record<string, ProjectPhase> = {
+  governance: "Discover",
+  "scope-items": "Prepare",
+  bdcq: "Explore",
+  workshops: "Explore",
+  dcd: "Explore",
+  gaps: "Explore",
+  configurations: "Realize",
+  "unit-tests": "Realize",
+  "cycle-1": "Realize",
+  "cycle-2": "Realize",
+  cutover: "Deploy",
+  "go-live": "Deploy",
+  closure: "Run",
+};
 
 const steps = [
   { id: "governance", title: "Preparação e governança", description: "Defina responsáveis, aprovadores e regras antes das entregas críticas", icon: ShieldCheck, path: "/techmove/governance", color: "bg-slate-700", dependencies: [] as string[], action: "Configurar governança" },
@@ -54,6 +74,10 @@ export default function ProjectWorkflow() {
   const [selectedOccurrences, setSelectedOccurrences] = useState<string[]>([]);
   const [selectedBlocked, setSelectedBlocked] = useState<string[]>([]);
   const [selectedProcessModel, setSelectedProcessModel] = useState("");
+  const [selectedPhase, setSelectedPhase] = useState<ProjectPhase>(() => {
+    const requested = new URLSearchParams(window.location.search).get("phase");
+    return PHASES.includes(requested as ProjectPhase) ? requested as ProjectPhase : "Discover";
+  });
   const { data: projects = [] } = trpc.projects.list.useQuery();
   const utils = trpc.useUtils();
   const hasSelectedProject = projects.some((project: any) => project.id === projectId);
@@ -175,6 +199,19 @@ export default function ProjectWorkflow() {
     if (missingDependencies.length) return { label: "Aguardando dependência", className: "bg-amber-100 text-amber-800", blocked: true, missingDependencies };
     return { label: "Pronto para começar", className: "bg-violet-100 text-violet-800", blocked: false, missingDependencies };
   };
+  const phaseSummary = (phase: ProjectPhase) => {
+    const phaseSteps = steps.filter(step => stepPhase[step.id] === phase);
+    const percents = phaseSteps.map(step => {
+      const summary = deliverySummary(step.id);
+      return summary.percent ?? progressByStep.get(step.id)?.percent ?? 0;
+    });
+    const percent = percents.length
+      ? Math.round(percents.reduce((total, value) => total + value, 0) / percents.length)
+      : 0;
+    const total = phaseSteps.reduce((sum, step) => sum + deliverySummary(step.id).total, 0);
+    const completed = phaseSteps.reduce((sum, step) => sum + deliverySummary(step.id).completed, 0);
+    return { percent, total, completed };
+  };
   const selectProject = (value: string) => { rememberProject(value); setLocation(`/techmove?projectId=${encodeURIComponent(value)}`); };
   useEffect(() => {
     if (projects.length && !hasSelectedProject) selectProject((projects[0] as any).id);
@@ -282,8 +319,42 @@ export default function ProjectWorkflow() {
           </CardContent>
         </Card>
       )}
-      <div className="grid gap-4">
-        {steps.map((step, index) => {
+      <Tabs value={selectedPhase} onValueChange={value => setSelectedPhase(value as ProjectPhase)} className="space-y-5">
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div>
+              <h2 className="font-semibold">Fases do projeto</h2>
+              <p className="text-xs text-muted-foreground">SAP Activate · avance da descoberta à operação</p>
+            </div>
+            <Badge variant="secondary">Fase atual: {selectedPhase}</Badge>
+          </div>
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-muted/60 p-1 sm:grid-cols-3 lg:grid-cols-6">
+            {PHASES.map((phase, index) => {
+              const summary = phaseSummary(phase);
+              return (
+                <TabsTrigger key={phase} value={phase} className="relative flex-col gap-1.5 py-3 data-[state=active]:shadow-sm">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[10px]">{summary.percent >= 100 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : index + 1}</span>
+                    {phase}
+                  </span>
+                  <span className="text-[10px] opacity-70">{summary.percent}% · {summary.completed}/{summary.total} itens</span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </div>
+        {PHASES.map(phase => (
+          <TabsContent key={phase} value={phase} className="mt-0 space-y-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-primary">Fase {phase}</p>
+                <h2 className="text-xl font-semibold">Etapas e entregas</h2>
+              </div>
+              <span className="text-sm text-muted-foreground">Selecione uma etapa para executar checklists, evidências e aprovações.</span>
+            </div>
+            <div className="grid gap-4">
+        {steps.filter(step => stepPhase[step.id] === phase).map(step => {
+          const index = steps.findIndex(item => item.id === step.id);
           const state = stateForStep(step);
           const summary = deliverySummary(step.id);
           const percent = summary.percent ?? progressByStep.get(step.id)?.percent ?? 0;
@@ -321,7 +392,10 @@ export default function ProjectWorkflow() {
             </CardContent>
           </Card>
         )})}
-      </div>
+            </div>
+          </TabsContent>
+        ))}
+      </Tabs>
       <Card>
         <CardContent className="py-5">
           <div className="mb-4 flex items-center gap-2">
