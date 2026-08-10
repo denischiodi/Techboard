@@ -59,7 +59,7 @@ function forbidden(message = "Sem permissão para esta atividade"): never {
 
 const activityProcedure = (action: "view" | "create" | "modify" = "view") => protectedProcedure.use(({ ctx, next }) => {
   const actions = ctx.appUser.permissions.actions?.activities;
-  if (ctx.appUser.role !== "admin" && (ctx.appUser.permissions.products?.techtask === false || !ctx.appUser.permissions.activities || (actions && !actions[action]))) forbidden("Sem permissão para acessar atividades");
+  if (ctx.appUser.role !== "admin" && ((ctx.appUser.permissions.products?.techtask === false && ctx.appUser.permissions.products?.techmove === false) || !ctx.appUser.permissions.activities || (actions && !actions[action]))) forbidden("Sem permissão para acessar atividades");
   return next();
 });
 const activityViewProcedure = activityProcedure();

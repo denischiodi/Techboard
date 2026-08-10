@@ -56,7 +56,7 @@ const deliveryTypes = [
 export type DeliveryType = (typeof deliveryTypes)[number];
 
 const typeLabels: Record<DeliveryType, string> = {
-  activity: "Atividade do GP",
+  activity: "Atividade / checklist",
   functional_activity: "Atividade do consultor funcional",
   bdcq: "BDCQ",
   workshop: "Workshop",

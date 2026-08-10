@@ -16,6 +16,7 @@ import {
 } from "../storage";
 import { createHash } from "node:crypto";
 import { assertRegisteredScopeItems } from "../sapLibraryStore";
+import * as structure from "../techMoveStructureStore";
 
 const typeSchema = z.enum(store.DELIVERY_TYPES);
 const approvalSchema = z.object({
@@ -157,6 +158,65 @@ async function recordRaidAudit(
 }
 
 export const deliveryMasterRouter = router({
+  structure: router({
+    teams: router({
+      list: protectedProcedure.query(() => structure.listTeams()),
+      create: adminProcedure
+        .input(z.object({ name: z.string().trim().min(2).max(255), description: z.string().max(2000).default("") }))
+        .mutation(({ ctx, input }) => structure.createTeam(input, ctx.appUser.id)),
+      addRole: adminProcedure
+        .input(z.object({ teamId: z.string().min(1), name: z.string().trim().min(2).max(255), description: z.string().max(2000).default("") }))
+        .mutation(({ input }) => structure.addRole(input.teamId, input.name, input.description)),
+      addMember: adminProcedure
+        .input(z.object({ teamId: z.string().min(1), roleId: z.string().min(1), appUserId: z.string().min(1) }))
+        .mutation(({ input }) => structure.addTeamMember(input.teamId, input.roleId, input.appUserId)),
+      projectMembers: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          await assertWorkflowProjectAccess(ctx.appUser, input.projectId, false);
+          return structure.listProjectMembers(input.projectId);
+        }),
+      eligibleUsers: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          await assertWorkflowProjectAccess(ctx.appUser, input.projectId, false);
+          return structure.listEligibleUsers();
+        }),
+      addProjectMember: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1), teamId: z.string().min(1), roleId: z.string().min(1), appUserId: z.string().min(1) }))
+        .mutation(async ({ ctx, input }) => {
+          await assertWorkflowProjectAccess(ctx.appUser, input.projectId, true);
+          if (!["admin", "manager"].includes(ctx.appUser.role)) throw new TRPCError({ code: "FORBIDDEN", message: "Somente administradores e GPs podem montar a equipe do projeto" });
+          return structure.addProjectMember(input.projectId, input.teamId, input.roleId, input.appUserId);
+        }),
+    }),
+    models: router({
+      list: protectedProcedure.query(() => structure.listModels()),
+      create: adminProcedure
+        .input(z.object({ name: z.string().trim().min(2).max(255), description: z.string().max(5000).default(""), kind: z.enum(["primary", "complementary"]), phases: z.array(z.string().max(32)).max(20).default([]), templateIds: z.array(z.string().max(64)).max(2000).default([]), active: z.boolean().default(true) }))
+        .mutation(({ ctx, input }) => structure.createModel(input, ctx.appUser.id)),
+      duplicate: adminProcedure
+        .input(z.object({ id: z.string().min(1), name: z.string().trim().min(2).max(255) }))
+        .mutation(({ ctx, input }) => structure.duplicateModel(input.id, input.name, ctx.appUser.id)),
+      preview: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1), modelId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          await assertWorkflowProjectAccess(ctx.appUser, input.projectId, false);
+          return structure.previewApplication(input.projectId, input.modelId);
+        }),
+      apply: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1), modelId: z.string().min(1), confirmed: z.literal(true) }))
+        .mutation(async ({ ctx, input }) => {
+          await assertWorkflowProjectAccess(ctx.appUser, input.projectId, true);
+          const applied = await structure.applyModel(input.projectId, input.modelId, ctx.appUser.id);
+          for (const template of applied.model.templates) {
+            const full = await store.getTemplate(template.id);
+            if (full) await publisher.enqueueTemplatePublication(full, ctx.appUser.id, "process_model_applied");
+          }
+          return applied;
+        }),
+    }),
+  }),
   templates: router({
     list: protectedProcedure
       .input(

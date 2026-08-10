@@ -218,7 +218,7 @@ function sourceUrl(entityType: ApprovalEntityType, projectId: string, snapshot: 
   if (["cutover", "closure"].includes(entityType)) return `/techmove/trail?projectId=${encodeURIComponent(projectId)}&stage=${entityType}`;
   if (entityType === "configuration") return `/techmove/configurations?projectId=${encodeURIComponent(projectId)}`;
   if (entityType === "workshop") return `/techmove/workshops?projectId=${encodeURIComponent(projectId)}`;
-  return "/techtask/board";
+  return "/techmove/board";
 }
 
 function entityLabel(entityType: ApprovalEntityType) {

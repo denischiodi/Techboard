@@ -392,7 +392,7 @@ function DashboardLayoutContent({
               onClick={() => {
                 markNotificationsRead.mutate({ id: notification.id });
                 setLocation(
-                  `/techtask/my-work?view=mine&activityId=${encodeURIComponent(notification.activityId)}${activity?.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`
+                  `/techmove/my-work?view=mine&activityId=${encodeURIComponent(notification.activityId)}${activity?.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`
                 );
               }}
             >
