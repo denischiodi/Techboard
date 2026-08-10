@@ -374,7 +374,7 @@ export default function AppLauncher() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {canAccessProduct(
-          PRODUCTS.find(product => product.id === "techtask")!,
+          PRODUCTS.find(product => product.id === "techmove"),
           permissions
         ) && (
           <>
