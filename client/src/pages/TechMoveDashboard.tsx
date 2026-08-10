@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDashboardFilters } from "@/hooks/useDashboardFilters";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import type {
   DashboardDetailRow,
   DashboardMetric,
@@ -54,6 +55,7 @@ const COLORS = [
 ];
 
 export default function TechMoveDashboard() {
+  const { user } = useAuth();
   const [, navigate] = useLocation();
   const { filters, setFilters, clearFilters } = useDashboardFilters();
   const { data: projects = [], isLoading: projectsLoading } =
@@ -62,6 +64,11 @@ export default function TechMoveDashboard() {
     trpc.workflow.dashboard.useQuery();
   const { data: projectIndicators = [], isLoading: indicatorsLoading } =
     trpc.workflow.projectIndicators.useQuery();
+  const { data: appUser } = trpc.access.getByEmail.useQuery(
+    { email: user?.email || "" },
+    { enabled: Boolean(user?.email) }
+  );
+  const { data: activities = [], isLoading: activitiesLoading } = trpc.activities.list.useQuery();
   const [detail, setDetail] = useState<{
     metric: DashboardMetric;
     rows: DashboardDetailRow[];
@@ -126,7 +133,14 @@ export default function TechMoveDashboard() {
   const pendingRows = alertRows.filter(row => row.status === "BDCQ");
   const dcdRows = alertRows.filter(row => row.status === "DCD");
   const gapRows = alertRows.filter(row => row.status === "Gap");
-  const metrics: DashboardMetric[] = [
+  const today = new Date().toISOString().slice(0, 10);
+  const visibleActivities = (activities as any[]).filter(item => visibleProjectIds.has(item.projectId));
+  const mine = visibleActivities.filter(item => appUser && (item.assigneeUserId === appUser.id || item.creatorUserId === appUser.id || item.participantUserIds?.includes(appUser.id)));
+  const operational = appUser?.role === "consultant" ? mine : visibleActivities;
+  const overdue = operational.filter(item => item.dueDate && item.dueDate < today && item.status !== "Concluída");
+  const blocked = operational.filter(item => item.status === "Bloqueada");
+  const unassigned = visibleActivities.filter(item => !item.assigneeUserId);
+  const portfolioMetrics: DashboardMetric[] = [
     {
       id: "workflow.active",
       label: "Jornadas em andamento",
@@ -157,7 +171,19 @@ export default function TechMoveDashboard() {
       formula: "Gaps abertos sem responsável presentes na lista de exceções.",
     },
   ];
+  const executionMetrics: DashboardMetric[] = [
+    { id: "tasks.open", label: appUser?.role === "consultant" ? "Meu trabalho em aberto" : "Atividades em aberto", value: operational.filter(item => item.status !== "Concluída").length, tone: "neutral", formula: "Atividades visíveis ainda não concluídas." },
+    { id: "tasks.overdue", label: "Atividades atrasadas", value: overdue.length, tone: overdue.length ? "critical" : "positive", formula: "Prazo anterior a hoje e atividade não concluída." },
+    { id: "tasks.blocked", label: "Atividades bloqueadas", value: blocked.length, tone: blocked.length ? "warning" : "positive", formula: "Atividades com status Bloqueada." },
+    { id: "tasks.unassigned", label: "Sem responsável", value: unassigned.length, tone: unassigned.length ? "warning" : "positive", formula: "Itens do projeto ainda sem responsável definido." },
+  ];
+  const metrics = appUser?.role === "admin" ? portfolioMetrics : executionMetrics;
   const openMetric = (metric: DashboardMetric) => {
+    if (metric.id.startsWith("tasks.")) {
+      const selected = metric.id === "tasks.overdue" ? overdue : metric.id === "tasks.blocked" ? blocked : metric.id === "tasks.unassigned" ? unassigned : operational.filter(item => item.status !== "Concluída");
+      setDetail({ metric, rows: selected.map(item => ({ id: item.id, title: item.displayTitle || item.title, subtitle: `${item.projectName || "Projeto"} · ${item.assigneeName || "Sem responsável"}`, status: item.status, projectId: item.projectId, dueDate: item.dueDate, sourceUrl: `/techmove/board?activityId=${encodeURIComponent(item.id)}` })) });
+      return;
+    }
     const rows =
       metric.id === "workflow.active"
         ? rowsFor(item => item.stage !== "Concluído")
@@ -168,7 +194,7 @@ export default function TechMoveDashboard() {
             : pendingRows;
     setDetail({ metric, rows });
   };
-  const loading = projectsLoading || summaryLoading || indicatorsLoading;
+  const loading = projectsLoading || summaryLoading || indicatorsLoading || activitiesLoading;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">

@@ -53,6 +53,7 @@ export default function ProjectWorkflow() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [selectedOccurrences, setSelectedOccurrences] = useState<string[]>([]);
   const [selectedBlocked, setSelectedBlocked] = useState<string[]>([]);
+  const [selectedProcessModel, setSelectedProcessModel] = useState("");
   const { data: projects = [] } = trpc.projects.list.useQuery();
   const utils = trpc.useUtils();
   const hasSelectedProject = projects.some((project: any) => project.id === projectId);
@@ -77,6 +78,18 @@ export default function ProjectWorkflow() {
     { projectId },
     { enabled: Boolean(projectId && hasSelectedProject) },
   );
+  const { data: processModels = [] } = trpc.workflow.delivery.structure.models.list.useQuery();
+  const { data: processPreview } = trpc.workflow.delivery.structure.models.preview.useQuery(
+    { projectId, modelId: selectedProcessModel },
+    { enabled: Boolean(projectId && selectedProcessModel) },
+  );
+  const applyProcess = trpc.workflow.delivery.structure.models.applyModel.useMutation({
+    onSuccess: async result => {
+      toast.success(`${result.model.name} aplicado: ${result.model.templates.length} item(ns) em publicação`);
+      await Promise.all([utils.workflow.delivery.trail.invalidate(), utils.workflow.delivery.structure.models.invalidate()]);
+    },
+    onError: error => toast.error(error.message),
+  });
   const { data: blockedPublications = [], refetch: refetchBlocked } =
     trpc.workflow.delivery.publications.blocked.useQuery(
       { projectId },
@@ -201,8 +214,16 @@ export default function ProjectWorkflow() {
                 <h2 className="font-semibold">Padrões publicados automaticamente</h2>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                Configurações do Tech distribui os padrões compatíveis com módulos e scope items. Personalizações e etapas concluídas são preservadas.
+                Selecione um processo principal ou complementar. A prévia preserva personalizações e etapas concluídas.
               </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <Select value={selectedProcessModel} onValueChange={setSelectedProcessModel}>
+                  <SelectTrigger><SelectValue placeholder="Selecionar modelo de processo" /></SelectTrigger>
+                  <SelectContent>{(processModels as any[]).filter(model => model.active).map(model => <SelectItem key={model.id} value={model.id}>{model.name} · {model.kind === "primary" ? "Principal" : "Complementar"} · v{model.version}</SelectItem>)}</SelectContent>
+                </Select>
+                <Button disabled={!selectedProcessModel || applyProcess.isPending} onClick={() => applyProcess.mutate({ projectId, modelId: selectedProcessModel, confirmed: true })}>Aplicar processo</Button>
+              </div>
+              {processPreview && <div className="mt-2 flex flex-wrap gap-2 text-xs"><Badge variant="secondary">{processPreview.added.length} novos</Badge><Badge variant="outline">{processPreview.changed.length} atualizados</Badge><Badge variant={processPreview.unassigned.length ? "destructive" : "outline"}>{processPreview.unassigned.length} sem papel responsável</Badge></div>}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge variant="outline">{deliveryItems.length} itens centrais na trilha</Badge>
                 <Badge variant={blockedPublications.length ? "destructive" : "secondary"}>{blockedPublications.length} pendentes por etapa concluída</Badge>

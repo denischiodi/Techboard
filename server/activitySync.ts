@@ -12,7 +12,6 @@ import type {
 import * as activityStore from "./activityStore";
 import * as gpStore from "./gpChecklistStore";
 import * as plannerStore from "./plannerStore";
-import { syncActivityTemplates } from "./activityTemplateSync";
 import * as workflowDb from "./routers/workflowDb";
 import * as deliveryStore from "./deliveryMasterStore";
 import { flushActivityEmailOutbox } from "./activityMailer";
@@ -165,54 +164,7 @@ export async function syncActivitiesFromSources() {
   for (const project of projects) {
     const manager = projectManager(users, project);
     if (!manager) continue;
-    const [items, cycles, techmove] = await Promise.all([
-      gpStore.listProjectChecklist(project),
-      gpStore.listFitToStandardCycles(project.id),
-      plannerStore.getTechMoveData(project.id),
-    ]);
-    for (const item of items) {
-      const state = gpStatus(item.status);
-      const assignee = findUser(users, item.responsible) || manager;
-      await activityStore.upsertSourceActivity({
-        scope: "project",
-        projectId: project.id,
-        title: item.title,
-        description: item.description,
-        status: state.status,
-        priority: item.itemType === "Quality Gate" ? "Alta" : "Média",
-        assigneeUserId: assignee.id,
-        creatorUserId: manager.id,
-        participantUserIds: [manager.id],
-        dueDate: item.dueDate,
-        sourceType: "gp_checklist",
-        sourceKey: item.id,
-        sourceUrl: `/techlead/gp-track?projectId=${encodeURIComponent(project.id)}`,
-        sourceResolved: state.resolved,
-      });
-    }
-    for (const cycle of cycles)
-      for (const step of cycle.steps) {
-        const state = gpStatus(step.status);
-        const assignee = findUser(users, step.responsible) || manager;
-        await activityStore.upsertSourceActivity({
-          scope: "project",
-          projectId: project.id,
-          title: `${cycle.name}: ${step.title}`,
-          description: cycle.module
-            ? `Ciclo Fit-to-Standard · ${cycle.module}`
-            : "Ciclo Fit-to-Standard",
-          status: state.status,
-          priority: "Média",
-          assigneeUserId: assignee.id,
-          creatorUserId: manager.id,
-          participantUserIds: [manager.id],
-          dueDate: step.dueDate,
-          sourceType: "gp_fit_step",
-          sourceKey: step.id,
-          sourceUrl: `/techlead/gp-track?projectId=${encodeURIComponent(project.id)}`,
-          sourceResolved: state.resolved,
-        });
-      }
+    const techmove = await plannerStore.getTechMoveData(project.id);
     await syncTechMoveProject(project, techmove, users, manager);
     await syncWorkflowAssignments(project, users, manager, activeKeys);
   }
@@ -338,7 +290,6 @@ export async function syncActivitiesFromSources() {
       }
   }
   await reconcileResolved(activeKeys);
-  await syncActivityTemplates(today);
   const currentActivities = await activityStore.listActivities();
   for (const activity of currentActivities.filter(
     item => item.status !== "Concluída" && item.dueDate && item.dueDate <= today

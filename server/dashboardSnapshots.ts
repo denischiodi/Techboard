@@ -52,7 +52,7 @@ export async function collectDashboardMetrics(): Promise<SnapshotMetric[]> {
     { module: "techmove", metricId: "open_gaps", value: gaps },
     { module: "techmove", metricId: "failed_tests", value: tests },
     { module: "admin", metricId: "active_users", value: users },
-    { module: "techlead", metricId: "visible_projects", value: projects },
+    { module: "techmove", metricId: "visible_projects", value: projects },
   ];
 }
 

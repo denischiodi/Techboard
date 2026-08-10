@@ -22,13 +22,10 @@ import DCDPage from "./pages/workflow/DCDPage";
 import GapsPage from "./pages/workflow/GapsPage";
 import ConfigurationsPage from "./pages/workflow/ConfigurationsPage";
 import TestsPage from "./pages/workflow/TestsPage";
-import GpChecklist from "./pages/GpChecklist";
 import Activities from "./pages/Activities";
 import AppLauncher from "./pages/AppLauncher";
 import ProductOverview from "./pages/ProductOverview";
-import TechLeadDashboard from "./pages/TechLeadDashboard";
-import TechTaskDashboard from "./pages/TechTaskDashboard";
-import TechLeadTeams from "./pages/TechLeadTeams";
+import TechMoveTeams from "./pages/TechMoveTeams";
 import StandardConfigurations from "./pages/StandardConfigurations";
 import GovernancePage from "./pages/workflow/GovernancePage";
 import RaidPage from "./pages/workflow/RaidPage";
@@ -43,7 +40,7 @@ function AppRoutes() {
           <Redirect to="/techmove" />
         </Route>
         <Route path={"/activities"}>
-          <Redirect to="/techtask/board" />
+          <Redirect to="/techmove/board" />
         </Route>
         <Route>
           <DashboardLayout>
@@ -55,12 +52,10 @@ function AppRoutes() {
               <Route path={"/techboard/absences"} component={Absences} />
               <Route path={"/techboard/planner"} component={Planner} />
               <Route path={"/techboard/org-chart"} component={OrgChart} />
-              <Route path={"/techlead"}>{() => <TechLeadDashboard />}</Route>
-              <Route path={"/techlead/gp-track"} component={GpChecklist} />
-              <Route path={"/techlead/teams"}>{() => <TechLeadTeams />}</Route>
-              <Route path={"/techlead/indicators"}>
-                {() => <TechLeadTeams indicators />}
-              </Route>
+              <Route path={"/techlead"}><Redirect to="/techmove" /></Route>
+              <Route path={"/techlead/gp-track"}><Redirect to="/techmove/trail" /></Route>
+              <Route path={"/techlead/teams"}><Redirect to="/techmove/teams" /></Route>
+              <Route path={"/techlead/indicators"}><Redirect to="/techmove" /></Route>
               <Route path={"/techmove"} component={TechMoveDashboard} />
               <Route path={"/techmove/projects"} component={ProjectWorkflow} />
               <Route
@@ -79,6 +74,9 @@ function AppRoutes() {
               <Route path={"/techmove/governance"} component={GovernancePage} />
               <Route path={"/techmove/raid"} component={RaidPage} />
               <Route path={"/techmove/trail"} component={TrailStagePage} />
+              <Route path={"/techmove/board"} component={Activities} />
+              <Route path={"/techmove/my-work"} component={Activities} />
+              <Route path={"/techmove/teams"} component={TechMoveTeams} />
               <Route path={"/workflow/scope-items"}>
                 <Redirect to="/techmove/scope-items" />
               </Route>
@@ -100,9 +98,9 @@ function AppRoutes() {
               <Route path={"/workflow/tests"}>
                 <Redirect to="/techmove/tests" />
               </Route>
-              <Route path={"/techtask"} component={TechTaskDashboard} />
-              <Route path={"/techtask/board"} component={Activities} />
-              <Route path={"/techtask/my-work"} component={Activities} />
+              <Route path={"/techtask"}><Redirect to="/techmove" /></Route>
+              <Route path={"/techtask/board"}><Redirect to="/techmove/board" /></Route>
+              <Route path={"/techtask/my-work"}><Redirect to="/techmove/my-work" /></Route>
               <Route path={"/admin"}>
                 {() => <ProductOverview productId="admin" />}
               </Route>
@@ -134,7 +132,7 @@ function AppRoutes() {
                 <Redirect to="/techboard/org-chart" />
               </Route>
               <Route path={"/gp-checklist"}>
-                <Redirect to="/techlead/gp-track" />
+                <Redirect to="/techmove/trail" />
               </Route>
               <Route path={"/access"}>
                 <Redirect to="/admin/users" />

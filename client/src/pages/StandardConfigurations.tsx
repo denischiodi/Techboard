@@ -64,6 +64,7 @@ import DeliveryTemplateCatalog, {
 } from "./DeliveryTemplateCatalog";
 import DeliveryArchivePanel from "./DeliveryArchivePanel";
 import { useAuth } from "@/_core/hooks/useAuth";
+import ProcessModelsConfig from "./ProcessModelsConfig";
 
 const priorities: ActivityPriority[] = ["Baixa", "Média", "Alta", "Crítica"];
 const weekdays = [
@@ -642,7 +643,7 @@ export default function StandardConfigurations() {
   return (
     <div className="min-w-0 max-w-full space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Configurações do Tech</h1>
+        <h1 className="text-2xl font-bold">Configurações do TechMove</h1>
         <p className="text-sm text-muted-foreground">
           Modelos globais que orientam a execução completa dos projetos.
         </p>
@@ -708,9 +709,9 @@ export default function StandardConfigurations() {
           </TabsTrigger>
           <TabsTrigger
             className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight"
-            value="activities"
+            value="process-models"
           >
-            Trilha do GP
+            Modelos de processo
           </TabsTrigger>
           <TabsTrigger
             className="h-11 min-w-0 whitespace-normal px-2 text-center leading-tight"
@@ -754,6 +755,9 @@ export default function StandardConfigurations() {
         ))}
         <TabsContent value="publication-history">
           <PublicationHistory />
+        </TabsContent>
+        <TabsContent value="process-models" className="space-y-4">
+          <ProcessModelsConfig />
         </TabsContent>
         <TabsContent value="activities" className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
