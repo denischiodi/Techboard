@@ -319,7 +319,15 @@ export default function ProjectWorkflow() {
           </CardContent>
         </Card>
       )}
-      <Tabs value={selectedPhase} onValueChange={value => setSelectedPhase(value as ProjectPhase)} className="space-y-5">
+      <Tabs
+        value={selectedPhase}
+        onValueChange={value => {
+          const phase = value as ProjectPhase;
+          setSelectedPhase(phase);
+          setLocation(withProject(`/techmove?phase=${phase}`));
+        }}
+        className="space-y-5"
+      >
         <div className="rounded-xl border bg-card p-3 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3 px-1">
             <div>
