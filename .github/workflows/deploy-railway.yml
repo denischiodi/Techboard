@@ -74,4 +74,19 @@ jobs:
 
       - name: Deploy
         if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
-        run: railway up --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --ci
+        run: railway up --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --detach
+
+      - name: Confirm production deployment
+        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        run: |
+          for attempt in $(seq 1 60); do
+            status=$(railway deployment list --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --limit 1 --json | jq -r '.[0].status // "UNKNOWN"')
+            echo "Railway deployment status: $status"
+            case "$status" in
+              SUCCESS) exit 0 ;;
+              FAILED|CRASHED|REMOVED) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Timed out waiting for the Railway deployment."
+          exit 1
