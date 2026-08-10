@@ -1103,7 +1103,10 @@ export async function createAppUser(
   input: Omit<AppUser, "id" | "active"> & { id?: string; active?: boolean }
 ) {
   const appUser: AppUser = {
-    id: input.id || generateUserId(),
+    // The in-memory counter restarts with the process and can collide with
+    // persisted users (for example, trying to insert `u6` again). Database
+    // records need an ID that remains unique across restarts and instances.
+    id: input.id || (hasDatabase() ? createDatabaseId("usr") : generateUserId()),
     name: input.name,
     email: input.email,
     role: input.role,
