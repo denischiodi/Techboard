@@ -9,6 +9,7 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -227,6 +228,8 @@ export default function DeliveryTemplateCatalog({
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [phaseFilter, setPhaseFilter] = useState("all");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [moduleFilter, setModuleFilter] = useState("all");
   const [editorOpen, setEditorOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<any>(null);
   const [attachmentProgress, setAttachmentProgress] = useState(0);
@@ -380,6 +383,8 @@ export default function DeliveryTemplateCatalog({
     return catalogTemplates.filter(template => {
       if (typeFilter !== "all" && template.type !== typeFilter) return false;
       if (phaseFilter !== "all" && template.phase !== phaseFilter) return false;
+      if (stageFilter !== "all" && template.stage !== stageFilter) return false;
+      if (moduleFilter !== "all" && !(template.modules || []).includes(moduleFilter)) return false;
       if (!term) return true;
       return [
         template.title,
@@ -393,7 +398,28 @@ export default function DeliveryTemplateCatalog({
         .toLocaleLowerCase("pt-BR")
         .includes(term);
     });
-  }, [catalogTemplates, search, typeFilter, phaseFilter]);
+  }, [catalogTemplates, search, typeFilter, phaseFilter, stageFilter, moduleFilter]);
+
+  const filterOptions = useMemo(() => ({
+    stages: [...new Set(catalogTemplates.map(item => item.stage).filter(Boolean))].sort(),
+    modules: [...new Set(catalogTemplates.flatMap(item => item.modules || []).filter(Boolean))].sort(),
+  }), [catalogTemplates]);
+  const activeFilterCount = [
+    search.trim() ? "search" : "",
+    typeFilter !== "all" ? typeFilter : "",
+    phaseFilter !== "all" ? phaseFilter : "",
+    stageFilter !== "all" ? stageFilter : "",
+    moduleFilter !== "all" ? moduleFilter : "",
+    includeArchived ? "archived" : "",
+  ].filter(Boolean).length;
+  const clearFilters = () => {
+    setSearch("");
+    setTypeFilter("all");
+    setPhaseFilter("all");
+    setStageFilter("all");
+    setModuleFilter("all");
+    setIncludeArchived(false);
+  };
 
   const groupedCount = useMemo(() => {
     const result = new Map<string, number>();
@@ -604,8 +630,10 @@ export default function DeliveryTemplateCatalog({
         ))}
       </div>}
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_220px_180px_auto]">
-        <div className="relative">
+      <Card className="border-muted-foreground/20">
+        <CardContent className="space-y-3 p-3">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <div className="relative min-w-[260px] flex-1">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
@@ -614,7 +642,7 @@ export default function DeliveryTemplateCatalog({
             onChange={event => setSearch(event.target.value)}
           />
         </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
+        {allowedTypes.length > 1 && <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger>
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue />
@@ -627,9 +655,9 @@ export default function DeliveryTemplateCatalog({
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select>}
         <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full lg:w-44">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -641,6 +669,20 @@ export default function DeliveryTemplateCatalog({
             ))}
           </SelectContent>
         </Select>
+        {filterOptions.stages.length > 1 && <Select value={stageFilter} onValueChange={setStageFilter}>
+          <SelectTrigger className="w-full lg:w-52"><SelectValue placeholder="Todas as etapas" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as etapas</SelectItem>
+            {filterOptions.stages.map(stage => <SelectItem key={stage} value={stage}>{stage}</SelectItem>)}
+          </SelectContent>
+        </Select>}
+        {filterOptions.modules.length > 0 && <Select value={moduleFilter} onValueChange={setModuleFilter}>
+          <SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Todos os módulos" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os módulos</SelectItem>
+            {filterOptions.modules.map(module => <SelectItem key={module} value={module}>{module}</SelectItem>)}
+          </SelectContent>
+        </Select>}
         <label className="flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm">
           <Checkbox
             checked={includeArchived}
@@ -648,7 +690,18 @@ export default function DeliveryTemplateCatalog({
           />
           Arquivados
         </label>
-      </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground">{filtered.length} resultado(s)</span>
+            {phaseFilter !== "all" && <Badge variant="secondary">Fase: {phaseFilter}</Badge>}
+            {stageFilter !== "all" && <Badge variant="secondary">Etapa: {stageFilter}</Badge>}
+            {moduleFilter !== "all" && <Badge variant="secondary">Módulo: {moduleFilter}</Badge>}
+            {typeFilter !== "all" && <Badge variant="secondary">Tipo: {typeLabels[typeFilter as DeliveryType]}</Badge>}
+            {includeArchived && <Badge variant="secondary">Incluindo arquivados</Badge>}
+            {activeFilterCount > 0 && <Button type="button" variant="ghost" size="sm" className="ml-auto h-7" onClick={clearFilters}><X className="mr-1 h-3.5 w-3.5" />Limpar filtros ({activeFilterCount})</Button>}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="space-y-2">
         {filtered.map((template: any) => (
