@@ -352,9 +352,10 @@ export function productForPath(path: string): ProductDefinition | undefined {
 }
 
 export function canAccessProduct(
-  product: ProductDefinition,
+  product: ProductDefinition | undefined,
   permissions: UserPermissions
 ) {
+  if (!product) return false;
   const explicit = permissions.products?.[product.id];
   if (typeof explicit === "boolean") return explicit;
   return product.menus.some(item => canViewMenuItem(item, permissions));

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { canAccessPath, canViewMenuItem, PRODUCT_CATALOG } from "./productCatalog";
+import { canAccessPath, canAccessProduct, canViewMenuItem, PRODUCT_CATALOG } from "./productCatalog";
 import { DEFAULT_PERMISSIONS } from "../../../shared/types";
 
 describe("permissões por tela", () => {
+  it("não derruba a interface quando um produto legado não existe", () => {
+    expect(canAccessProduct(undefined, DEFAULT_PERMISSIONS.manager)).toBe(false);
+  });
+
   it("mantém a permissão antiga como fallback", () => {
     const bdcq = PRODUCT_CATALOG.techmove.menus.find(item => item.accessKey === "techmove.bdcq")!;
     expect(canViewMenuItem(bdcq, DEFAULT_PERMISSIONS.manager)).toBe(true);
