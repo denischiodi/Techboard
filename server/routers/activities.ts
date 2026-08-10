@@ -95,7 +95,7 @@ const activityProcedure = (action: "view" | "create" | "modify" = "view") =>
     const actions = ctx.appUser.permissions.actions?.activities;
     if (
       ctx.appUser.role !== "admin" &&
-      (ctx.appUser.permissions.products?.techtask === false ||
+      ((ctx.appUser.permissions.products?.techtask === false && ctx.appUser.permissions.products?.techmove === false) ||
         !ctx.appUser.permissions.activities ||
         (actions && !actions[action]))
     )

@@ -55,7 +55,7 @@ const deliveryTypes = [
 export type DeliveryType = (typeof deliveryTypes)[number];
 
 const typeLabels: Record<DeliveryType, string> = {
-  activity: "Atividade do GP",
+  activity: "Atividade / checklist",
   bdcq: "BDCQ",
   workshop: "Workshop",
   dcd: "DCD",
@@ -72,6 +72,7 @@ const typeLabels: Record<DeliveryType, string> = {
 };
 const phases = ["Discover", "Prepare", "Explore", "Realize", "Deploy", "Run"];
 const ownerRoles = [
+  { value: "delivery_director", label: "Diretoria Delivery" },
   { value: "manager", label: "GP do projeto" },
   { value: "technical_lead", label: "Líder técnico" },
   { value: "consultant", label: "Consultor" },
@@ -110,6 +111,8 @@ type TemplateForm = {
   sortOrder: number;
   dependencyTemplateIds: string[];
   ownerRole: string;
+  criticality: "blocking" | "required" | "optional";
+  teamId: string;
   dueOffsetDays: number;
   evidenceText: string;
   approvalMode: "none" | "any" | "all" | "minimum";
@@ -152,6 +155,8 @@ const emptyForm = (): TemplateForm => ({
   sortOrder: 0,
   dependencyTemplateIds: [],
   ownerRole: "consultant",
+  criticality: "required",
+  teamId: "",
   dueOffsetDays: 0,
   evidenceText: "",
   approvalMode: "none",
@@ -405,6 +410,8 @@ export default function DeliveryTemplateCatalog({
       sortOrder: Number(template.sortOrder || 0),
       dependencyTemplateIds: template.dependencyTemplateIds || [],
       ownerRole: template.ownerRole || "consultant",
+      criticality: template.criticality || (template.required ? "required" : "optional"),
+      teamId: template.teamId || "",
       dueOffsetDays: Number(template.dueOffsetDays || 0),
       evidenceText: (template.evidenceRequirements || []).join("\n"),
       approvalMode: template.approvalPolicy?.mode || "none",
@@ -490,6 +497,8 @@ export default function DeliveryTemplateCatalog({
       sortOrder: form.sortOrder,
       dependencyTemplateIds: [],
       ownerRole: form.ownerRole,
+      criticality: form.criticality,
+      teamId: form.teamId,
       dueOffsetDays: form.dueOffsetDays,
       evidenceRequirements: [],
       approvalPolicy: {
@@ -1262,6 +1271,22 @@ export default function DeliveryTemplateCatalog({
                 values={ownerRoles}
                 onChange={ownerRole =>
                   setForm(current => ({ ...current, ownerRole }))
+                }
+              />
+              <FieldSelect
+                label="Regra de avanço"
+                value={form.criticality}
+                values={[
+                  { value: "blocking", label: "Crítico e bloqueante" },
+                  { value: "required", label: "Obrigatório não bloqueante" },
+                  { value: "optional", label: "Opcional" },
+                ]}
+                onChange={criticality =>
+                  setForm(current => ({
+                    ...current,
+                    criticality: criticality as TemplateForm["criticality"],
+                    required: criticality !== "optional",
+                  }))
                 }
               />
               <div>

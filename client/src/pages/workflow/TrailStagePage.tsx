@@ -133,8 +133,9 @@ export default function TrailStagePage() {
                     <Badge variant="outline">{item.code}</Badge>
                     <h2 className="font-semibold">{item.title}</h2>
                     <Badge variant={item.required ? "default" : "outline"}>
-                      {item.required ? "Obrigatório" : "Opcional"}
+                      {item.criticality === "blocking" ? "Crítico · bloqueante" : item.criticality === "optional" ? "Opcional" : "Obrigatório"}
                     </Badge>
+                    {item.exceptionReason && <Badge variant="secondary">Exceção aprovada</Badge>}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {item.description || "Sem descrição"}
@@ -227,7 +228,7 @@ export default function TrailStagePage() {
         {!stageItems.length && (
           <div className="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
             Nenhum modelo foi aplicado a esta etapa. Cadastre modelos em
-            Configurações do Tech e aplique a trilha no projeto.
+            Configurações do TechMove e aplique a trilha no projeto.
           </div>
         )}
       </div>

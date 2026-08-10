@@ -889,6 +889,10 @@ export const deliveryTemplates = mysqlTable("delivery_templates", {
   ownerRole: varchar("ownerRole", { length: 64 })
     .notNull()
     .default("consultant"),
+  criticality: varchar("criticality", { length: 32 })
+    .notNull()
+    .default("required"),
+  teamId: varchar("teamId", { length: 64 }).notNull().default(""),
   dueOffsetDays: int("dueOffsetDays").notNull().default(0),
   evidenceRequirements: json("evidenceRequirements")
     .$type<string[]>()
@@ -908,6 +912,77 @@ export const deliveryTemplates = mysqlTable("delivery_templates", {
   archivedBy: varchar("archivedBy", { length: 64 }).notNull().default(""),
   createdBy: varchar("createdBy", { length: 64 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** Configurable operational teams, roles and reusable project processes. */
+export const deliveryTeams = mysqlTable("delivery_teams", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  description: text("description").notNull().default(""),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdBy: varchar("createdBy", { length: 64 }).notNull().default("system"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const deliveryRoles = mysqlTable("delivery_roles", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  teamId: varchar("teamId", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description").notNull().default(""),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const deliveryTeamMembers = mysqlTable("delivery_team_members", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  teamId: varchar("teamId", { length: 64 }).notNull(),
+  appUserId: varchar("appUserId", { length: 64 }).notNull(),
+  roleId: varchar("roleId", { length: 64 }).notNull(),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const projectDeliveryMembers = mysqlTable("project_delivery_members", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  teamId: varchar("teamId", { length: 64 }).notNull(),
+  appUserId: varchar("appUserId", { length: 64 }).notNull(),
+  roleId: varchar("roleId", { length: 64 }).notNull(),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const processModels = mysqlTable("process_models", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description").notNull().default(""),
+  kind: varchar("kind", { length: 32 }).notNull().default("complementary"),
+  version: int("version").notNull().default(1),
+  phases: json("phases").$type<string[]>().default([]),
+  active: mysqlBoolean("active").notNull().default(true),
+  createdBy: varchar("createdBy", { length: 64 }).notNull().default("system"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const processModelTemplates = mysqlTable("process_model_templates", {
+  modelId: varchar("modelId", { length: 64 }).notNull(),
+  templateId: varchar("templateId", { length: 64 }).notNull(),
+  position: int("position").notNull().default(0),
+});
+
+export const projectProcessApplications = mysqlTable("project_process_applications", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  projectId: varchar("projectId", { length: 64 }).notNull(),
+  modelId: varchar("modelId", { length: 64 }).notNull(),
+  modelVersion: int("modelVersion").notNull().default(1),
+  kind: varchar("kind", { length: 32 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("active"),
+  appliedBy: varchar("appliedBy", { length: 64 }).notNull().default(""),
+  appliedAt: timestamp("appliedAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -1019,6 +1094,10 @@ export const deliveryItems = mysqlTable("delivery_items", {
   ownerRole: varchar("ownerRole", { length: 64 })
     .notNull()
     .default("consultant"),
+  criticality: varchar("criticality", { length: 32 })
+    .notNull()
+    .default("required"),
+  teamId: varchar("teamId", { length: 64 }).notNull().default(""),
   responsibleId: varchar("responsibleId", { length: 64 }).notNull().default(""),
   dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
   status: varchar("status", { length: 32 }).notNull().default("not_started"),
@@ -1033,6 +1112,9 @@ export const deliveryItems = mysqlTable("delivery_items", {
     .default({}),
   payload: json("payload").$type<Record<string, unknown>>().default({}),
   customized: mysqlBoolean("customized").notNull().default(false),
+  exceptionReason: text("exceptionReason").notNull().default(""),
+  exceptionBy: varchar("exceptionBy", { length: 64 }).notNull().default(""),
+  exceptionAt: timestamp("exceptionAt"),
   archivedAt: timestamp("archivedAt"),
   archivedBy: varchar("archivedBy", { length: 64 }).notNull().default(""),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

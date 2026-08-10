@@ -449,7 +449,7 @@ export default function Activities() {
       ),
     []
   );
-  const routeDefaultView = location.startsWith("/techtask/my-work")
+  const routeDefaultView = location.startsWith("/techtask/my-work") || location.startsWith("/techmove/my-work")
     ? "mine"
     : "projects";
   const [view, setView] = useState<"mine" | "projects" | "internal">(() => {

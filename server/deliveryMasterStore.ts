@@ -33,6 +33,8 @@ export type DeliveryTemplateInput = {
   sortOrder?: number;
   dependencyTemplateIds?: string[];
   ownerRole?: string;
+  criticality?: "blocking" | "required" | "optional";
+  teamId?: string;
   dueOffsetDays?: number;
   evidenceRequirements?: string[];
   approvalPolicy?: {
@@ -173,6 +175,8 @@ export async function createTemplate(
     sortOrder: input.sortOrder || 0,
     dependencyTemplateIds: input.dependencyTemplateIds || [],
     ownerRole: input.ownerRole || "consultant",
+    criticality: input.criticality || (input.required === false ? "optional" : "required"),
+    teamId: input.teamId || "",
     dueOffsetDays: input.dueOffsetDays || 0,
     evidenceRequirements: input.evidenceRequirements || [],
     approvalPolicy: input.approvalPolicy || {
@@ -325,6 +329,18 @@ export async function updateItem(id: string, patch: Record<string, unknown>) {
     [id, ...entries.map(([key, value]) => serialize(key, value))]
   );
   return result.rows[0] || null;
+}
+
+export async function approveBlockingException(id: string, reason: string, userId: string) {
+  const pool = getPgPool();
+  if (!pool) return { id, exceptionReason: reason, exceptionBy: userId };
+  const result = await pool.query(
+    `UPDATE "delivery_items" SET "exceptionReason"=$2,"exceptionBy"=$3,"exceptionAt"=now(),"updatedAt"=now()
+     WHERE "id"=$1 AND "criticality"='blocking' AND "archivedAt" IS NULL RETURNING *`,
+    [id, reason, userId]
+  );
+  if (!result.rows[0]) throw new Error("Item bloqueante não encontrado");
+  return result.rows[0];
 }
 
 const PREFIX: Record<string, string> = {
@@ -508,8 +524,8 @@ export async function applyTrail(
             })()
           : "";
         await client.query(
-          `INSERT INTO "delivery_items" ("id","code","sequenceNumber","projectId","templateId","occurrenceKey","templateVersion","type","title","description","phase","stage","module","scopeItemIds","required","sortOrder","ownerRole","dueDate","status","evidenceRequirements","approvalPolicy","payload")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,'not_started',$19::jsonb,$20::jsonb,$21::jsonb)`,
+          `INSERT INTO "delivery_items" ("id","code","sequenceNumber","projectId","templateId","occurrenceKey","templateVersion","type","title","description","phase","stage","module","scopeItemIds","required","sortOrder","ownerRole","criticality","teamId","dueDate","status","evidenceRequirements","approvalPolicy","payload")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,$19,$20,'not_started',$21::jsonb,$22::jsonb,$23::jsonb)`,
           [
             `di_${nanoid(20)}`,
             code,
@@ -528,6 +544,8 @@ export async function applyTrail(
             template.required,
             template.sortOrder,
             template.ownerRole,
+            template.criticality || (template.required ? "required" : "optional"),
+            template.teamId || "",
             dueDate,
             JSON.stringify(template.evidenceRequirements || []),
             JSON.stringify(template.approvalPolicy || {}),
@@ -550,7 +568,7 @@ export async function applyTrail(
         entry.existing.templateVersion < template.version
       ) {
         await client.query(
-          `UPDATE "delivery_items" SET "templateVersion"=$2,"title"=$3,"description"=$4,"phase"=$5,"stage"=$6,"scopeItemIds"=$7::jsonb,"required"=$8,"sortOrder"=$9,"ownerRole"=$10,"evidenceRequirements"=$11::jsonb,"approvalPolicy"=$12::jsonb,"payload"=$13::jsonb,"updatedAt"=now() WHERE "id"=$1`,
+          `UPDATE "delivery_items" SET "templateVersion"=$2,"title"=$3,"description"=$4,"phase"=$5,"stage"=$6,"scopeItemIds"=$7::jsonb,"required"=$8,"sortOrder"=$9,"ownerRole"=$10,"criticality"=$11,"teamId"=$12,"evidenceRequirements"=$13::jsonb,"approvalPolicy"=$14::jsonb,"payload"=$15::jsonb,"updatedAt"=now() WHERE "id"=$1`,
           [
             entry.existing.id,
             template.version,
@@ -562,6 +580,8 @@ export async function applyTrail(
             template.required,
             template.sortOrder,
             template.ownerRole,
+            template.criticality || (template.required ? "required" : "optional"),
+            template.teamId || "",
             JSON.stringify(template.evidenceRequirements || []),
             JSON.stringify(template.approvalPolicy || {}),
             JSON.stringify({

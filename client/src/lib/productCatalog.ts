@@ -101,11 +101,11 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
   },
   techlead: {
     id: "techlead",
-    name: "TechLead",
+    name: "TechMove",
     logoPath: "/techlead-logo.svg",
     icon: Users,
-    homePath: "/techlead",
-    description: "Liderança, times, trilhas e acompanhamento de entregas.",
+    homePath: "/techmove",
+    description: "Compatibilidade de acesso migrada para o TechMove.",
     accent: "from-violet-600 to-fuchsia-500",
     iconClass: "bg-violet-600 text-white",
     menus: [
@@ -145,7 +145,7 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
     logoPath: "/techmove-logo.svg",
     icon: Workflow,
     homePath: "/techmove",
-    description: "Jornada de implementação, escopo, workshops e gaps.",
+    description: "Trilha unificada, atividades, equipes e governança dos projetos.",
     accent: "from-emerald-600 to-teal-500",
     iconClass: "bg-emerald-600 text-white",
     menus: [
@@ -162,6 +162,34 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
         path: "/techmove/projects",
         permission: "techmove",
         accessKey: "techmove.projects",
+      },
+      {
+        icon: ClipboardCheck,
+        label: "Trilha",
+        path: "/techmove/trail",
+        permission: "techmove",
+        accessKey: "techmove.trail",
+      },
+      {
+        icon: KanbanSquare,
+        label: "Kanban",
+        path: "/techmove/board",
+        permission: "activities",
+        accessKey: "techmove.board",
+      },
+      {
+        icon: ListChecks,
+        label: "Meu trabalho",
+        path: "/techmove/my-work",
+        permission: "activities",
+        accessKey: "techmove.myWork",
+      },
+      {
+        icon: Users,
+        label: "Equipes",
+        path: "/techmove/teams",
+        permission: "organogram",
+        accessKey: "techmove.teams",
       },
       {
         icon: ListChecks,
@@ -223,11 +251,11 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
   },
   techtask: {
     id: "techtask",
-    name: "TechTask",
+    name: "TechMove",
     logoPath: "/techtask-logo.svg",
     icon: KanbanSquare,
-    homePath: "/techtask",
-    description: "Kanban, atividades, responsáveis e notificações.",
+    homePath: "/techmove",
+    description: "Compatibilidade de acesso migrada para o TechMove.",
     accent: "from-orange-500 to-amber-400",
     iconClass: "bg-orange-500 text-white",
     menus: [
@@ -296,7 +324,9 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
   },
 };
 
-export const PRODUCTS = Object.values(PRODUCT_CATALOG);
+export const PRODUCTS = Object.values(PRODUCT_CATALOG).filter(
+  product => product.id !== "techlead" && product.id !== "techtask"
+);
 
 export function canViewTab(tab: AppTab, permissions: UserPermissions) {
   const actions = permissions.actions?.[tab];
