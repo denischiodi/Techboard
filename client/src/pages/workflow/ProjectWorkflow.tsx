@@ -83,7 +83,7 @@ export default function ProjectWorkflow() {
     { projectId, modelId: selectedProcessModel },
     { enabled: Boolean(projectId && selectedProcessModel) },
   );
-  const applyProcess = trpc.workflow.delivery.structure.models.apply.useMutation({
+  const applyProcess = trpc.workflow.delivery.structure.models.applyModel.useMutation({
     onSuccess: async result => {
       toast.success(`${result.model.name} aplicado: ${result.model.templates.length} item(ns) em publicação`);
       await Promise.all([utils.workflow.delivery.trail.invalidate(), utils.workflow.delivery.structure.models.invalidate()]);

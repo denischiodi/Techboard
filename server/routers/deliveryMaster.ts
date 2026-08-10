@@ -204,7 +204,7 @@ export const deliveryMasterRouter = router({
           await assertWorkflowProjectAccess(ctx.appUser, input.projectId, false);
           return structure.previewApplication(input.projectId, input.modelId);
         }),
-      apply: protectedProcedure
+      applyModel: protectedProcedure
         .input(z.object({ projectId: z.string().min(1), modelId: z.string().min(1), confirmed: z.literal(true) }))
         .mutation(async ({ ctx, input }) => {
           await assertWorkflowProjectAccess(ctx.appUser, input.projectId, true);
