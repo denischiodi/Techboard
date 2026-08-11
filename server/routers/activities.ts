@@ -58,8 +58,15 @@ function forbidden(message = "Sem permissão para esta atividade"): never {
 }
 
 const activityProcedure = (action: "view" | "create" | "modify" = "view") => protectedProcedure.use(({ ctx, next }) => {
-  const actions = ctx.appUser.permissions.actions?.activities;
-  if (ctx.appUser.role !== "admin" && ((ctx.appUser.permissions.products?.techtask === false && ctx.appUser.permissions.products?.techmove === false) || !ctx.appUser.permissions.activities || (actions && !actions[action]))) forbidden("Sem permissão para acessar atividades");
+  const permissionActions = ctx.appUser.permissions.actions;
+  const actions = permissionActions?.activities;
+  const boardActions = permissionActions?.["techboard.kanban"];
+  const myWorkActions = permissionActions?.["techboard.myWork"];
+  const hasNewScreenPermissions = Boolean(boardActions || myWorkActions);
+  const newScreenAllowsAction = Boolean(boardActions?.[action]) || Boolean(myWorkActions?.[action]);
+  const legacyProductAllowed = ctx.appUser.permissions.products?.techtask !== false || ctx.appUser.permissions.products?.techmove !== false;
+  const productAllowed = hasNewScreenPermissions ? ctx.appUser.permissions.products?.techboard !== false : legacyProductAllowed;
+  if (ctx.appUser.role !== "admin" && (!productAllowed || !ctx.appUser.permissions.activities || (hasNewScreenPermissions ? !newScreenAllowsAction : actions && !actions[action]))) forbidden("Sem permissão para acessar atividades");
   return next();
 });
 const activityViewProcedure = activityProcedure();

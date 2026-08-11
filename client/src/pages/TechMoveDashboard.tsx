@@ -181,7 +181,7 @@ export default function TechMoveDashboard() {
   const openMetric = (metric: DashboardMetric) => {
     if (metric.id.startsWith("tasks.")) {
       const selected = metric.id === "tasks.overdue" ? overdue : metric.id === "tasks.blocked" ? blocked : metric.id === "tasks.unassigned" ? unassigned : operational.filter(item => item.status !== "Concluída");
-      setDetail({ metric, rows: selected.map(item => ({ id: item.id, title: item.displayTitle || item.title, subtitle: `${item.projectName || "Projeto"} · ${item.assigneeName || "Sem responsável"}`, status: item.status, projectId: item.projectId, dueDate: item.dueDate, sourceUrl: `/techmove/board?activityId=${encodeURIComponent(item.id)}` })) });
+      setDetail({ metric, rows: selected.map(item => ({ id: item.id, title: item.displayTitle || item.title, subtitle: `${item.projectName || "Projeto"} · ${item.assigneeName || "Sem responsável"}`, status: item.status, projectId: item.projectId, dueDate: item.dueDate, sourceUrl: `/techboard/kanban?activityId=${encodeURIComponent(item.id)}` })) });
       return;
     }
     const rows =

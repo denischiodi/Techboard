@@ -170,9 +170,24 @@ function normalizePermissions(
   permissions: Partial<UserPermissions> | null | undefined,
   role: UserRole
 ): UserPermissions {
-  return {
+  const normalized = {
     ...DEFAULT_PERMISSIONS[role],
     ...(permissions || {}),
+  };
+  const actions = { ...(normalized.actions || {}) };
+  const legacyKanban = actions["techmove.board"] || actions["techtask.board"];
+  const legacyMyWork = actions["techmove.myWork"] || actions["techtask.myWork"];
+  if (!actions["techboard.kanban"] && legacyKanban) actions["techboard.kanban"] = { ...legacyKanban };
+  if (!actions["techboard.myWork"] && legacyMyWork) actions["techboard.myWork"] = { ...legacyMyWork };
+  const legacyProductAllowed = normalized.products?.techtask !== false || normalized.products?.techmove !== false;
+  const activityActions = actions.activities;
+  const hasActivityAccess = normalized.activities && legacyProductAllowed && (!activityActions || activityActions.view);
+  const promoteKanbanIntoBlockedTechboard = hasActivityAccess && normalized.products?.techboard === false;
+  return {
+    ...normalized,
+    ...(promoteKanbanIntoBlockedTechboard ? { dashboard: false, resources: false, projects: false, absences: false, planner: false, organogram: false } : {}),
+    products: hasActivityAccess ? { ...(normalized.products || {}), techboard: true } : normalized.products,
+    actions,
   };
 }
 

@@ -186,7 +186,7 @@ export default function AppLauncher() {
       status: item.status,
       projectId: item.projectId,
       dueDate: item.dueDate,
-      sourceUrl: `/techmove/my-work?view=mine&activityId=${encodeURIComponent(item.id)}`,
+      sourceUrl: `/techboard/my-work?view=mine&activityId=${encodeURIComponent(item.id)}`,
     }));
     const alertRows = visibleWorkflowAlerts.map((alert, index) => ({
       id: `${alert.projectId}-${index}`,
@@ -229,7 +229,7 @@ export default function AppLauncher() {
         title: item.displayTitle,
         detail: `${item.projectName || "Operação interna"} · ${item.status}`,
         projectId: item.projectId,
-        route: `/techmove/my-work?view=mine&activityId=${encodeURIComponent(item.id)}`,
+        route: `/techboard/my-work?view=mine&activityId=${encodeURIComponent(item.id)}`,
       }));
     const projectResults = (projectsQuery.data || [])
       .filter(item =>
@@ -272,7 +272,7 @@ export default function AppLauncher() {
   const openActivity = (activity: Activity) => {
     if (activity.projectId) rememberProject(activity.projectId);
     navigate(
-      `/techmove/my-work?view=mine&activityId=${encodeURIComponent(activity.id)}${activity.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`
+      `/techboard/my-work?view=mine&activityId=${encodeURIComponent(activity.id)}${activity.projectId ? `&projectId=${encodeURIComponent(activity.projectId)}` : ""}`
     );
   };
 
@@ -383,7 +383,7 @@ export default function AppLauncher() {
               value={myActivities.length}
               detail="atividades abertas"
               icon={ListChecks}
-              onClick={() => navigate("/techmove/my-work?view=mine")}
+              onClick={() => navigate("/techboard/my-work?view=mine")}
             />
             <MetricCard
               label="Atrasadas"
@@ -392,7 +392,7 @@ export default function AppLauncher() {
               icon={Clock3}
               tone={overdue.length ? "danger" : "success"}
               onClick={() =>
-                navigate("/techmove/my-work?view=mine&due=overdue")
+                navigate("/techboard/my-work?view=mine&due=overdue")
               }
             />
             <MetricCard
@@ -402,7 +402,7 @@ export default function AppLauncher() {
               icon={AlertTriangle}
               tone={blocked.length ? "warning" : "success"}
               onClick={() =>
-                navigate("/techmove/my-work?view=mine&status=Bloqueada")
+                navigate("/techboard/my-work?view=mine&status=Bloqueada")
               }
             />
           </>
@@ -439,7 +439,7 @@ export default function AppLauncher() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate("/techmove/my-work?view=mine")}
+              onClick={() => navigate("/techboard/my-work?view=mine")}
             >
               Ver tudo
               <ArrowRight className="ml-2 h-4 w-4" />

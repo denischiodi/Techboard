@@ -239,7 +239,7 @@ export default function Activities() {
   const activitiesQuery = trpc.activities.list.useQuery(undefined, { refetchOnWindowFocus: false });
   const { data: projects = [] } = trpc.projects.list.useQuery();
   const initialParams = useMemo(() => new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search), []);
-  const routeDefaultView = location.startsWith("/techtask/my-work") || location.startsWith("/techmove/my-work") ? "mine" : "projects";
+  const routeDefaultView = location.startsWith("/techboard/my-work") || location.startsWith("/techtask/my-work") || location.startsWith("/techmove/my-work") ? "mine" : "projects";
   const [view, setView] = useState<"mine" | "projects" | "internal">(() => {
     const value = initialParams.get("view");
     return value === "mine" || value === "internal" || value === "projects" ? value : routeDefaultView;

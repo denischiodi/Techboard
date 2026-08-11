@@ -97,6 +97,8 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
         permission: "organogram",
         accessKey: "techboard.organogram",
       },
+      { icon: KanbanSquare, label: "Kanban", path: "/techboard/kanban", permission: "activities", accessKey: "techboard.kanban" },
+      { icon: ListChecks, label: "Meu trabalho", path: "/techboard/my-work", permission: "activities", accessKey: "techboard.myWork" },
     ],
   },
   techlead: {
@@ -169,20 +171,6 @@ export const PRODUCT_CATALOG: Record<ProductId, ProductDefinition> = {
         path: "/techmove/trail",
         permission: "techmove",
         accessKey: "techmove.trail",
-      },
-      {
-        icon: KanbanSquare,
-        label: "Kanban",
-        path: "/techmove/board",
-        permission: "activities",
-        accessKey: "techmove.board",
-      },
-      {
-        icon: ListChecks,
-        label: "Meu trabalho",
-        path: "/techmove/my-work",
-        permission: "activities",
-        accessKey: "techmove.myWork",
       },
       {
         icon: Users,

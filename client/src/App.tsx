@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_BASE_PATH } from "@/const";
 import NotFound from "@/pages/NotFound";
-import { Redirect, Route, Router as WouterRouter, Switch } from "wouter";
+import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
@@ -32,6 +32,12 @@ import RaidPage from "./pages/workflow/RaidPage";
 import TrailStagePage from "./pages/workflow/TrailStagePage";
 import TechMoveDashboard from "./pages/TechMoveDashboard";
 
+function LegacyRedirect({ to }: { to: string }) {
+  const [location] = useLocation();
+  const query = location.includes("?") ? location.slice(location.indexOf("?")) : "";
+  return <Redirect to={`${to}${query}`} />;
+}
+
 function AppRoutes() {
   return (
     <WouterRouter base={APP_BASE_PATH}>
@@ -40,7 +46,7 @@ function AppRoutes() {
           <Redirect to="/techmove" />
         </Route>
         <Route path={"/activities"}>
-          <Redirect to="/techmove/board" />
+          <LegacyRedirect to="/techboard/kanban" />
         </Route>
         <Route>
           <DashboardLayout>
@@ -52,6 +58,8 @@ function AppRoutes() {
               <Route path={"/techboard/absences"} component={Absences} />
               <Route path={"/techboard/planner"} component={Planner} />
               <Route path={"/techboard/org-chart"} component={OrgChart} />
+              <Route path={"/techboard/kanban"} component={Activities} />
+              <Route path={"/techboard/my-work"} component={Activities} />
               <Route path={"/techlead"}><Redirect to="/techmove" /></Route>
               <Route path={"/techlead/gp-track"}><Redirect to="/techmove/trail" /></Route>
               <Route path={"/techlead/teams"}><Redirect to="/techmove/teams" /></Route>
@@ -74,8 +82,8 @@ function AppRoutes() {
               <Route path={"/techmove/governance"} component={GovernancePage} />
               <Route path={"/techmove/raid"} component={RaidPage} />
               <Route path={"/techmove/trail"} component={TrailStagePage} />
-              <Route path={"/techmove/board"} component={Activities} />
-              <Route path={"/techmove/my-work"} component={Activities} />
+              <Route path={"/techmove/board"}><LegacyRedirect to="/techboard/kanban" /></Route>
+              <Route path={"/techmove/my-work"}><LegacyRedirect to="/techboard/my-work" /></Route>
               <Route path={"/techmove/teams"} component={TechMoveTeams} />
               <Route path={"/workflow/scope-items"}>
                 <Redirect to="/techmove/scope-items" />
@@ -99,8 +107,8 @@ function AppRoutes() {
                 <Redirect to="/techmove/tests" />
               </Route>
               <Route path={"/techtask"}><Redirect to="/techmove" /></Route>
-              <Route path={"/techtask/board"}><Redirect to="/techmove/board" /></Route>
-              <Route path={"/techtask/my-work"}><Redirect to="/techmove/my-work" /></Route>
+              <Route path={"/techtask/board"}><LegacyRedirect to="/techboard/kanban" /></Route>
+              <Route path={"/techtask/my-work"}><LegacyRedirect to="/techboard/my-work" /></Route>
               <Route path={"/admin"}>
                 {() => <ProductOverview productId="admin" />}
               </Route>

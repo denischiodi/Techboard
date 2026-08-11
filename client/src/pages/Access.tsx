@@ -145,10 +145,13 @@ function levelsFromPermissions(role: UserRole, permissions: UserPermissions): Ac
   return ACCESS_TABS.reduce((acc, tab) => {
     const screen = SCREEN_DEFINITIONS.find(item => item.key === tab)!;
     const screenAccess = permissions.actions?.[tab];
+    const legacyScreenAccess = tab === 'techboard.kanban' ? permissions.actions?.['techmove.board'] || permissions.actions?.['techtask.board'] : tab === 'techboard.myWork' ? permissions.actions?.['techmove.myWork'] || permissions.actions?.['techtask.myWork'] : undefined;
     const legacyAccess = permissions.actions?.[screen.legacyPermission];
     const legacyEnabled = permissions[screen.legacyPermission];
     acc[tab] = screenAccess
       ? { ...screenAccess }
+      : legacyScreenAccess
+      ? { ...legacyScreenAccess }
       : legacyEnabled
       ? { ...(legacyAccess || DEFAULT_ACCESS_LEVELS[role][tab]), view: true }
       : { view: false, modify: false, create: false };
@@ -167,6 +170,10 @@ function permissionsFromLevels(levels: AccessLevelMatrix, previous: UserPermissi
     return [key, { view: aggregate('view'), modify: aggregate('modify'), create: aggregate('create') }];
   }));
   permissions.actions = { ...legacyActions, ...screenActions };
+  delete permissions.actions['techmove.board'];
+  delete permissions.actions['techmove.myWork'];
+  delete permissions.actions['techtask.board'];
+  delete permissions.actions['techtask.myWork'];
   permissions.products = Object.fromEntries(PRODUCTS.map(product => [
     product.id,
     product.menus.some(item => levels[item.accessKey]?.view),
@@ -368,7 +375,7 @@ export default function Access() {
     if (projectAccess.length) {
       groupPermissions.activities = true;
       groupPermissions.techmove = true;
-      groupPermissions.products = { ...groupPermissions.products, techtask: true, techmove: true };
+      groupPermissions.products = { ...groupPermissions.products, techboard: true, techmove: true };
       groupPermissions.actions = {
         ...groupPermissions.actions,
         activities: { view: true, modify: true, create: false },
@@ -376,8 +383,8 @@ export default function Access() {
         'techmove.projects': { view: true, modify: false, create: false },
         'techmove.bdcq': { view: true, modify: true, create: false },
         'techmove.tests': { view: true, modify: true, create: false },
-        'techtask.board': { view: true, modify: true, create: false },
-        'techtask.myWork': { view: true, modify: true, create: false },
+        'techboard.kanban': { view: true, modify: true, create: false },
+        'techboard.myWork': { view: true, modify: true, create: false },
       };
     }
     try {

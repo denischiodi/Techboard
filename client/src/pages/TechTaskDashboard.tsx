@@ -158,7 +158,7 @@ export default function TechTaskDashboard() {
       status: item.status,
       projectId: item.projectId,
       dueDate: item.dueDate,
-      sourceUrl: `/techtask/board?activityId=${encodeURIComponent(item.id)}`,
+      sourceUrl: `/techboard/kanban?activityId=${encodeURIComponent(item.id)}`,
     }));
   const openMetric = (metric: DashboardMetric) => {
     const items =
@@ -185,7 +185,7 @@ export default function TechTaskDashboard() {
             Prioridades, fluxo, prazos e gargalos das atividades.
           </p>
         </div>
-        <Button onClick={() => navigate("/techtask/board")}>
+        <Button onClick={() => navigate("/techboard/kanban")}>
           <KanbanSquare className="mr-2 h-4 w-4" />
           Abrir Kanban
         </Button>
@@ -365,7 +365,7 @@ export default function TechTaskDashboard() {
                     className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left hover:bg-muted"
                     onClick={() =>
                       navigate(
-                        `/techtask/board?activityId=${encodeURIComponent(item.id)}`
+                        `/techboard/kanban?activityId=${encodeURIComponent(item.id)}`
                       )
                     }
                   >

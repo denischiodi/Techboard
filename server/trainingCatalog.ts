@@ -147,13 +147,13 @@ const VALIDATIONS_BY_ROUTE: Record<string, string[]> = {
     "Indicadores consideram somente atividades visíveis, não arquivadas e compatíveis com projeto, responsável e filtros.",
     "Atrasos, bloqueios e prioridades são derivados dos dados atuais; alterar a atividade de origem recalcula os alertas.",
   ],
-  "/techtask/board": [
+  "/techboard/kanban": [
     "Título, projeto ou contexto, prioridade, responsável e status são validados conforme o tipo de atividade.",
     "Atividades integradas preservam código e origem; campos protegidos só podem ser alterados pelas permissões administrativas previstas.",
     "Movimentar o cartão executa as mesmas validações da edição, inclusive checklist obrigatório, bloqueios e exigências de conclusão.",
     "Importação valida colunas, valores permitidos, usuários, projetos e códigos duplicados antes de confirmar as linhas.",
   ],
-  "/techtask/my-work": [
+  "/techboard/my-work": [
     "Somente responsável ou participantes autorizados podem alterar a atividade; participação voluntária não substitui o responsável principal.",
     "Checklist obrigatório deve ser concluído antes do encerramento, respeitando responsáveis e prazos dos itens.",
     "Comentários, anexos, prazo e status são auditados; anexos passam por validação de formato e tamanho.",
@@ -286,12 +286,12 @@ const AUTOMATIONS_BY_ROUTE: Record<string, string[]> = {
   "/techtask": [
     "Atividades originadas em outros módulos são consolidadas com código, origem, projeto, etapa, responsável e estado atual.",
   ],
-  "/techtask/board": [
+  "/techboard/kanban": [
     "Entregáveis e ações integradas podem criar ou sincronizar cartões mantendo o vínculo com o registro de origem.",
     "Mover um cartão atualiza o status e recalcula indicadores, prioridades, atrasos e bloqueios.",
     "Visões salvas reaplicam automaticamente filtros, agrupamentos e escopo definidos pelo usuário.",
   ],
-  "/techtask/my-work": [
+  "/techboard/my-work": [
     "Comentários, anexos, checklist e participação são incorporados ao histórico da atividade.",
     "Abrir a origem navega para o registro integrado que criou a atividade; desfazer restaura a última mudança elegível.",
   ],
@@ -902,7 +902,7 @@ export const TRAINING_CATALOG: TrainingCourseSeed[] = [
             "techtask-board",
             "Usar o Kanban e as visões salvas",
             "Criar, localizar, importar e movimentar atividades.",
-            "/techtask/board",
+            "/techboard/kanban",
             ["kanban", "atividade", "visão salva", "Excel"],
             ["Administrador", "Gestor", "Líder técnico", "Consultor"],
             [
@@ -918,7 +918,7 @@ export const TRAINING_CATALOG: TrainingCourseSeed[] = [
             "techtask-details",
             "Colaborar nos detalhes de uma atividade",
             "Manter conteúdo, responsáveis, checklist, comentários e anexos.",
-            "/techtask/my-work",
+            "/techboard/my-work",
             ["checklist", "comentário", "anexo", "responsável", "desfazer"],
             ["Administrador", "Gestor", "Líder técnico", "Consultor"],
             [
@@ -934,7 +934,7 @@ export const TRAINING_CATALOG: TrainingCourseSeed[] = [
             "techtask-admin",
             "Administrar atividades e modelos",
             "Arquivar, restaurar, auditar e sincronizar padrões.",
-            "/techtask/board",
+            "/techboard/kanban",
             ["arquivar", "restaurar", "auditoria", "modelo"],
             ["Administrador"],
             [

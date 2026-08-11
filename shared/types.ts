@@ -314,6 +314,8 @@ export type AppScreen =
   | "techboard.absences"
   | "techboard.planner"
   | "techboard.organogram"
+  | "techboard.kanban"
+  | "techboard.myWork"
   | "techlead.overview"
   | "techlead.gpTrack"
   | "techlead.teams"

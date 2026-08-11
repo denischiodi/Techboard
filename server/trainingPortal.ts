@@ -257,16 +257,16 @@ const routePermissions: Array<{
     product: "techmove",
   },
   {
-    prefix: "/techtask/my-work",
-    screen: "techtask.myWork",
+    prefix: "/techboard/my-work",
+    screen: "techboard.myWork",
     tab: "activities",
-    product: "techtask",
+    product: "techboard",
   },
   {
-    prefix: "/techtask/board",
-    screen: "techtask.board",
+    prefix: "/techboard/kanban",
+    screen: "techboard.kanban",
     tab: "activities",
-    product: "techtask",
+    product: "techboard",
   },
   {
     prefix: "/techtask",
