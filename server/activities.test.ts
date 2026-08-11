@@ -88,8 +88,10 @@ describe("kanban de atividades", () => {
     const automatic = await activityStore.findBySource("workflow_test", sourceKey);
     expect(automatic).toMatchObject({ stage: "TESTE", sequenceNumber: 1, assigneeUserId: "" });
     expect(automatic?.participantUserIds).toContain("u3");
-    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático atualizado", assigneeUserId: "u3", sourceType: "workflow_test", sourceKey });
-    expect(await activityStore.findBySource("workflow_test", sourceKey)).toMatchObject({ stage: "TESTE", sequenceNumber: 1, title: "Teste automático atualizado", assigneeUserId: "" });
+    const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
+    await caller.activities.update({ id: automatic!.id, data: { priority: "Crítica" } });
+    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático atualizado", priority: "Baixa", assigneeUserId: "u3", sourceType: "workflow_test", sourceKey });
+    expect(await activityStore.findBySource("workflow_test", sourceKey)).toMatchObject({ stage: "TESTE", sequenceNumber: 1, title: "Teste automático atualizado", priority: "Crítica", assigneeUserId: "" });
   });
 
   it("força cartões internos para GERAL e usa Operação interna no acompanhamento", async () => {

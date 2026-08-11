@@ -440,7 +440,7 @@ export const activitiesRouter = router({
     const activity = await requireActivity(input.id, ctx.appUser, true);
     await approvalStore.assertEntityEditable("activity", activity.id);
     if (input.expectedUpdatedAt && activity.updatedAt !== input.expectedUpdatedAt) throw new TRPCError({ code: "CONFLICT", message: "A atividade foi alterada por outra pessoa. Recarregue e tente novamente." });
-    if (activity.sourceType !== "manual" && (input.data.title !== undefined || input.data.description !== undefined || input.data.priority !== undefined)) throw new TRPCError({ code: "BAD_REQUEST", message: "Título, descrição e prioridade são controlados pela origem desta atividade" });
+    if (activity.sourceType !== "manual" && (input.data.title !== undefined || input.data.description !== undefined)) throw new TRPCError({ code: "BAD_REQUEST", message: "Título e descrição são controlados pela origem desta atividade" });
     if (input.data.assigneeUserId !== undefined) await assertEligibleUser(activity, input.data.assigneeUserId);
     if (input.data.status === "Concluída") {
       if (activity.checklist.some(item => item.required && !item.completed)) throw new TRPCError({ code: "BAD_REQUEST", message: "Conclua todos os itens obrigatórios do checklist" });
