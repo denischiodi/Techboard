@@ -319,7 +319,8 @@ export const activitiesRouter = router({
     const usersByResourceId = new Map(users.filter(user => user.resourceId).map(user => [user.resourceId, user]));
     const usersByEmail = new Map(users.map(user => [normalize(user.email), user]));
     const resourceCandidates = resources.map(resource => {
-      const user = usersByResourceId.get(resource.id) || usersByEmail.get(normalize(resource.email));
+      const userByEmail = usersByEmail.get(normalize(resource.email));
+      const user = usersByResourceId.get(resource.id) || (userByEmail && !userByEmail.resourceId ? userByEmail : undefined);
       return {
         id: user?.id || `resource:${resource.id}`,
         name: resource.name,

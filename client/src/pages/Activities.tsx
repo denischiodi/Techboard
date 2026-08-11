@@ -45,7 +45,8 @@ function AssigneePicker({ value, people, onChange, disabled = false }: { value: 
   const renderPerson = (person: EligibleUser) => (
     <CommandItem
       key={person.id}
-      value={`${person.name} ${person.email} ${person.profile || ""} ${(person.modules || []).join(" ")}`}
+      value={person.id}
+      keywords={[person.name, person.email, person.profile || "", ...(person.modules || [])]}
       onSelect={() => { onChange(person.id); setOpen(false); }}
       className="gap-2 py-2"
     >
@@ -94,7 +95,8 @@ function ParticipantsPicker({ values, people, onChange, disabled = false }: { va
   const renderPerson = (person: EligibleUser) => (
     <CommandItem
       key={person.id}
-      value={`${person.name} ${person.email} ${person.profile || ""} ${(person.modules || []).join(" ")}`}
+      value={person.id}
+      keywords={[person.name, person.email, person.profile || "", ...(person.modules || [])]}
       onSelect={() => toggle(person.id)}
       className="gap-2 py-2"
     >
@@ -262,7 +264,8 @@ export default function Activities() {
   const [savedViews, setSavedViews] = useState<SavedActivityView[]>(() => {
     try { return JSON.parse(localStorage.getItem(SAVED_VIEWS_KEY) || "[]"); } catch { return []; }
   });
-  const [createForm, setCreateForm] = useState({ scope: "project" as ActivityScope, projectId: "", stage: "GERAL" as ActivityStage, title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", participantUserIds: [] as string[], dueDate: "" });
+  const emptyCreateForm = () => ({ scope: "project" as ActivityScope, projectId: "", stage: "GERAL" as ActivityStage, title: "", description: "", priority: "Média" as ActivityPriority, assigneeUserId: "", participantUserIds: [] as string[], dueDate: "" });
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   useEffect(() => {
@@ -324,7 +327,7 @@ export default function Activities() {
     },
     onError: error => toast.error(error.message),
   });
-  const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm({ scope: "project", projectId: "", stage: "GERAL", title: "", description: "", priority: "Média", assigneeUserId: "", participantUserIds: [], dueDate: "" }); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
+  const createActivity = trpc.activities.create.useMutation({ onSuccess: async data => { setCreateOpen(false); setCreateForm(emptyCreateForm()); await utils.activities.list.invalidate(); setSelectedId(data.id); toast.success("Atividade criada"); }, onError: error => toast.error(error.message) });
   const importExcel = trpc.activities.importExcel.useMutation({
     onSuccess: async result => {
       await utils.activities.list.invalidate();
@@ -468,7 +471,7 @@ export default function Activities() {
       {activitiesQuery.isLoading ? <div className="p-12 text-center text-muted-foreground">Sincronizando atividades...</div> :
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}><div className="flex gap-3 overflow-x-auto pb-4">{STATUSES.map(status => <KanbanColumn key={status} status={status} activities={filtered.filter(activity => activity.status === status)} onOpen={activity => setSelectedId(activity.id)} />)}</div></DndContext>}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent><DialogHeader><DialogTitle>Nova atividade</DialogTitle></DialogHeader><div className="space-y-4">
+      <Dialog open={createOpen} onOpenChange={open => { setCreateOpen(open); if (!open) setCreateForm(emptyCreateForm()); }}><DialogContent><DialogHeader><DialogTitle>Nova atividade</DialogTitle></DialogHeader><div className="space-y-4">
         <div><Label>Quadro</Label><Select value={createForm.scope} onValueChange={(scope: ActivityScope) => setCreateForm(form => ({ ...form, scope, projectId: "", stage: scope === "internal" ? "GERAL" : form.stage, assigneeUserId: "", participantUserIds: [] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="project">Projeto</SelectItem><SelectItem value="internal">Operação interna</SelectItem></SelectContent></Select></div>
         {createForm.scope === "project" && <div><Label>Projeto</Label><Select value={createForm.projectId} onValueChange={projectId => setCreateForm(form => ({ ...form, projectId, assigneeUserId: "", participantUserIds: [] }))}><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>}
         {createForm.scope === "project" && <div><Label>Etapa de origem</Label><Select value={createForm.stage} onValueChange={(stage: ActivityStage) => setCreateForm(form => ({ ...form, stage }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STAGES.map(stage => <SelectItem key={stage} value={stage}>{stage}</SelectItem>)}</SelectContent></Select></div>}

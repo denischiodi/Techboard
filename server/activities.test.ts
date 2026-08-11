@@ -19,6 +19,7 @@ describe("kanban de atividades", () => {
     const caller = appRouter.createCaller(context("pedro.silva@consultoria.com"));
     const users = await caller.activities.eligibleUsers({ scope: "project", projectId: "p1" });
 
+    expect(new Set(users.map(user => user.id)).size).toBe(users.length);
     expect(users.map(user => user.id)).toContain("u1");
     expect(users.map(user => user.id)).toContain("resource:r5");
     expect(users.findIndex(user => user.id === "u3")).toBeLessThan(users.findIndex(user => user.id === "u1"));
