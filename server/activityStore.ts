@@ -1075,6 +1075,21 @@ export async function findBySource(
 export async function upsertSourceActivity(input: CreateActivityInput) {
   if (!input.sourceType || !input.sourceKey)
     throw new Error("Origem automática inválida");
+  // System-generated activities must remain unassigned until someone explicitly
+  // takes ownership in the Kanban. Keep the suggested assignee as a participant
+  // so they do not lose visibility or notifications from the source workflow.
+  input = {
+    ...input,
+    assigneeUserId: "",
+    participantUserIds: [
+      ...new Set([
+        ...(input.participantUserIds || []),
+        input.assigneeUserId || "",
+      ].filter(Boolean)),
+    ],
+  };
+  if (!input.sourceType || !input.sourceKey)
+    throw new Error("Origem automática inválida");
   if (await isSourceSuppressed(input.sourceType, input.sourceKey)) return null;
   const db = getPgPool();
   if (db) {

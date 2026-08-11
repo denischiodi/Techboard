@@ -84,11 +84,12 @@ describe("kanban de atividades", () => {
     expect(bdcq!.trackingCode).toBe("Projeto - BDCQ - 001");
 
     const sourceKey = `${projectId}:test-case`;
-    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático", sourceType: "workflow_test", sourceKey });
+    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático", assigneeUserId: "u3", sourceType: "workflow_test", sourceKey });
     const automatic = await activityStore.findBySource("workflow_test", sourceKey);
-    expect(automatic).toMatchObject({ stage: "TESTE", sequenceNumber: 1 });
-    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático atualizado", sourceType: "workflow_test", sourceKey });
-    expect(await activityStore.findBySource("workflow_test", sourceKey)).toMatchObject({ stage: "TESTE", sequenceNumber: 1, title: "Teste automático atualizado" });
+    expect(automatic).toMatchObject({ stage: "TESTE", sequenceNumber: 1, assigneeUserId: "" });
+    expect(automatic?.participantUserIds).toContain("u3");
+    await activityStore.upsertSourceActivity({ ...base, title: "Teste automático atualizado", assigneeUserId: "u3", sourceType: "workflow_test", sourceKey });
+    expect(await activityStore.findBySource("workflow_test", sourceKey)).toMatchObject({ stage: "TESTE", sequenceNumber: 1, title: "Teste automático atualizado", assigneeUserId: "" });
   });
 
   it("força cartões internos para GERAL e usa Operação interna no acompanhamento", async () => {

@@ -42,6 +42,7 @@ describe("upsert de atividade automática no PostgreSQL", () => {
       title: "Atividade padrão",
       status: "Concluída",
       priority: "Média",
+      assigneeUserId: "u2",
       creatorUserId: "u1",
       sourceType: "activity_template",
       sourceKey: "template:p1:once",
@@ -52,6 +53,7 @@ describe("upsert de atividade automática no PostgreSQL", () => {
     );
     expect(update?.sql).toContain("$10::boolean");
     expect(update?.params[3]).toBe("Concluída");
+    expect(update?.params[5]).toBe("");
     expect(update?.params[9]).toBe(true);
   }, 30_000);
 });
