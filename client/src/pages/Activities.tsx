@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, Bookmark, CalendarDays, Check, CheckCircle2, ChevronsUpDown, Circle, Download,
+  AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, Bookmark, CalendarDays, Check, CheckCircle2, ChevronsUpDown, Circle, Copy, Download,
   ExternalLink, FileUp, GripVertical, History, ListChecks, MessageSquare, Paperclip, Plus, Search, Trash2, Upload, UserPlus, Users, X,
 } from "lucide-react";
 import type { Activity, ActivityPriority, ActivityScope, ActivityStage, ActivityStatus } from "../../../shared/types";
@@ -445,6 +445,22 @@ export default function Activities() {
     updateActivity.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { status } });
   };
 
+  const duplicateActivity = (activity: Activity) => {
+    setCreateForm({
+      scope: activity.scope,
+      projectId: activity.projectId,
+      stage: activity.stage,
+      title: `${activity.title} (cópia)`,
+      description: activity.description,
+      priority: activity.priority,
+      assigneeUserId: activity.assigneeUserId,
+      participantUserIds: activity.participantUserIds.filter(id => id !== activity.assigneeUserId),
+      dueDate: activity.dueDate,
+    });
+    setSelectedId(null);
+    setCreateOpen(true);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -485,7 +501,7 @@ export default function Activities() {
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Salvar visão</DialogTitle></DialogHeader><div><Label htmlFor="saved-view-name">Nome da visão</Label><Input id="saved-view-name" value={viewName} onChange={event => setViewName(event.target.value)} placeholder="Ex.: Críticas atrasadas" onKeyDown={event => { if (event.key === "Enter") saveCurrentView(); }} /></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)}>Cancelar</Button><Button disabled={!viewName.trim()} onClick={saveCurrentView}>Salvar</Button></DialogFooter></DialogContent></Dialog>
 
       {appUser?.role === "admin" && <AdminActivityPanel open={adminPanelOpen} onOpenChange={setAdminPanelOpen} />}
-      {selected && <ActivityDetails key={`${selected.id}:${selected.updatedAt}`} activity={selected} appUserId={appUser?.id || ""} isAdmin={appUser?.role === "admin"} open={Boolean(selectedId)} onOpenChange={open => !open && setSelectedId(null)} onNavigate={setLocation} />}
+      {selected && <ActivityDetails key={`${selected.id}:${selected.updatedAt}`} activity={selected} appUserId={appUser?.id || ""} isAdmin={appUser?.role === "admin"} open={Boolean(selectedId)} onOpenChange={open => !open && setSelectedId(null)} onNavigate={setLocation} onDuplicate={duplicateActivity} />}
     </div>
   );
 }
@@ -514,7 +530,7 @@ function AdminActivityPanel({ open, onOpenChange }: { open: boolean; onOpenChang
   </DialogContent></Dialog>;
 }
 
-function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onNavigate }: { activity: Activity; appUserId: string; isAdmin: boolean; open: boolean; onOpenChange: (open: boolean) => void; onNavigate: (path: string) => void }) {
+function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onNavigate, onDuplicate }: { activity: Activity; appUserId: string; isAdmin: boolean; open: boolean; onOpenChange: (open: boolean) => void; onNavigate: (path: string) => void; onDuplicate: (activity: Activity) => void }) {
   const utils = trpc.useUtils();
   const canEdit = isAdmin || activity.creatorUserId === appUserId || activity.assigneeUserId === appUserId || activity.participantUserIds.includes(appUserId);
   const [comment, setComment] = useState("");
@@ -568,7 +584,7 @@ function ActivityDetails({ activity, appUserId, isAdmin, open, onOpenChange, onN
 
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle className="pr-8">{activity.displayTitle}</DialogTitle></DialogHeader>
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}{isAdmin && <Button className="ml-auto" size="sm" variant="destructive" disabled={archive.isPending} onClick={() => setArchiveOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Arquivar item</Button>}</div>
+      <div className="flex flex-wrap items-center gap-2"><Badge>{activity.projectName}</Badge><Badge className={priorityStyles[activity.priority]}>{activity.priority}</Badge>{activity.sourceType !== "manual" && <Badge variant="outline">Origem: {activity.sourceType.replaceAll("_", " ")}</Badge>}{activity.sourceResolved && <Badge className="bg-emerald-100 text-emerald-800">Origem resolvida</Badge>}<Button className="ml-auto" size="sm" variant="outline" onClick={() => onDuplicate(activity)}><Copy className="mr-2 h-4 w-4" />Duplicar e editar</Button>{isAdmin && <Button size="sm" variant="destructive" disabled={archive.isPending} onClick={() => setArchiveOpen(true)}><Trash2 className="mr-2 h-4 w-4" />Arquivar item</Button>}</div>
       {!canEdit && <Button variant="outline" onClick={() => join.mutate({ id: activity.id })}><UserPlus className="mr-2 h-4 w-4" />Participar para colaborar</Button>}
       <div className="grid gap-3 sm:grid-cols-3"><div><Label>Status</Label><Select disabled={!canEdit} value={activity.status} onValueChange={(status: ActivityStatus) => saveUpdate({ status })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div><Label>Responsável</Label><AssigneePicker disabled={!canEdit || eligible.isLoading} value={activity.assigneeUserId} people={eligible.data || []} onChange={assigneeUserId => saveUpdate({ assigneeUserId })} /></div><div><Label>Prazo</Label><Input disabled={!canEdit} type="date" value={activity.dueDate} onChange={event => saveUpdate({ dueDate: event.target.value })} /></div></div>
       <div><Label>Envolvidos</Label><ParticipantsPicker values={participantIds} people={(eligible.data || []).filter(person => person.id !== activity.assigneeUserId && person.id !== activity.creatorUserId)} disabled={!canEdit || eligible.isLoading || setParticipants.isPending} onChange={values => { setParticipantIds(values); setParticipants.mutate({ id: activity.id, participantUserIds: values }); }} /><p className="mt-1 text-xs text-muted-foreground">Os envolvidos acompanham o card e recebem notificações por e-mail.</p></div>
