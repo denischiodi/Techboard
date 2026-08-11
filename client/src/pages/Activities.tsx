@@ -144,7 +144,12 @@ type SavedActivityView = {
   assigneeFilter: string;
   statusFilter: string;
   dueFilter: "all" | "overdue" | "not_overdue" | "no_due";
+  groupBy?: KanbanGroupBy;
+  compactCards?: boolean;
 };
+
+type KanbanGroupBy = "status" | "priority" | "assignee" | "project";
+type KanbanGroup = { id: string; label: string; className?: string };
 
 const statusStyles: Record<ActivityStatus, string> = {
   "A fazer": "border-slate-300 bg-slate-50/60",
@@ -163,7 +168,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Não foi possível concluir a operação";
 }
 
-function ActivityCard({ activity, onOpen }: { activity: Activity; onOpen: () => void }) {
+function ActivityCard({ activity, onOpen, compact = false }: { activity: Activity; onOpen: () => void; compact?: boolean }) {
   const draggable = useDraggable({ id: activity.id, data: { activity } });
   const completed = activity.checklist.filter(item => item.completed).length;
   const total = activity.checklist.length;
@@ -174,7 +179,7 @@ function ActivityCard({ activity, onOpen }: { activity: Activity; onOpen: () => 
       className={`cursor-pointer bg-background shadow-sm transition hover:shadow-md ${draggable.isDragging ? "z-50 opacity-70" : ""}`}
       onClick={onOpen}
     >
-      <CardHeader className="space-y-2 p-3 pb-1">
+      <CardHeader className={`space-y-2 p-3 ${compact ? "pb-2" : "pb-1"}`}>
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-sm leading-snug">{activity.displayTitle}</CardTitle>
           <button {...draggable.listeners} {...draggable.attributes} onClick={event => event.stopPropagation()} className="cursor-grab text-muted-foreground" aria-label="Mover atividade">
@@ -183,28 +188,30 @@ function ActivityCard({ activity, onOpen }: { activity: Activity; onOpen: () => 
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Badge className={priorityStyles[activity.priority]} variant="secondary">{activity.priority}</Badge>
-          {activity.sourceType !== "manual" && <Badge variant="outline">{activity.sourceType.replaceAll("_", " ")}</Badge>}
+          {!compact && activity.sourceType !== "manual" && <Badge variant="outline">{activity.sourceType.replaceAll("_", " ")}</Badge>}
         </div>
       </CardHeader>
-      <CardContent className="space-y-2 p-3 pt-2">
+      <CardContent className={`space-y-2 p-3 pt-2 ${compact ? "pt-0" : ""}`}>
+        {compact ? <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground"><span className="truncate">{activity.assigneeName || "Sem responsável"}</span>{activity.dueDate && <span className="shrink-0">{activity.dueDate}</span>}</div> : <>
         <p className="line-clamp-2 text-xs text-muted-foreground">{activity.description || "Sem descrição"}</p>
         {total > 0 && <div className="space-y-1"><div className="flex justify-between text-[11px] text-muted-foreground"><span className="flex items-center gap-1"><ListChecks className="h-3 w-3" />Checklist</span><span>{completed}/{total}</span></div><Progress value={(completed / total) * 100} className="h-1.5" /></div>}
         <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
           <span className="truncate">{activity.assigneeName || "Sem responsável"}</span>
           {activity.dueDate && <span className={`flex shrink-0 items-center gap-1 ${activity.status !== "Concluída" && activity.dueDate < new Date().toISOString().slice(0, 10) ? "font-semibold text-red-600" : ""}`}><CalendarDays className="h-3 w-3" />{activity.dueDate}</span>}
         </div>
-        <div className="flex gap-3 text-[11px] text-muted-foreground"><Tooltip><TooltipTrigger asChild><button type="button" className="flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => event.stopPropagation()} aria-label={`${activity.participants.length} envolvidos`}><Users className="h-3 w-3" />{activity.participants.length}</button></TooltipTrigger><TooltipContent side="top" className="max-w-64">{activity.participants.length > 0 ? <div><p className="mb-1 font-semibold">Envolvidos</p>{activity.participants.map(person => <p key={person.id}>{person.name}</p>)}</div> : <p>Nenhum envolvido</p>}</TooltipContent></Tooltip><span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{activity.comments.length}</span><span className="flex items-center gap-1"><Paperclip className="h-3 w-3" />{activity.attachments.length}</span></div>
+        </>}
+        <div className="flex gap-3 text-[11px] text-muted-foreground"><Tooltip><TooltipTrigger asChild><button type="button" className="flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => event.stopPropagation()} aria-label={`${activity.participants.length} envolvidos`}><Users className="h-3 w-3" />{activity.participants.length}</button></TooltipTrigger><TooltipContent side="top" className="max-w-64">{activity.participants.length > 0 ? <div><p className="mb-1 font-semibold">Envolvidos</p>{activity.participants.map(person => <p key={person.id}>{person.name}</p>)}</div> : <p>Nenhum envolvido</p>}</TooltipContent></Tooltip>{!compact && <><span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{activity.comments.length}</span><span className="flex items-center gap-1"><Paperclip className="h-3 w-3" />{activity.attachments.length}</span></>}</div>
       </CardContent>
     </Card>
   );
 }
 
-function KanbanColumn({ status, activities, onOpen }: { status: ActivityStatus; activities: Activity[]; onOpen: (activity: Activity) => void }) {
-  const droppable = useDroppable({ id: status });
+function KanbanColumn({ group, activities, onOpen, compact, droppable: canDrop }: { group: KanbanGroup; activities: Activity[]; onOpen: (activity: Activity) => void; compact: boolean; droppable: boolean }) {
+  const droppable = useDroppable({ id: `group:${group.id}`, disabled: !canDrop });
   return (
-    <section ref={droppable.setNodeRef} className={`flex min-h-[420px] w-[290px] shrink-0 flex-col rounded-xl border p-2 ${statusStyles[status]} ${droppable.isOver ? "ring-2 ring-primary/40" : ""}`}>
-      <header className="mb-2 flex items-center justify-between px-1 py-1"><h2 className="text-sm font-semibold">{status}</h2><Badge variant="secondary">{activities.length}</Badge></header>
-      <div className="space-y-2">{activities.map(activity => <ActivityCard key={activity.id} activity={activity} onOpen={() => onOpen(activity)} />)}{activities.length === 0 && <div className="rounded-lg border border-dashed bg-background/50 p-6 text-center text-xs text-muted-foreground">Arraste uma atividade para cá</div>}</div>
+    <section ref={droppable.setNodeRef} className={`flex min-h-[420px] w-[290px] shrink-0 flex-col rounded-xl border bg-muted/20 p-2 ${group.className || ""} ${droppable.isOver ? "ring-2 ring-primary/40" : ""}`}>
+      <header className="mb-2 flex items-center justify-between px-1 py-1"><h2 className="truncate text-sm font-semibold" title={group.label}>{group.label}</h2><Badge variant="secondary">{activities.length}</Badge></header>
+      <div className="space-y-2">{activities.map(activity => <ActivityCard key={activity.id} activity={activity} compact={compact} onOpen={() => onOpen(activity)} />)}{activities.length === 0 && <div className="rounded-lg border border-dashed bg-background/50 p-6 text-center text-xs text-muted-foreground">{canDrop ? "Arraste uma atividade para cá" : "Nenhuma atividade"}</div>}</div>
     </section>
   );
 }
@@ -256,6 +263,11 @@ export default function Activities() {
     const value = initialParams.get("due");
     return value === "overdue" || value === "not_overdue" || value === "no_due" ? value : "all";
   });
+  const [groupBy, setGroupBy] = useState<KanbanGroupBy>(() => {
+    const value = initialParams.get("groupBy") || localStorage.getItem("techboard-kanban-group-by");
+    return value === "priority" || value === "assignee" || value === "project" ? value : "status";
+  });
+  const [compactCards, setCompactCards] = useState(() => initialParams.get("cards") === "compact" || localStorage.getItem("techboard-kanban-compact") === "true");
   const excelInputRef = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("activityId"));
   const [createOpen, setCreateOpen] = useState(false);
@@ -278,11 +290,18 @@ export default function Activities() {
     if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
     if (statusFilter !== "all") params.set("status", statusFilter);
     if (dueFilter !== "all") params.set("due", dueFilter);
+    if (groupBy !== "status") params.set("groupBy", groupBy);
+    if (compactCards) params.set("cards", "compact");
     if (selectedId) params.set("activityId", selectedId);
     const path = location.split("?")[0];
     const next = params.size ? `${path}?${params.toString()}` : path;
     if (next !== location) setLocation(next, { replace: true });
-  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, selectedId, routeDefaultView, location, setLocation]);
+  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, groupBy, compactCards, selectedId, routeDefaultView, location, setLocation]);
+
+  useEffect(() => {
+    localStorage.setItem("techboard-kanban-group-by", groupBy);
+    localStorage.setItem("techboard-kanban-compact", String(compactCards));
+  }, [groupBy, compactCards]);
 
   useEffect(() => {
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
@@ -292,7 +311,7 @@ export default function Activities() {
     const name = viewName.trim();
     if (!name) return;
     setSavedViews(current => [...current.filter(item => item.name.toLocaleLowerCase("pt-BR") !== name.toLocaleLowerCase("pt-BR")), {
-      id: crypto.randomUUID(), name, view, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter,
+      id: crypto.randomUUID(), name, view, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, groupBy, compactCards,
     }]);
     setViewName("");
     setSaveViewOpen(false);
@@ -306,6 +325,8 @@ export default function Activities() {
     setAssigneeFilter(saved.assigneeFilter);
     setStatusFilter(saved.statusFilter);
     setDueFilter(saved.dueFilter);
+    setGroupBy(saved.groupBy || "status");
+    setCompactCards(Boolean(saved.compactCards));
   };
 
   const eligibleUsers = trpc.activities.eligibleUsers.useQuery({ scope: createForm.scope, projectId: createForm.projectId }, { enabled: createOpen && (createForm.scope === "internal" || Boolean(createForm.projectId)) });
@@ -365,6 +386,31 @@ export default function Activities() {
   }), [activities, appUser, view, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, search]);
 
   const assignees = useMemo(() => [...new Map(activities.filter(activity => activity.assigneeUserId).map(activity => [activity.assigneeUserId, activity.assigneeName || "Usuário sem nome"])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [activities]);
+
+  const groups = useMemo<KanbanGroup[]>(() => {
+    if (groupBy === "status") return STATUSES.map(status => ({ id: status, label: status, className: statusStyles[status] }));
+    if (groupBy === "priority") return [...PRIORITIES].reverse().map(priority => ({ id: priority, label: priority }));
+    if (groupBy === "assignee") return [
+      { id: "none", label: "Sem responsável" },
+      ...[...new Map(filtered.filter(item => item.assigneeUserId).map(item => [item.assigneeUserId, item.assigneeName || "Usuário sem nome"])).entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, label]) => ({ id, label })),
+    ];
+    return [
+      ...(filtered.some(item => !item.projectId) ? [{ id: "internal", label: "Operação interna" }] : []),
+      ...[...new Map(filtered.filter(item => item.projectId).map(item => [item.projectId, item.projectName])).entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, label]) => ({ id, label })),
+    ];
+  }, [filtered, groupBy]);
+
+  const activitiesForGroup = (groupId: string) => filtered.filter(activity => groupBy === "status" ? activity.status === groupId : groupBy === "priority" ? activity.priority === groupId : groupBy === "assignee" ? (activity.assigneeUserId || "none") === groupId : (activity.projectId || "internal") === groupId);
+
+  const clearFilters = () => { setSearch(""); setProjectFilter("all"); setPriorityFilter("all"); setAssigneeFilter("all"); setStatusFilter("all"); setDueFilter("all"); };
+  const activeFilters = [
+    search ? { label: `Busca: ${search}`, clear: () => setSearch("") } : null,
+    projectFilter !== "all" ? { label: `Projeto: ${activities.find(item => item.projectId === projectFilter)?.projectName || projectFilter}`, clear: () => setProjectFilter("all") } : null,
+    assigneeFilter !== "all" ? { label: assigneeFilter === "none" ? "Sem responsável" : `Responsável: ${assignees.find(([id]) => id === assigneeFilter)?.[1] || assigneeFilter}`, clear: () => setAssigneeFilter("all") } : null,
+    statusFilter !== "all" ? { label: `Status: ${statusFilter}`, clear: () => setStatusFilter("all") } : null,
+    priorityFilter !== "all" ? { label: `Criticidade: ${priorityFilter}`, clear: () => setPriorityFilter("all") } : null,
+    dueFilter !== "all" ? { label: dueFilter === "overdue" ? "Atrasadas" : dueFilter === "not_overdue" ? "Não atrasadas" : "Sem prazo", clear: () => setDueFilter("all") } : null,
+  ].filter(Boolean) as Array<{ label: string; clear: () => void }>;
 
   const handleExportExcel = async () => {
     const XLSX = await import("xlsx");
@@ -441,9 +487,11 @@ export default function Activities() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const activity = activities.find(item => item.id === event.active.id);
-    const status = event.over?.id as ActivityStatus | undefined;
-    if (!activity || !status || !STATUSES.includes(status) || activity.status === status) return;
-    updateActivity.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data: { status } });
+    const target = String(event.over?.id || "").replace(/^group:/, "");
+    if (!activity || !target || groupBy === "project") return;
+    const data = groupBy === "status" ? { status: target as ActivityStatus } : groupBy === "priority" ? { priority: target as ActivityPriority } : { assigneeUserId: target === "none" ? "" : target };
+    if ((groupBy === "status" && activity.status === target) || (groupBy === "priority" && activity.priority === target) || (groupBy === "assignee" && (activity.assigneeUserId || "none") === target)) return;
+    updateActivity.mutate({ id: activity.id, expectedUpdatedAt: activity.updatedAt, data });
   };
 
   const duplicateActivity = (activity: Activity) => {
@@ -482,11 +530,14 @@ export default function Activities() {
         <Select value={dueFilter} onValueChange={value => setDueFilter(value as typeof dueFilter)}><SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Prazo" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os prazos</SelectItem><SelectItem value="overdue">Atrasadas</SelectItem><SelectItem value="not_overdue">Não atrasadas</SelectItem><SelectItem value="no_due">Sem prazo</SelectItem></SelectContent></Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full lg:w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Todos os status</SelectItem>{STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}><SelectTrigger className="w-full lg:w-40"><SelectValue placeholder="Prioridade" /></SelectTrigger><SelectContent><SelectItem value="all">Prioridades</SelectItem>{PRIORITIES.map(priority => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select>
+        <Select value={groupBy} onValueChange={value => setGroupBy(value as KanbanGroupBy)}><SelectTrigger className="w-full lg:w-48"><SelectValue placeholder="Organizar por" /></SelectTrigger><SelectContent><SelectItem value="status">Colunas por status</SelectItem><SelectItem value="priority">Colunas por criticidade</SelectItem><SelectItem value="assignee">Colunas por responsável</SelectItem><SelectItem value="project">Colunas por projeto</SelectItem></SelectContent></Select>
+        <Button variant={compactCards ? "default" : "outline"} size="sm" onClick={() => setCompactCards(value => !value)}>{compactCards ? "Cards resumidos" : "Cards completos"}</Button>
         <Button variant="outline" size="sm" onClick={() => setSaveViewOpen(true)}><Bookmark className="mr-2 h-4 w-4" />Salvar visão</Button>
+        {activeFilters.length > 0 && <div className="flex w-full flex-wrap items-center gap-2 border-t pt-3"><span className="text-xs font-medium text-muted-foreground">Filtros ativos:</span>{activeFilters.map(filter => <Badge key={filter.label} variant="secondary" className="gap-1 py-1">{filter.label}<button type="button" aria-label={`Remover ${filter.label}`} onClick={filter.clear}><X className="h-3 w-3" /></button></Badge>)}<Button variant="ghost" size="sm" onClick={clearFilters}>Limpar filtros</Button></div>}
         {savedViews.length > 0 && <div className="flex w-full flex-wrap gap-2 border-t pt-3">{savedViews.map(saved => <div key={saved.id} className="flex items-center rounded-full border bg-background"><button className="px-3 py-1 text-xs font-medium hover:text-primary" onClick={() => applySavedView(saved)}>{saved.name}</button><button className="border-l px-2 py-1 text-muted-foreground hover:text-destructive" title="Remover visão" onClick={() => setSavedViews(current => current.filter(item => item.id !== saved.id))}><X className="h-3 w-3" /></button></div>)}</div>}
       </CardContent></Card>
       {activitiesQuery.isLoading ? <div className="p-12 text-center text-muted-foreground">Sincronizando atividades...</div> :
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}><div className="flex gap-3 overflow-x-auto pb-4">{STATUSES.map(status => <KanbanColumn key={status} status={status} activities={filtered.filter(activity => activity.status === status)} onOpen={activity => setSelectedId(activity.id)} />)}</div></DndContext>}
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}><div className="flex gap-3 overflow-x-auto pb-4">{groups.map(group => <KanbanColumn key={group.id} group={group} activities={activitiesForGroup(group.id)} compact={compactCards} droppable={groupBy !== "project"} onOpen={activity => setSelectedId(activity.id)} />)}</div></DndContext>}
 
       <Dialog open={createOpen} onOpenChange={open => { setCreateOpen(open); if (!open) setCreateForm(emptyCreateForm()); }}><DialogContent><DialogHeader><DialogTitle>Nova atividade</DialogTitle></DialogHeader><div className="space-y-4">
         <div><Label>Quadro</Label><Select value={createForm.scope} onValueChange={(scope: ActivityScope) => setCreateForm(form => ({ ...form, scope, projectId: "", stage: scope === "internal" ? "GERAL" : form.stage, assigneeUserId: "", participantUserIds: [] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="project">Projeto</SelectItem><SelectItem value="internal">Operação interna</SelectItem></SelectContent></Select></div>
