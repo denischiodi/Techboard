@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -192,7 +193,7 @@ function ActivityCard({ activity, onOpen }: { activity: Activity; onOpen: () => 
           <span className="truncate">{activity.assigneeName || "Sem responsável"}</span>
           {activity.dueDate && <span className={`flex shrink-0 items-center gap-1 ${activity.status !== "Concluída" && activity.dueDate < new Date().toISOString().slice(0, 10) ? "font-semibold text-red-600" : ""}`}><CalendarDays className="h-3 w-3" />{activity.dueDate}</span>}
         </div>
-        <div className="flex gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-1"><Users className="h-3 w-3" />{activity.participants.length}</span><span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{activity.comments.length}</span><span className="flex items-center gap-1"><Paperclip className="h-3 w-3" />{activity.attachments.length}</span></div>
+        <div className="flex gap-3 text-[11px] text-muted-foreground"><Tooltip><TooltipTrigger asChild><button type="button" className="flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={event => event.stopPropagation()} aria-label={`${activity.participants.length} envolvidos`}><Users className="h-3 w-3" />{activity.participants.length}</button></TooltipTrigger><TooltipContent side="top" className="max-w-64">{activity.participants.length > 0 ? <div><p className="mb-1 font-semibold">Envolvidos</p>{activity.participants.map(person => <p key={person.id}>{person.name}</p>)}</div> : <p>Nenhum envolvido</p>}</TooltipContent></Tooltip><span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{activity.comments.length}</span><span className="flex items-center gap-1"><Paperclip className="h-3 w-3" />{activity.attachments.length}</span></div>
       </CardContent>
     </Card>
   );
