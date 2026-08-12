@@ -295,8 +295,9 @@ export default function Activities() {
     if (selectedId) params.set("activityId", selectedId);
     const path = location.split("?")[0];
     const next = params.size ? `${path}?${params.toString()}` : path;
-    if (next !== location) setLocation(next, { replace: true });
-  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, groupBy, compactCards, selectedId, routeDefaultView, location, setLocation]);
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (next !== current) window.history.replaceState(window.history.state, "", next);
+  }, [view, search, projectFilter, priorityFilter, assigneeFilter, statusFilter, dueFilter, groupBy, compactCards, selectedId, routeDefaultView, location]);
 
   useEffect(() => {
     localStorage.setItem("techboard-kanban-group-by", groupBy);
