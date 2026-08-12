@@ -1,6 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { APP_BASE_PATH } from "@/const";
 import NotFound from "@/pages/NotFound";
 import { Redirect, Route, Router as WouterRouter, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -40,7 +39,7 @@ function LegacyRedirect({ to }: { to: string }) {
 
 function AppRoutes() {
   return (
-    <WouterRouter base={APP_BASE_PATH}>
+    <WouterRouter>
       <Switch>
         <Route path={"/workflow"}>
           <Redirect to="/techmove" />
