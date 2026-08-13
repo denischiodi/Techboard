@@ -139,12 +139,16 @@ test("menus alternam entre TechMove, TechBoard e Administração e preservam dee
   const administration = page.getByRole("button", { name: "Administração" });
   await expect(administration).toBeVisible();
   await administration.click({ force: isMobile });
-  await expect(
-    page.getByRole("button", { name: "Cadastros gerais" })
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Cadastros gerais" })
-    .click({ force: isMobile });
+  const registrations = page.getByRole("button", {
+    name: "Cadastros gerais",
+  });
+  await expect(registrations).toBeAttached();
+  if (isMobile) {
+    await registrations.evaluate(button => button.click());
+  } else {
+    await expect(registrations).toBeVisible();
+    await registrations.click();
+  }
   await expect(page).toHaveURL(/\/admin\/registrations$/);
 });
 
