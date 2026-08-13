@@ -40,6 +40,9 @@ jobs:
       - run: pnpm test:e2e
         env:
           CI: true
+          DEMO_AUTH_ENABLED: true
+          EMAIL_DELIVERY_MODE: log
+          ACTIVITY_EMAIL_NOTIFICATIONS_ENABLED: false
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
