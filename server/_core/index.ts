@@ -13,7 +13,10 @@ import { checkDatabaseReadiness } from "../db";
 import { registerTrainingPortal } from "../trainingPortal";
 import { registerWorkflowStream } from "../workflowStream";
 import { syncActivitiesFromSources } from "../activitySync";
-import { flushActivityEmailOutbox } from "../activityMailer";
+import {
+  flushActivityEmailOutbox,
+  processActivityReminders,
+} from "../activityMailer";
 import { startDashboardSnapshotScheduler } from "../dashboardSnapshots";
 import {
   enqueueReconciliation,
@@ -112,6 +115,17 @@ async function startServer() {
     60 * 60 * 1000
   );
   activityTimer.unref();
+
+  const runReminderScheduler = () =>
+    processActivityReminders().catch(error =>
+      console.warn("Falha no processamento de lembretes de atividades", error)
+    );
+  void runReminderScheduler();
+  const reminderTimer = setInterval(
+    () => void runReminderScheduler(),
+    5 * 60 * 1000
+  );
+  reminderTimer.unref();
 
   const runTemplatePublisher = () =>
     enqueueReconciliation()

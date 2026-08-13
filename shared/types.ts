@@ -601,6 +601,9 @@ export type ActivityStatus =
 export type ActivityPriority = "Baixa" | "Média" | "Alta" | "Crítica";
 export type ActivityScope = "project" | "internal";
 export type ActivityStage = "DCD" | "BDCQ" | "TESTE" | "GERAL";
+export type ActivityVisibility = "shared" | "private";
+export type ActivityRecurrence = "none" | "daily" | "weekly" | "monthly";
+export type ActivityPlanningBucket = "today" | "week" | "scheduled" | "inbox";
 export type ActivitySourceType =
   | "manual"
   | "activity_template"
@@ -687,6 +690,26 @@ export interface ActivityAttachment {
   createdAt: string;
 }
 
+export interface ActivityLabel {
+  id: string;
+  scope: ActivityScope;
+  projectId: string;
+  name: string;
+  color: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActivityUserPlanning {
+  activityId: string;
+  userId: string;
+  bucket: ActivityPlanningBucket;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ActivityHistoryEvent {
   id: string;
   activityId: string;
@@ -714,9 +737,20 @@ export interface Activity {
   assigneeName: string;
   creatorUserId: string;
   creatorName: string;
+  ownerUserId: string;
+  visibility: ActivityVisibility;
   participantUserIds: string[];
   participants: Pick<AppUser, "id" | "name" | "email">[];
+  startDate: string;
   dueDate: string;
+  dueTime: string;
+  timezone: string;
+  reminderMinutesBefore: number;
+  reminderSentAt: string;
+  recurrence: ActivityRecurrence;
+  recurrenceInterval: number;
+  recurrenceParentId: string;
+  recurrenceSequence: number;
   sourceType: ActivitySourceType;
   sourceKey: string;
   sourceUrl: string;
@@ -731,6 +765,7 @@ export interface Activity {
   checklist: ActivityChecklistItem[];
   comments: ActivityComment[];
   attachments: ActivityAttachment[];
+  labels: ActivityLabel[];
   history: ActivityHistoryEvent[];
 }
 
