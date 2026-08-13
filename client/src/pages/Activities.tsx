@@ -1297,7 +1297,7 @@ export default function Activities() {
     });
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full space-y-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold">
@@ -2332,7 +2332,7 @@ function ActivityDetails({
   };
 
   const copyTaskLink = async () => {
-    const url = new URL(appPath("/techboard/my-work"), window.location.origin);
+    const url = new URL(appPath("/my-work"), window.location.origin);
     url.searchParams.set("activityId", activity.id);
     await navigator.clipboard.writeText(url.toString());
     toast.success("Link da tarefa copiado");

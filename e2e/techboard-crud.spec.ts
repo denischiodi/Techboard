@@ -27,13 +27,19 @@ for (const [name, route, heading] of techBoardRoutes) {
   test(`${name}: rota canônica abre sem erro`, async ({ page }) => {
     const errors = monitorUnexpectedErrors(page);
     await page.goto(route);
-    await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
-    await expect(page.locator("body")).not.toContainText(/Application error|Something went wrong/i);
+    await expect(
+      page.getByRole("heading", { name: heading }).first()
+    ).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(
+      /Application error|Something went wrong/i
+    );
     expect(errors).toEqual([]);
   });
 }
 
-test("rotas legadas do TechBoard preservam o destino canônico", async ({ page }) => {
+test("rotas legadas do TechBoard preservam o destino canônico", async ({
+  page,
+}) => {
   const redirects = [
     ["./dashboard", "/techboard"],
     ["./resources", "/techboard/resources"],
@@ -45,7 +51,9 @@ test("rotas legadas do TechBoard preservam o destino canônico", async ({ page }
 
   for (const [legacyRoute, canonicalPath] of redirects) {
     await page.goto(legacyRoute);
-    await expect(page).toHaveURL(new RegExp(`${canonicalPath.replaceAll("/", "\\/")}$`));
+    await expect(page).toHaveURL(
+      new RegExp(`${canonicalPath.replaceAll("/", "\\/")}$`)
+    );
   }
 });
 
@@ -54,7 +62,9 @@ test.describe.serial("Recursos: ciclo CRUD", () => {
   const originalName = `Recurso E2E ${suffix}`;
   const updatedName = `${originalName} Editado`;
 
-  test("cria, persiste após recarga, edita, pesquisa e exclui", async ({ page }) => {
+  test("cria, persiste após recarga, edita, pesquisa e exclui", async ({
+    page,
+  }) => {
     await page.goto("./techboard/resources");
     await expect(page.getByRole("heading", { name: "Recursos" })).toBeVisible();
 
@@ -62,33 +72,55 @@ test.describe.serial("Recursos: ciclo CRUD", () => {
     const createDialog = page.getByRole("dialog", { name: "Novo Recurso" });
     await expect(createDialog).toBeVisible();
     await createDialog.getByPlaceholder("Nome do recurso").fill(originalName);
-    await createDialog.getByPlaceholder("email@empresa.com").fill(`e2e-${suffix}@example.test`);
-    await createDialog.getByPlaceholder("Ex.: Supply Chain, Finance, Diretoria...").fill("Qualidade E2E");
-    await createDialog.getByRole("button", { name: "Criar", exact: true }).click();
+    await createDialog
+      .getByPlaceholder("email@empresa.com")
+      .fill(`e2e-${suffix}@example.test`);
+    await createDialog
+      .getByPlaceholder("Ex.: Supply Chain, Finance, Diretoria...")
+      .fill("Qualidade E2E");
+    await createDialog
+      .getByRole("button", { name: "Criar", exact: true })
+      .click();
 
-    await expect(page.getByText(originalName, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: `Editar ${originalName}` })
+    ).toBeVisible();
     await page.reload();
-    await expect(page.getByText(originalName, { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: `Editar ${originalName}` })
+    ).toBeVisible();
 
-    const createdRow = page.getByRole("row").filter({ hasText: originalName });
-    await createdRow.getByRole("button").nth(0).click();
+    await page.getByRole("button", { name: `Editar ${originalName}` }).click();
     const editDialog = page.getByRole("dialog", { name: "Editar Recurso" });
     await expect(editDialog).toBeVisible();
     await editDialog.getByPlaceholder("Nome do recurso").fill(updatedName);
-    await editDialog.getByRole("button", { name: "Salvar", exact: true }).click();
-    await expect(page.getByText(updatedName, { exact: true })).toBeVisible();
+    await editDialog
+      .getByRole("button", { name: "Salvar", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: `Excluir ${updatedName}` })
+    ).toBeVisible();
 
-    const search = page.getByPlaceholder("Buscar por nome, e-mail, frente ou perfil...");
+    const search = page.getByPlaceholder(
+      "Buscar por nome, e-mail, frente ou perfil..."
+    );
     await search.fill(updatedName);
-    await expect(page.getByRole("row").filter({ hasText: updatedName })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: `Excluir ${updatedName}` })
+    ).toBeVisible();
     await search.fill(`inexistente-${suffix}`);
-    await expect(page.getByText("Nenhum recurso encontrado")).toBeVisible();
+    await expect(
+      page
+        .locator("div:visible")
+        .filter({ hasText: "Nenhum recurso encontrado" })
+        .first()
+    ).toBeVisible();
     await search.fill(updatedName);
 
     page.once("dialog", dialog => dialog.accept());
-    const updatedRow = page.getByRole("row").filter({ hasText: updatedName });
-    await updatedRow.getByRole("button").nth(1).click();
-    await expect(page.getByText(updatedName, { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: `Excluir ${updatedName}` }).click();
+    await expect(
+      page.getByRole("button", { name: `Editar ${updatedName}` })
+    ).toHaveCount(0);
   });
 });
-
