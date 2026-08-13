@@ -202,7 +202,22 @@ export const activities = mysqlTable("activities", {
     .notNull()
     .default(""),
   creatorUserId: varchar("creatorUserId", { length: 64 }).notNull(),
+  ownerUserId: varchar("ownerUserId", { length: 64 }).notNull().default(""),
+  visibility: varchar("visibility", { length: 16 }).notNull().default("shared"),
+  startDate: varchar("startDate", { length: 10 }).notNull().default(""),
   dueDate: varchar("dueDate", { length: 10 }).notNull().default(""),
+  dueTime: varchar("dueTime", { length: 5 }).notNull().default(""),
+  timezone: varchar("timezone", { length: 64 })
+    .notNull()
+    .default("America/Sao_Paulo"),
+  reminderMinutesBefore: int("reminderMinutesBefore").notNull().default(-1),
+  reminderSentAt: timestamp("reminderSentAt"),
+  recurrence: varchar("recurrence", { length: 16 }).notNull().default("none"),
+  recurrenceInterval: int("recurrenceInterval").notNull().default(1),
+  recurrenceParentId: varchar("recurrenceParentId", { length: 64 })
+    .notNull()
+    .default(""),
+  recurrenceSequence: int("recurrenceSequence").notNull().default(0),
   sourceType: varchar("sourceType", { length: 64 }).notNull().default("manual"),
   sourceKey: varchar("sourceKey", { length: 255 }).notNull().default(""),
   sourceUrl: text("sourceUrl"),
@@ -250,6 +265,35 @@ export const activityParticipants = mysqlTable("activity_participants", {
   activityId: varchar("activityId", { length: 64 }).notNull(),
   userId: varchar("userId", { length: 64 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const activityLabels = mysqlTable("activity_labels", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  scope: varchar("scope", { length: 16 }).notNull().default("internal"),
+  projectId: varchar("projectId", { length: 64 }).notNull().default(""),
+  name: varchar("name", { length: 80 }).notNull(),
+  color: varchar("color", { length: 16 }).notNull(),
+  createdByUserId: varchar("createdByUserId", { length: 64 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const activityLabelAssignments = mysqlTable(
+  "activity_label_assignments",
+  {
+    activityId: varchar("activityId", { length: 64 }).notNull(),
+    labelId: varchar("labelId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  }
+);
+
+export const activityUserPlanning = mysqlTable("activity_user_planning", {
+  activityId: varchar("activityId", { length: 64 }).notNull(),
+  userId: varchar("userId", { length: 64 }).notNull(),
+  bucket: varchar("bucket", { length: 16 }).notNull().default("inbox"),
+  position: int("position").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export const activityChecklistItems = mysqlTable("activity_checklist_items", {
@@ -797,9 +841,7 @@ export const gaps = mysqlTable("gaps", {
     .notNull()
     .default(""),
   smdNotes: text("smdNotes"),
-  smdApprovedAt: varchar("smdApprovedAt", { length: 10 })
-    .notNull()
-    .default(""),
+  smdApprovedAt: varchar("smdApprovedAt", { length: 10 }).notNull().default(""),
   status: varchar("status", { length: 64 }).notNull().default("Aberto"),
   templateId: varchar("templateId", { length: 64 }).notNull().default(""),
   templateVersion: int("templateVersion").notNull().default(0),
@@ -994,17 +1036,20 @@ export const processModelTemplates = mysqlTable("process_model_templates", {
   position: int("position").notNull().default(0),
 });
 
-export const projectProcessApplications = mysqlTable("project_process_applications", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  projectId: varchar("projectId", { length: 64 }).notNull(),
-  modelId: varchar("modelId", { length: 64 }).notNull(),
-  modelVersion: int("modelVersion").notNull().default(1),
-  kind: varchar("kind", { length: 32 }).notNull(),
-  status: varchar("status", { length: 32 }).notNull().default("active"),
-  appliedBy: varchar("appliedBy", { length: 64 }).notNull().default(""),
-  appliedAt: timestamp("appliedAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+export const projectProcessApplications = mysqlTable(
+  "project_process_applications",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    projectId: varchar("projectId", { length: 64 }).notNull(),
+    modelId: varchar("modelId", { length: 64 }).notNull(),
+    modelVersion: int("modelVersion").notNull().default(1),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    appliedBy: varchar("appliedBy", { length: 64 }).notNull().default(""),
+    appliedAt: timestamp("appliedAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
 
 export const deliveryTemplateAttachments = mysqlTable(
   "delivery_template_attachments",

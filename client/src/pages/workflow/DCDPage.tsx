@@ -356,22 +356,22 @@ export default function DCDPage() {
   };
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4 p-3 sm:p-6">
       <GeneratedModelItems
         projectId={PROJECT_ID}
         types={["dcd"]}
         title="DCDs padrão aplicados"
       />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold">
             DCD - Design de Configuração Detalhada
           </h1>
           <p className="text-muted-foreground text-sm">
             Documentos gerados por IA a partir dos scope items, BDCQ e atas
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 xs:flex-row sm:shrink-0">
           {isAdmin && (
             <Button variant="outline" onClick={() => setShowTemplates(true)}>
               <Upload className="h-4 w-4 mr-2" />

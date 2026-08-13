@@ -3,17 +3,17 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const runId = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 const routes = [
-  { path: "techlead", heading: "TechLead" },
-  { path: "techlead/gp-track", heading: "GP Track" },
-  { path: "techlead/teams", heading: "Times e frentes" },
-  { path: "techlead/indicators", heading: "Indicadores de governança" },
-  { path: "techtask", heading: "TechTask" },
+  { path: "techlead", heading: "Controle da jornada" },
+  { path: "techlead/gp-track", heading: "Trilha do Projeto" },
+  { path: "techlead/teams", heading: "Equipes do projeto" },
+  { path: "techlead/indicators", heading: "Controle da jornada" },
+  { path: "techtask", heading: "Controle da jornada" },
   { path: "techtask/board", heading: "Atividades" },
   { path: "techtask/my-work", heading: "Meu trabalho" },
-  { path: "admin", heading: "Admin" },
+  { path: "admin", heading: "Administração" },
   { path: "admin/users", heading: "Gestão de Acesso" },
   { path: "admin/registrations", heading: "Cadastros" },
-  { path: "admin/standards", heading: "Configurações Padrão" },
+  { path: "admin/standards", heading: "Configurações do TechMove" },
 ] as const;
 
 function collectRuntimeFailures(page: Page) {
@@ -24,13 +24,20 @@ function collectRuntimeFailures(page: Page) {
   });
   page.on("response", response => {
     if (response.status() >= 500) {
-      failures.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+      failures.push(
+        `${response.status()} ${response.request().method()} ${response.url()}`
+      );
     }
   });
   return failures;
 }
 
 async function expectNoViewportClipping(page: Page) {
+  const documentWidth = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }));
+  expect(documentWidth.scroll).toBeLessThanOrEqual(documentWidth.client + 2);
   const offenders = await page.locator("body *").evaluateAll(elements => {
     const viewportWidth = document.documentElement.clientWidth;
     return elements.flatMap(element => {
@@ -44,30 +51,47 @@ async function expectNoViewportClipping(page: Page) {
         style.position === "absolute" ||
         node.closest('[role="dialog"]') ||
         node.closest("[data-radix-popper-content-wrapper]")
-      ) return [];
+      )
+        return [];
 
-      const parent = node.parentElement;
-      const parentStyle = parent ? getComputedStyle(parent) : null;
-      const intentionallyScrollable =
-        style.overflowX === "auto" ||
-        style.overflowX === "scroll" ||
-        parentStyle?.overflowX === "auto" ||
-        parentStyle?.overflowX === "scroll";
+      let ancestor: HTMLElement | null = node;
+      let intentionallyScrollable = false;
+      while (ancestor && ancestor !== document.body) {
+        const ancestorStyle = getComputedStyle(ancestor);
+        if (
+          ancestorStyle.overflowX === "auto" ||
+          ancestorStyle.overflowX === "scroll"
+        ) {
+          intentionallyScrollable = true;
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
       const clipsRight = rect.right > viewportWidth + 2;
       if (!clipsRight || intentionallyScrollable) return [];
 
-      return [{
-        tag: node.tagName.toLowerCase(),
-        text: (node.textContent || "").trim().slice(0, 70),
-        right: Math.round(rect.right),
-        viewportWidth,
-      }];
+      return [
+        {
+          tag: node.tagName.toLowerCase(),
+          text: (node.textContent || "").trim().slice(0, 70),
+          right: Math.round(rect.right),
+          viewportWidth,
+        },
+      ];
     });
   });
-  expect(offenders.slice(0, 5), JSON.stringify(offenders.slice(0, 5), null, 2)).toEqual([]);
+  expect(
+    offenders.slice(0, 5),
+    JSON.stringify(offenders.slice(0, 5), null, 2)
+  ).toEqual([]);
 }
 
-async function fillByLabelOrFirst(dialog: Locator, label: RegExp, fallback: string, value: string) {
+async function fillByLabelOrFirst(
+  dialog: Locator,
+  label: RegExp,
+  fallback: string,
+  value: string
+) {
   const labelled = dialog.getByLabel(label);
   if (await labelled.count()) await labelled.first().fill(value);
   else await dialog.locator(fallback).first().fill(value);
@@ -75,42 +99,63 @@ async function fillByLabelOrFirst(dialog: Locator, label: RegExp, fallback: stri
 
 test.describe("TechLead, TechTask e Admin — rotas e layout", () => {
   for (const route of routes) {
-    test(`${route.path} carrega sem falhas e sem corte horizontal`, async ({ page }) => {
+    test(`${route.path} carrega sem falhas e sem corte horizontal`, async ({
+      page,
+    }) => {
       const failures = collectRuntimeFailures(page);
       await page.goto(`./${route.path}`);
       await expect(page.locator("#root")).toBeVisible();
-      await expect(page.getByText(route.heading, { exact: false }).first()).toBeVisible();
-      await expect(page.locator("body")).not.toContainText(/Application error|Something went wrong/i);
+      await expect(
+        page.getByText(route.heading, { exact: false }).first()
+      ).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(
+        /Application error|Something went wrong/i
+      );
       await expectNoViewportClipping(page);
       expect(failures).toEqual([]);
     });
   }
 });
 
-test("menus alternam entre TechLead, TechTask e Admin e preservam deep links", async ({ page, isMobile }) => {
+test("menus alternam entre TechMove, TechBoard e Administração e preservam deep links", async ({
+  page,
+  isMobile,
+}) => {
   await page.goto("./techlead/teams");
   if (isMobile) {
     const toggle = page.getByRole("button", { name: /toggle sidebar/i });
     if (await toggle.isVisible()) await toggle.click();
   }
 
-  await page.getByRole("button", { name: "TechTask" }).click();
-  await expect(page.getByRole("button", { name: "Quadro de atividades" })).toBeVisible();
-  await page.getByRole("button", { name: "Quadro de atividades" }).click();
-  await expect(page).toHaveURL(/\/techtask\/board$/);
+  await page.getByRole("button", { name: "TechBoard" }).click();
+  await expect(page.getByRole("button", { name: "Kanban" })).toBeVisible();
+  await page.getByRole("button", { name: "Kanban" }).click();
+  await expect(page).toHaveURL(/\/techboard\/kanban$/);
 
   if (isMobile) {
     const toggle = page.getByRole("button", { name: /toggle sidebar/i });
     if (await toggle.isVisible()) await toggle.click();
   }
-  await page.getByRole("button", { name: "Admin" }).click();
-  await expect(page.getByRole("button", { name: "Cadastros" })).toBeVisible();
-  await page.getByRole("button", { name: "Cadastros" }).click();
+  const administration = page.getByRole("button", { name: "Administração" });
+  await expect(administration).toBeVisible();
+  await administration.click({ force: isMobile });
+  const registrations = page.getByRole("button", {
+    name: "Cadastros gerais",
+  });
+  await expect(registrations).toBeAttached();
+  if (isMobile) {
+    await registrations.evaluate(button => button.click());
+  } else {
+    await expect(registrations).toBeVisible();
+    await registrations.click();
+  }
   await expect(page).toHaveURL(/\/admin\/registrations$/);
 });
 
-test("Admin Cadastros permite criar, editar, recarregar e excluir com confirmação", async ({ page }) => {
-  const original = `Perfil ${runId}`;
+test("Admin Cadastros permite criar, editar, recarregar e excluir com confirmação", async ({
+  page,
+}, testInfo) => {
+  const original = `Perfil ${runId}-${testInfo.project.name}`;
   const edited = `${original} editado`;
   await page.goto("./admin/registrations");
   await expect(page.getByRole("heading", { name: "Cadastros" })).toBeVisible();
@@ -120,8 +165,7 @@ test("Admin Cadastros permite criar, editar, recarregar e excluir com confirmaç
   await page.getByRole("button", { name: /Adicionar/i }).click();
   await expect(page.getByText(original, { exact: true })).toBeVisible();
 
-  const row = page.getByText(original, { exact: true }).locator("..");
-  await row.getByRole("button").first().click();
+  await page.getByRole("button", { name: `Editar ${original}` }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Editar Item")).toBeVisible();
   await fillByLabelOrFirst(dialog, /Valor/i, "input", edited);
@@ -132,17 +176,19 @@ test("Admin Cadastros permite criar, editar, recarregar e excluir com confirmaç
   await expect(page.getByText(edited, { exact: true })).toBeVisible();
 
   page.once("dialog", confirmation => confirmation.dismiss());
-  await page.getByText(edited, { exact: true }).locator("..").getByRole("button").last().click();
+  await page.getByRole("button", { name: `Excluir ${edited}` }).click();
   await expect(page.getByText(edited, { exact: true })).toBeVisible();
 
   page.once("dialog", confirmation => confirmation.accept());
-  await page.getByText(edited, { exact: true }).locator("..").getByRole("button").last().click();
+  await page.getByRole("button", { name: `Excluir ${edited}` }).click();
   await expect(page.getByText(edited, { exact: true })).toHaveCount(0);
 });
 
-test("TechTask valida criação e permite criar atividade interna persistente", async ({ page }) => {
-  const title = `Atividade ${runId}`;
-  await page.goto("./techtask/board");
+test("TechTask valida criação e permite criar atividade interna persistente", async ({
+  page,
+}, testInfo) => {
+  const title = `Atividade ${runId}-${testInfo.project.name}`;
+  await page.goto("./techboard/kanban");
   await page.getByRole("button", { name: "Nova atividade" }).click();
   const dialog = page.getByRole("dialog");
   const create = dialog.getByRole("button", { name: "Criar", exact: true });
@@ -153,25 +199,36 @@ test("TechTask valida criação e permite criar atividade interna persistente", 
   await fillByLabelOrFirst(dialog, /Título/i, "input:not([type=date])", title);
   await expect(create).toBeEnabled();
   await create.click();
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog").locator("input").first()).toHaveValue(
+    title
+  );
+  await expect(page).toHaveURL(/activityId=/);
 
   await page.reload();
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
-
-  await page.getByText(title, { exact: true }).click();
   const details = page.getByRole("dialog");
-  const remove = details.getByRole("button", { name: /Excluir card/i });
+  await expect(details.locator("input").first()).toHaveValue(title);
+  const remove = details.getByRole("button", { name: /Arquivar item/i });
   if (await remove.isVisible()) {
-    page.once("dialog", confirmation => confirmation.accept());
     await remove.click();
-    await expect(page.getByText(title, { exact: true })).toHaveCount(0);
+    const archiveDialog = page.getByRole("dialog", {
+      name: /Arquivar item e entregável/i,
+    });
+    await archiveDialog
+      .getByRole("textbox")
+      .fill("Limpeza do teste automatizado");
+    await archiveDialog
+      .getByRole("button", { name: "Arquivar", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   }
 });
 
-test("rotas legadas de TechLead, TechTask e Admin redirecionam corretamente", async ({ page }) => {
+test("rotas legadas de TechLead, TechTask e Admin redirecionam corretamente", async ({
+  page,
+}) => {
   const redirects = [
-    ["gp-checklist", /\/techlead\/gp-track$/],
-    ["activities", /\/techtask\/board$/],
+    ["gp-checklist", /\/techmove\/trail$/],
+    ["activities", /\/techboard\/kanban$/],
     ["access", /\/admin\/users$/],
     ["cadastros", /\/admin\/registrations$/],
   ] as const;

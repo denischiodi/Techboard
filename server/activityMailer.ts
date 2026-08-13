@@ -2,6 +2,79 @@ import { getPgPool } from "./db";
 import { ENV } from "./_core/env";
 import * as plannerStore from "./plannerStore";
 import { getActivityEmailNotificationsEnabled } from "./systemSettings";
+import * as activityStore from "./activityStore";
+
+function zonedDateTimeToUtc(date: string, time: string, timezone: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = (time || "09:00").split(":").map(Number);
+  const desired = Date.UTC(year, month - 1, day, hour, minute);
+  let guess = desired;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(guess));
+    const values = Object.fromEntries(
+      parts.map(part => [part.type, part.value])
+    );
+    const represented = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      Number(values.hour),
+      Number(values.minute)
+    );
+    guess -= represented - desired;
+  }
+  return guess;
+}
+
+export async function processActivityReminders(referenceTime = Date.now()) {
+  const activities = await activityStore.listPendingReminderActivities();
+  let sent = 0;
+  for (const activity of activities) {
+    let dueAt: number;
+    try {
+      dueAt = zonedDateTimeToUtc(
+        activity.dueDate,
+        activity.dueTime,
+        activity.timezone || "America/Sao_Paulo"
+      );
+    } catch {
+      dueAt = Date.parse(
+        `${activity.dueDate}T${activity.dueTime || "09:00"}:00-03:00`
+      );
+    }
+    const remindAt = dueAt - activity.reminderMinutesBefore * 60_000;
+    if (
+      !Number.isFinite(remindAt) ||
+      referenceTime < remindAt ||
+      referenceTime > dueAt + 24 * 60 * 60_000
+    )
+      continue;
+    const recipients =
+      activity.visibility === "private"
+        ? [activity.ownerUserId]
+        : [activity.assigneeUserId, ...activity.participantUserIds];
+    await activityStore.createNotifications({
+      activityId: activity.id,
+      eventKey: `${activity.id}:reminder:${activity.dueDate}:${activity.dueTime}:${activity.reminderMinutesBefore}`,
+      eventType: "due_reminder",
+      title: activity.displayTitle,
+      message: `Lembrete: esta tarefa vence em ${activity.dueDate}${activity.dueTime ? ` às ${activity.dueTime}` : ""}.`,
+      userIds: recipients,
+    });
+    await activityStore.markReminderSent(activity.id);
+    sent += 1;
+  }
+  if (sent) await flushActivityEmailOutbox();
+  return sent;
+}
 
 function escapeHtml(value: string) {
   return value.replace(

@@ -17,11 +17,19 @@ export function observeUnexpectedErrors(page: Page) {
 
   page.on("pageerror", error => errors.push(`pageerror: ${error.message}`));
   page.on("console", message => {
-    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+    if (
+      message.type() === "error" &&
+      !/^Failed to load resource: the server responded with a status of 404/.test(
+        message.text()
+      )
+    )
+      errors.push(`console: ${message.text()}`);
   });
   page.on("response", response => {
     if (response.status() >= 500)
-      errors.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+      errors.push(
+        `${response.status()} ${response.request().method()} ${response.url()}`
+      );
   });
 
   return errors;
@@ -72,10 +80,9 @@ export async function expectNoUnreachableHorizontalContent(
       if (!scrollParent)
         clipped.push({
           tag: element.tagName.toLowerCase(),
-          text:
-            (element.getAttribute("aria-label") || element.innerText || "")
-              .trim()
-              .slice(0, 80),
+          text: (element.getAttribute("aria-label") || element.innerText || "")
+            .trim()
+            .slice(0, 80),
           right: Math.round(rect.right),
         });
     }

@@ -6,9 +6,14 @@ import { pipeline } from "node:stream/promises";
 import { ENV } from "./env";
 import {
   localStoragePath,
+  storageGetSignedUrl,
   usesLocalStorage,
   verifyLocalUploadToken,
 } from "../storage";
+import { createContext } from "./context";
+import * as plannerStore from "../plannerStore";
+import * as activityStore from "../activityStore";
+import { canViewActivity } from "../routers/activities";
 
 const bundledLegacyAssets: Record<string, string> = {
   "sap-library/2608_BR/1NJ/1NJ_S4CLD2608_BPD_PT_XX_a2197402.docx":
@@ -21,6 +26,55 @@ export function bundledLegacyStoragePath(key: string) {
 }
 
 export function registerStorageProxy(app: Express) {
+  app.get("/api/activity-attachments/:attachmentId", async (req, res) => {
+    try {
+      const context = await createContext({ req, res });
+      if (!context.user?.email) {
+        res.status(401).send("Autenticação necessária");
+        return;
+      }
+      const appUser = await plannerStore.getAppUserByEmail(context.user.email);
+      if (!appUser?.active) {
+        res.status(403).send("Sem acesso");
+        return;
+      }
+      const attachment = await activityStore.getAttachmentRecord(
+        req.params.attachmentId
+      );
+      if (!attachment) {
+        res.status(404).send("Anexo não encontrado");
+        return;
+      }
+      const activity = await activityStore.getActivity(attachment.activityId);
+      if (!activity || !(await canViewActivity(activity, appUser))) {
+        res.status(404).send("Anexo não encontrado ou sem acesso");
+        return;
+      }
+      const prefix = "/manus-storage/";
+      if (!String(attachment.url).startsWith(prefix)) {
+        res.status(400).send("Endereço do anexo inválido");
+        return;
+      }
+      const key = decodeURIComponent(
+        String(attachment.url).slice(prefix.length)
+      );
+      res.set(
+        "Content-Disposition",
+        `inline; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`
+      );
+      if (usesLocalStorage()) {
+        res.set("Cache-Control", "private, max-age=300");
+        res.sendFile(localStoragePath(key));
+        return;
+      }
+      res.set("Cache-Control", "no-store");
+      res.redirect(307, await storageGetSignedUrl(key));
+    } catch (error) {
+      console.error("[StorageProxy] secure attachment failed:", error);
+      res.status(500).send("Falha ao abrir o anexo");
+    }
+  });
+
   app.put("/api/local-storage-upload", async (req, res) => {
     if (!usesLocalStorage()) {
       res.status(404).send("Upload local desativado");
@@ -97,6 +151,13 @@ export function registerStorageProxy(app: Express) {
     const key = (req.params as Record<string, string>)[0];
     if (!key) {
       res.status(400).send("Missing storage key");
+      return;
+    }
+
+    // Activity files always pass through the authenticated endpoint above.
+    // This keeps private-task attachments private even if a raw key was copied.
+    if (key.startsWith("activities/")) {
+      res.status(404).send("Arquivo não encontrado");
       return;
     }
 

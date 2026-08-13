@@ -6,12 +6,17 @@ import type {
   ActivityChecklistItem,
   ActivityComment,
   ActivityHistoryEvent,
+  ActivityLabel,
   ActivityNotification,
+  ActivityPlanningBucket,
   ActivityPriority,
+  ActivityRecurrence,
   ActivityScope,
   ActivitySourceType,
   ActivityStage,
   ActivityStatus,
+  ActivityUserPlanning,
+  ActivityVisibility,
   AppUser,
 } from "../shared/types";
 import { getPgPool } from "./db";
@@ -29,6 +34,7 @@ type ActivityRow = Omit<
   | "checklist"
   | "comments"
   | "attachments"
+  | "labels"
   | "history"
 >;
 
@@ -38,10 +44,21 @@ const memoryChecklist = new Map<string, ActivityChecklistItem[]>();
 const memoryComments = new Map<string, ActivityComment[]>();
 const memoryAttachments = new Map<string, ActivityAttachment[]>();
 const memoryHistory = new Map<string, ActivityHistoryEvent[]>();
+const memoryLabels = new Map<string, ActivityLabel>();
+const memoryLabelAssignments = new Map<string, Set<string>>();
+const memoryPlanning = new Map<string, ActivityUserPlanning>();
 const memoryNotifications: ActivityNotification[] = [];
 const memoryNotificationKeys = new Set<string>();
 const memorySequenceCounters = new Map<string, number>();
-const memorySuppressions = new Map<string, { activityId: string; reason: string; createdByUserId: string; restoredAt: string }>();
+const memorySuppressions = new Map<
+  string,
+  {
+    activityId: string;
+    reason: string;
+    createdByUserId: string;
+    restoredAt: string;
+  }
+>();
 
 function id(prefix: string) {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
@@ -54,6 +71,10 @@ function iso(value: unknown) {
 
 function now() {
   return new Date().toISOString();
+}
+
+function planningKey(activityId: string, userId: string) {
+  return `${activityId}:${userId}`;
 }
 
 function normalizedStage(
@@ -135,7 +156,18 @@ function rowFromDb(row: any): ActivityRow {
     priority: row.priority,
     assigneeUserId: row.assigneeUserId || "",
     creatorUserId: row.creatorUserId,
+    ownerUserId: row.ownerUserId || row.creatorUserId,
+    visibility: row.visibility || "shared",
+    startDate: row.startDate || "",
     dueDate: row.dueDate || "",
+    dueTime: row.dueTime || "",
+    timezone: row.timezone || "America/Sao_Paulo",
+    reminderMinutesBefore: Number(row.reminderMinutesBefore ?? -1),
+    reminderSentAt: iso(row.reminderSentAt),
+    recurrence: row.recurrence || "none",
+    recurrenceInterval: Number(row.recurrenceInterval || 1),
+    recurrenceParentId: row.recurrenceParentId || "",
+    recurrenceSequence: Number(row.recurrenceSequence || 0),
     sourceType: row.sourceType,
     sourceKey: row.sourceKey || "",
     sourceUrl: row.sourceUrl || "",
@@ -178,7 +210,9 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
     plannerStore.listProjects(),
     plannerStore.listResources(),
   ]);
-  const usersById = new Map<string, Pick<AppUser, "id" | "name" | "email">>(users.map(user => [user.id, user]));
+  const usersById = new Map<string, Pick<AppUser, "id" | "name" | "email">>(
+    users.map(user => [user.id, user])
+  );
   for (const resource of resources) {
     usersById.set(`resource:${resource.id}`, {
       id: `resource:${resource.id}`,
@@ -194,9 +228,10 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
   let commentRows: any[] = [];
   let attachmentRows: any[] = [];
   let historyRows: any[] = [];
+  let labelRows: any[] = [];
   if (db) {
     const activityIds = rows.map(row => row.id);
-    const [participants, checklist, comments, attachments, history] =
+    const [participants, checklist, comments, attachments, history, labels] =
       await Promise.all([
         db.query(
           'SELECT * FROM "activity_participants" WHERE "activityId" = ANY($1)',
@@ -218,12 +253,21 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
           'SELECT * FROM "activity_history" WHERE "activityId" = ANY($1) ORDER BY "createdAt" DESC',
           [activityIds]
         ),
+        db.query(
+          `SELECT assignment."activityId", label.*
+           FROM "activity_label_assignments" assignment
+           JOIN "activity_labels" label ON label."id" = assignment."labelId"
+           WHERE assignment."activityId" = ANY($1)
+           ORDER BY label."name"`,
+          [activityIds]
+        ),
       ]);
     participantRows = participants.rows;
     checklistRows = checklist.rows;
     commentRows = comments.rows;
     attachmentRows = attachments.rows;
     historyRows = history.rows;
+    labelRows = labels.rows;
   }
 
   const groupByActivity = <T extends { activityId: string }>(items: T[]) => {
@@ -240,6 +284,7 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
   const commentsByActivity = groupByActivity(commentRows);
   const attachmentsByActivity = groupByActivity(attachmentRows);
   const historyByActivity = groupByActivity(historyRows);
+  const labelsByActivity = groupByActivity(labelRows);
 
   return rows.map(row => {
     const participantIds = db
@@ -269,13 +314,16 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
           activityId: item.activityId,
           fileName: item.fileName,
           contentType: item.contentType,
-          url: item.url,
+          url: `/api/activity-attachments/${encodeURIComponent(item.id)}`,
           uploadedByUserId: item.uploadedByUserId,
           uploadedByName:
             usersById.get(item.uploadedByUserId)?.name || "Usuário",
           createdAt: iso(item.createdAt),
         }))
-      : memoryAttachments.get(row.id) || [];
+      : (memoryAttachments.get(row.id) || []).map(item => ({
+          ...item,
+          url: `/api/activity-attachments/${encodeURIComponent(item.id)}`,
+        }));
     const history = db
       ? (historyByActivity.get(row.id) || []).map(item => ({
           id: item.id,
@@ -287,6 +335,23 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
           createdAt: iso(item.createdAt),
         }))
       : memoryHistory.get(row.id) || [];
+    const labels = db
+      ? (labelsByActivity.get(row.id) || []).map(item => ({
+          id: item.id,
+          scope: item.scope,
+          projectId: item.projectId || "",
+          name: item.name,
+          color: item.color,
+          createdByUserId: item.createdByUserId,
+          createdAt: iso(item.createdAt),
+          updatedAt: iso(item.updatedAt),
+        }))
+      : [...(memoryLabelAssignments.get(row.id) || new Set())].flatMap(
+          labelId => {
+            const label = memoryLabels.get(labelId);
+            return label ? [label] : [];
+          }
+        );
     const projectName =
       projectsById.get(row.projectId)?.name ||
       (row.scope === "internal" ? "Operação interna" : "Projeto");
@@ -308,6 +373,7 @@ async function hydrate(rows: ActivityRow[]): Promise<Activity[]> {
       checklist,
       comments,
       attachments,
+      labels,
       history,
     };
   });
@@ -351,7 +417,17 @@ export type CreateActivityInput = {
   assigneeUserId?: string;
   creatorUserId: string;
   participantUserIds?: string[];
+  ownerUserId?: string;
+  visibility?: ActivityVisibility;
+  startDate?: string;
   dueDate?: string;
+  dueTime?: string;
+  timezone?: string;
+  reminderMinutesBefore?: number;
+  recurrence?: ActivityRecurrence;
+  recurrenceInterval?: number;
+  recurrenceParentId?: string;
+  recurrenceSequence?: number;
   sourceType?: ActivitySourceType;
   sourceKey?: string;
   sourceUrl?: string;
@@ -360,6 +436,8 @@ export type CreateActivityInput = {
 
 export async function createActivity(input: CreateActivityInput) {
   const timestamp = now();
+  const visibility = input.visibility || "shared";
+  const ownerUserId = input.ownerUserId || input.creatorUserId;
   const projectId = input.scope === "internal" ? "" : input.projectId || "";
   const stage = normalizedStage(
     input.scope,
@@ -375,9 +453,21 @@ export async function createActivity(input: CreateActivityInput) {
     description: input.description || "",
     status: input.status || "A fazer",
     priority: input.priority || "Média",
-    assigneeUserId: input.assigneeUserId || "",
+    assigneeUserId:
+      visibility === "private" ? ownerUserId : input.assigneeUserId || "",
     creatorUserId: input.creatorUserId,
+    ownerUserId,
+    visibility,
+    startDate: input.startDate || "",
     dueDate: input.dueDate || "",
+    dueTime: input.dueTime || "",
+    timezone: input.timezone || "America/Sao_Paulo",
+    reminderMinutesBefore: input.reminderMinutesBefore ?? -1,
+    reminderSentAt: "",
+    recurrence: input.recurrence || "none",
+    recurrenceInterval: input.recurrenceInterval || 1,
+    recurrenceParentId: input.recurrenceParentId || "",
+    recurrenceSequence: input.recurrenceSequence || 0,
     sourceType: input.sourceType || "manual",
     sourceKey: input.sourceKey || "",
     sourceUrl: input.sourceUrl || "",
@@ -390,15 +480,18 @@ export async function createActivity(input: CreateActivityInput) {
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  const participantIds = [
-    ...new Set(
-      [
-        input.creatorUserId,
-        ...(input.participantUserIds || []),
-        input.assigneeUserId || "",
-      ].filter(Boolean)
-    ),
-  ];
+  const participantIds =
+    visibility === "private"
+      ? [ownerUserId]
+      : [
+          ...new Set(
+            [
+              input.creatorUserId,
+              ...(input.participantUserIds || []),
+              input.assigneeUserId || "",
+            ].filter(Boolean)
+          ),
+        ];
   const db = getPgPool();
   if (!db) {
     row.sequenceNumber = nextMemorySequence(
@@ -419,7 +512,7 @@ export async function createActivity(input: CreateActivityInput) {
         row.stage
       );
       await client.query(
-        'INSERT INTO "activities" ("id","scope","projectId","stage","sequenceNumber","title","description","status","priority","assigneeUserId","creatorUserId","dueDate","sourceType","sourceKey","sourceUrl","sourceResolved","completedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)',
+        'INSERT INTO "activities" ("id","scope","projectId","stage","sequenceNumber","title","description","status","priority","assigneeUserId","creatorUserId","ownerUserId","visibility","startDate","dueDate","dueTime","timezone","reminderMinutesBefore","recurrence","recurrenceInterval","recurrenceParentId","recurrenceSequence","sourceType","sourceKey","sourceUrl","sourceResolved","completedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)',
         [
           row.id,
           row.scope,
@@ -432,7 +525,17 @@ export async function createActivity(input: CreateActivityInput) {
           row.priority,
           row.assigneeUserId,
           row.creatorUserId,
+          row.ownerUserId,
+          row.visibility,
+          row.startDate,
           row.dueDate,
+          row.dueTime,
+          row.timezone,
+          row.reminderMinutesBefore,
+          row.recurrence,
+          row.recurrenceInterval,
+          row.recurrenceParentId,
+          row.recurrenceSequence,
           row.sourceType,
           row.sourceKey,
           row.sourceUrl,
@@ -467,7 +570,15 @@ export async function updateActivity(
       | "status"
       | "priority"
       | "assigneeUserId"
+      | "ownerUserId"
+      | "visibility"
+      | "startDate"
       | "dueDate"
+      | "dueTime"
+      | "timezone"
+      | "reminderMinutesBefore"
+      | "recurrence"
+      | "recurrenceInterval"
       | "sourceResolved"
       | "sourceUrl"
     >
@@ -479,6 +590,12 @@ export async function updateActivity(
     const current = memoryActivities.get(activityId);
     if (!current) throw new Error("Atividade não encontrada");
     const next = { ...current, ...data, updatedAt: timestamp };
+    if (
+      data.dueDate !== undefined ||
+      data.dueTime !== undefined ||
+      data.reminderMinutesBefore !== undefined
+    )
+      next.reminderSentAt = "";
     if (data.status !== undefined)
       next.completedAt =
         data.status === "Concluída" ? current.completedAt || timestamp : "";
@@ -490,7 +607,15 @@ export async function updateActivity(
       "status",
       "priority",
       "assigneeUserId",
+      "ownerUserId",
+      "visibility",
+      "startDate",
       "dueDate",
+      "dueTime",
+      "timezone",
+      "reminderMinutesBefore",
+      "recurrence",
+      "recurrenceInterval",
       "sourceResolved",
       "sourceUrl",
     ];
@@ -508,6 +633,12 @@ export async function updateActivity(
           : '"completedAt" = NULL'
       );
     }
+    if (
+      data.dueDate !== undefined ||
+      data.dueTime !== undefined ||
+      data.reminderMinutesBefore !== undefined
+    )
+      assignments.push('"reminderSentAt" = NULL');
     assignments.push('"updatedAt" = now()');
     const result = await db.query(
       `UPDATE "activities" SET ${assignments.join(",")} WHERE "id" = $1 RETURNING "id"`,
@@ -517,6 +648,13 @@ export async function updateActivity(
   }
   if (data.assigneeUserId)
     await addParticipant(activityId, data.assigneeUserId);
+  if (data.visibility === "private") {
+    const current = await getActivity(activityId);
+    if (current)
+      await replaceParticipants(activityId, [
+        data.ownerUserId || current.ownerUserId || current.creatorUserId,
+      ]);
+  }
   return getActivity(activityId);
 }
 
@@ -545,19 +683,44 @@ export async function adminArchiveActivity(
   originSnapshot: Record<string, unknown> | null = null
 ) {
   const current = await getActivity(activityId);
-  if (!current || current.archivedAt) throw new Error(current ? "Atividade já arquivada" : "Atividade não encontrada");
+  if (!current || current.archivedAt)
+    throw new Error(
+      current ? "Atividade já arquivada" : "Atividade não encontrada"
+    );
   const snapshot = {
-    title: current.title, description: current.description, status: current.status,
-    priority: current.priority, assigneeUserId: current.assigneeUserId,
-    dueDate: current.dueDate, sourceResolved: current.sourceResolved, origin: originSnapshot,
+    title: current.title,
+    description: current.description,
+    status: current.status,
+    priority: current.priority,
+    assigneeUserId: current.assigneeUserId,
+    dueDate: current.dueDate,
+    sourceResolved: current.sourceResolved,
+    origin: originSnapshot,
   };
   const db = getPgPool();
   if (!db) {
     const row = memoryActivities.get(activityId)!;
-    memoryActivities.set(activityId, { ...row, archivedAt: now(), archivedByUserId: actor.id, archiveReason: reason, archiveSnapshot: snapshot, updatedAt: now() });
+    memoryActivities.set(activityId, {
+      ...row,
+      archivedAt: now(),
+      archivedByUserId: actor.id,
+      archiveReason: reason,
+      archiveSnapshot: snapshot,
+      updatedAt: now(),
+    });
     if (current.sourceType !== "manual")
-      memorySuppressions.set(`${current.sourceType}:${current.sourceKey}`, { activityId, reason, createdByUserId: actor.id, restoredAt: "" });
-    await addHistory(activityId, actor, "ADMIN_ARCHIVED", { reason, before: snapshot, sourceType: current.sourceType, sourceKey: current.sourceKey });
+      memorySuppressions.set(`${current.sourceType}:${current.sourceKey}`, {
+        activityId,
+        reason,
+        createdByUserId: actor.id,
+        restoredAt: "",
+      });
+    await addHistory(activityId, actor, "ADMIN_ARCHIVED", {
+      reason,
+      before: snapshot,
+      sourceType: current.sourceType,
+      sourceKey: current.sourceKey,
+    });
   } else {
     const client = await db.connect();
     try {
@@ -569,15 +732,38 @@ export async function adminArchiveActivity(
       if (current.sourceType !== "manual")
         await client.query(
           'INSERT INTO "activity_source_suppressions" ("id","sourceType","sourceKey","activityId","reason","createdByUserId") VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT ("sourceType","sourceKey") WHERE "restoredAt" IS NULL DO NOTHING',
-          [id("asu"), current.sourceType, current.sourceKey, activityId, reason, actor.id]
+          [
+            id("asu"),
+            current.sourceType,
+            current.sourceKey,
+            activityId,
+            reason,
+            actor.id,
+          ]
         );
       await client.query(
         'INSERT INTO "activity_history" ("id","activityId","actorUserId","actorName","action","details") VALUES ($1,$2,$3,$4,$5,$6)',
-        [id("ahe"), activityId, actor.id, actor.name, "ADMIN_ARCHIVED", JSON.stringify({ reason, before: snapshot, sourceType: current.sourceType, sourceKey: current.sourceKey })]
+        [
+          id("ahe"),
+          activityId,
+          actor.id,
+          actor.name,
+          "ADMIN_ARCHIVED",
+          JSON.stringify({
+            reason,
+            before: snapshot,
+            sourceType: current.sourceType,
+            sourceKey: current.sourceKey,
+          }),
+        ]
       );
       await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   return getActivity(activityId);
 }
@@ -588,32 +774,71 @@ export async function adminRestoreActivity(
   reason: string
 ) {
   const current = await getActivity(activityId);
-  if (!current || !current.archivedAt) throw new Error(current ? "Atividade não está arquivada" : "Atividade não encontrada");
+  if (!current || !current.archivedAt)
+    throw new Error(
+      current ? "Atividade não está arquivada" : "Atividade não encontrada"
+    );
   const db = getPgPool();
   if (!db) {
     const row = memoryActivities.get(activityId)!;
-    memoryActivities.set(activityId, { ...row, archivedAt: "", archivedByUserId: "", archiveReason: "", updatedAt: now() });
-    const suppression = memorySuppressions.get(`${current.sourceType}:${current.sourceKey}`);
+    memoryActivities.set(activityId, {
+      ...row,
+      archivedAt: "",
+      archivedByUserId: "",
+      archiveReason: "",
+      updatedAt: now(),
+    });
+    const suppression = memorySuppressions.get(
+      `${current.sourceType}:${current.sourceKey}`
+    );
     if (suppression) suppression.restoredAt = now();
-    await addHistory(activityId, actor, "ADMIN_RESTORED", { reason, restoredSnapshot: current.archiveSnapshot, archivedAt: current.archivedAt });
+    await addHistory(activityId, actor, "ADMIN_RESTORED", {
+      reason,
+      restoredSnapshot: current.archiveSnapshot,
+      archivedAt: current.archivedAt,
+    });
   } else {
     const client = await db.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`UPDATE "activities" SET "archivedAt"=NULL,"archivedByUserId"='',"archiveReason"='',"updatedAt"=now() WHERE "id"=$1`, [activityId]);
-      await client.query('UPDATE "activity_source_suppressions" SET "restoredAt"=now() WHERE "activityId"=$1 AND "restoredAt" IS NULL', [activityId]);
+      await client.query(
+        `UPDATE "activities" SET "archivedAt"=NULL,"archivedByUserId"='',"archiveReason"='',"updatedAt"=now() WHERE "id"=$1`,
+        [activityId]
+      );
+      await client.query(
+        'UPDATE "activity_source_suppressions" SET "restoredAt"=now() WHERE "activityId"=$1 AND "restoredAt" IS NULL',
+        [activityId]
+      );
       await client.query(
         'INSERT INTO "activity_history" ("id","activityId","actorUserId","actorName","action","details") VALUES ($1,$2,$3,$4,$5,$6)',
-        [id("ahe"), activityId, actor.id, actor.name, "ADMIN_RESTORED", JSON.stringify({ reason, restoredSnapshot: current.archiveSnapshot, archivedAt: current.archivedAt })]
+        [
+          id("ahe"),
+          activityId,
+          actor.id,
+          actor.name,
+          "ADMIN_RESTORED",
+          JSON.stringify({
+            reason,
+            restoredSnapshot: current.archiveSnapshot,
+            archivedAt: current.archivedAt,
+          }),
+        ]
       );
       await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   return getActivity(activityId);
 }
 
-export async function isSourceSuppressed(sourceType: ActivitySourceType, sourceKey: string) {
+export async function isSourceSuppressed(
+  sourceType: ActivitySourceType,
+  sourceKey: string
+) {
   const db = getPgPool();
   if (!db) {
     const item = memorySuppressions.get(`${sourceType}:${sourceKey}`);
@@ -684,6 +909,243 @@ export async function replaceParticipants(
     }
   }
   return getActivity(activityId);
+}
+
+export async function listLabels(scope: ActivityScope, projectId = "") {
+  const normalizedProjectId = scope === "internal" ? "" : projectId;
+  const db = getPgPool();
+  if (!db)
+    return [...memoryLabels.values()]
+      .filter(
+        label =>
+          label.scope === scope && label.projectId === normalizedProjectId
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const result = await db.query(
+    'SELECT * FROM "activity_labels" WHERE "scope"=$1 AND "projectId"=$2 ORDER BY "name"',
+    [scope, normalizedProjectId]
+  );
+  return result.rows.map(
+    row =>
+      ({
+        id: row.id,
+        scope: row.scope,
+        projectId: row.projectId || "",
+        name: row.name,
+        color: row.color,
+        createdByUserId: row.createdByUserId,
+        createdAt: iso(row.createdAt),
+        updatedAt: iso(row.updatedAt),
+      }) as ActivityLabel
+  );
+}
+
+export async function createLabel(input: {
+  scope: ActivityScope;
+  projectId?: string;
+  name: string;
+  color: string;
+  createdByUserId: string;
+}) {
+  const timestamp = now();
+  const label: ActivityLabel = {
+    id: id("alb"),
+    scope: input.scope,
+    projectId: input.scope === "internal" ? "" : input.projectId || "",
+    name: input.name,
+    color: input.color,
+    createdByUserId: input.createdByUserId,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  const db = getPgPool();
+  if (!db) {
+    const duplicate = [...memoryLabels.values()].some(
+      item =>
+        item.scope === label.scope &&
+        item.projectId === label.projectId &&
+        item.name.toLocaleLowerCase("pt-BR") ===
+          label.name.toLocaleLowerCase("pt-BR")
+    );
+    if (duplicate) throw new Error("Já existe uma etiqueta com este nome");
+    memoryLabels.set(label.id, label);
+  } else {
+    await db.query(
+      'INSERT INTO "activity_labels" ("id","scope","projectId","name","color","createdByUserId") VALUES ($1,$2,$3,$4,$5,$6)',
+      [
+        label.id,
+        label.scope,
+        label.projectId,
+        label.name,
+        label.color,
+        label.createdByUserId,
+      ]
+    );
+  }
+  return label;
+}
+
+export async function updateLabel(
+  labelId: string,
+  data: Partial<Pick<ActivityLabel, "name" | "color">>
+) {
+  const db = getPgPool();
+  if (!db) {
+    const current = memoryLabels.get(labelId);
+    if (!current) throw new Error("Etiqueta não encontrada");
+    const updated = { ...current, ...data, updatedAt: now() };
+    memoryLabels.set(labelId, updated);
+    return updated;
+  }
+  const entries = Object.entries(data).filter(
+    ([, value]) => value !== undefined
+  );
+  if (!entries.length) {
+    const result = await db.query(
+      'SELECT * FROM "activity_labels" WHERE "id"=$1',
+      [labelId]
+    );
+    return result.rows[0] || null;
+  }
+  const assignments = entries.map(([key], index) => `"${key}"=$${index + 2}`);
+  const result = await db.query(
+    `UPDATE "activity_labels" SET ${assignments.join(",")},"updatedAt"=now() WHERE "id"=$1 RETURNING *`,
+    [labelId, ...entries.map(([, value]) => value)]
+  );
+  if (!result.rows[0]) throw new Error("Etiqueta não encontrada");
+  const row = result.rows[0];
+  return {
+    ...row,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  } as ActivityLabel;
+}
+
+export async function deleteLabel(labelId: string) {
+  const db = getPgPool();
+  if (!db) {
+    memoryLabels.delete(labelId);
+    for (const assignments of memoryLabelAssignments.values())
+      assignments.delete(labelId);
+  } else {
+    await db.query('DELETE FROM "activity_labels" WHERE "id"=$1', [labelId]);
+  }
+}
+
+export async function setActivityLabels(
+  activityId: string,
+  labelIds: string[]
+) {
+  const uniqueIds = [...new Set(labelIds.filter(Boolean))];
+  const db = getPgPool();
+  if (!db) {
+    for (const labelId of uniqueIds)
+      if (!memoryLabels.has(labelId)) throw new Error("Etiqueta inválida");
+    memoryLabelAssignments.set(activityId, new Set(uniqueIds));
+  } else {
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        'DELETE FROM "activity_label_assignments" WHERE "activityId"=$1',
+        [activityId]
+      );
+      for (const labelId of uniqueIds)
+        await client.query(
+          'INSERT INTO "activity_label_assignments" ("activityId","labelId") VALUES ($1,$2)',
+          [activityId, labelId]
+        );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  return getActivity(activityId);
+}
+
+export async function listUserPlanning(userId: string) {
+  const db = getPgPool();
+  if (!db)
+    return [...memoryPlanning.values()]
+      .filter(item => item.userId === userId)
+      .sort((a, b) => a.position - b.position);
+  const result = await db.query(
+    'SELECT * FROM "activity_user_planning" WHERE "userId"=$1 ORDER BY "bucket","position","updatedAt"',
+    [userId]
+  );
+  return result.rows.map(
+    row =>
+      ({
+        activityId: row.activityId,
+        userId: row.userId,
+        bucket: row.bucket,
+        position: Number(row.position || 0),
+        createdAt: iso(row.createdAt),
+        updatedAt: iso(row.updatedAt),
+      }) as ActivityUserPlanning
+  );
+}
+
+export async function setUserPlanning(input: {
+  activityId: string;
+  userId: string;
+  bucket: ActivityPlanningBucket;
+  position?: number;
+}) {
+  const db = getPgPool();
+  let position = input.position;
+  if (!db) {
+    if (position === undefined)
+      position =
+        Math.max(
+          -1,
+          ...[...memoryPlanning.values()]
+            .filter(
+              item =>
+                item.userId === input.userId && item.bucket === input.bucket
+            )
+            .map(item => item.position)
+        ) + 1;
+    const key = planningKey(input.activityId, input.userId);
+    const current = memoryPlanning.get(key);
+    const timestamp = now();
+    const planning: ActivityUserPlanning = {
+      activityId: input.activityId,
+      userId: input.userId,
+      bucket: input.bucket,
+      position,
+      createdAt: current?.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+    memoryPlanning.set(key, planning);
+    return planning;
+  }
+  if (position === undefined) {
+    const next = await db.query<{ next: number }>(
+      'SELECT COALESCE(MAX("position"),-1)+1 AS next FROM "activity_user_planning" WHERE "userId"=$1 AND "bucket"=$2',
+      [input.userId, input.bucket]
+    );
+    position = Number(next.rows[0]?.next || 0);
+  }
+  const result = await db.query(
+    `INSERT INTO "activity_user_planning" ("activityId","userId","bucket","position")
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT ("activityId","userId") DO UPDATE SET "bucket"=EXCLUDED."bucket","position"=EXCLUDED."position","updatedAt"=now()
+     RETURNING *`,
+    [input.activityId, input.userId, input.bucket, position]
+  );
+  const row = result.rows[0];
+  return {
+    activityId: row.activityId,
+    userId: row.userId,
+    bucket: row.bucket,
+    position: Number(row.position || 0),
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  } as ActivityUserPlanning;
 }
 
 export async function addHistory(
@@ -960,6 +1422,22 @@ export async function addAttachment(
   return attachment;
 }
 
+export async function getAttachmentRecord(attachmentId: string) {
+  const db = getPgPool();
+  if (!db) {
+    for (const attachments of memoryAttachments.values()) {
+      const attachment = attachments.find(item => item.id === attachmentId);
+      if (attachment) return attachment;
+    }
+    return null;
+  }
+  const result = await db.query(
+    'SELECT * FROM "activity_attachments" WHERE "id"=$1 LIMIT 1',
+    [attachmentId]
+  );
+  return result.rows[0] || null;
+}
+
 export async function createNotifications(input: {
   activityId: string;
   eventKey: string;
@@ -1072,6 +1550,140 @@ export async function findBySource(
     : null;
 }
 
+function nextRecurringDate(
+  value: string,
+  recurrence: ActivityRecurrence,
+  interval: number
+) {
+  if (!value || recurrence === "none") return value;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  if (recurrence === "daily") date.setUTCDate(date.getUTCDate() + interval);
+  if (recurrence === "weekly")
+    date.setUTCDate(date.getUTCDate() + interval * 7);
+  if (recurrence === "monthly") {
+    date.setUTCDate(1);
+    date.setUTCMonth(date.getUTCMonth() + interval);
+    const lastDay = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 12)
+    ).getUTCDate();
+    date.setUTCDate(Math.min(day, lastDay));
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+export async function createNextRecurringActivity(activityId: string) {
+  const current = await getActivity(activityId);
+  if (!current || current.recurrence === "none") return null;
+  const recurrenceParentId = current.recurrenceParentId || current.id;
+  const recurrenceSequence = current.recurrenceSequence + 1;
+  const db = getPgPool();
+  if (db) {
+    const duplicate = await db.query(
+      'SELECT "id" FROM "activities" WHERE "recurrenceParentId"=$1 AND "recurrenceSequence"=$2 LIMIT 1',
+      [recurrenceParentId, recurrenceSequence]
+    );
+    if (duplicate.rows[0]) return getActivity(duplicate.rows[0].id);
+  } else {
+    const duplicate = [...memoryActivities.values()].find(
+      item =>
+        item.recurrenceParentId === recurrenceParentId &&
+        item.recurrenceSequence === recurrenceSequence
+    );
+    if (duplicate) return getActivity(duplicate.id);
+  }
+  const next = await createActivity({
+    scope: current.scope,
+    projectId: current.projectId,
+    stage: current.stage,
+    title: current.title,
+    description: current.description,
+    status: "A fazer",
+    priority: current.priority,
+    assigneeUserId: current.assigneeUserId,
+    creatorUserId: current.creatorUserId,
+    ownerUserId: current.ownerUserId,
+    visibility: current.visibility,
+    participantUserIds: current.participantUserIds,
+    startDate: nextRecurringDate(
+      current.startDate,
+      current.recurrence,
+      current.recurrenceInterval
+    ),
+    dueDate: nextRecurringDate(
+      current.dueDate,
+      current.recurrence,
+      current.recurrenceInterval
+    ),
+    dueTime: current.dueTime,
+    timezone: current.timezone,
+    reminderMinutesBefore: current.reminderMinutesBefore,
+    recurrence: current.recurrence,
+    recurrenceInterval: current.recurrenceInterval,
+    recurrenceParentId,
+    recurrenceSequence,
+    sourceType: "manual",
+  });
+  if (!next) return null;
+  await setActivityLabels(
+    next.id,
+    current.labels.map(label => label.id)
+  );
+  for (const item of current.checklist)
+    await createChecklistItem(next.id, {
+      description: item.description,
+      assigneeUserId: item.assigneeUserId,
+      dueDate: nextRecurringDate(
+        item.dueDate,
+        current.recurrence,
+        current.recurrenceInterval
+      ),
+      required: item.required,
+      createdByUserId: current.ownerUserId,
+    });
+  await addHistory(next.id, null, "RECURRENCE_CREATED", {
+    previousActivityId: current.id,
+    recurrenceParentId,
+    recurrenceSequence,
+  });
+  return getActivity(next.id);
+}
+
+export async function listPendingReminderActivities() {
+  const db = getPgPool();
+  if (!db)
+    return hydrate(
+      [...memoryActivities.values()].filter(
+        item =>
+          !item.archivedAt &&
+          item.status !== "Concluída" &&
+          Boolean(item.dueDate) &&
+          item.reminderMinutesBefore >= 0 &&
+          !item.reminderSentAt
+      )
+    );
+  const result = await db.query(
+    `SELECT * FROM "activities"
+     WHERE "archivedAt" IS NULL AND "status" <> 'Concluída' AND "dueDate" <> ''
+       AND "reminderMinutesBefore" >= 0 AND "reminderSentAt" IS NULL`
+  );
+  return hydrate(result.rows.map(rowFromDb));
+}
+
+export async function markReminderSent(activityId: string) {
+  const db = getPgPool();
+  if (!db) {
+    const current = memoryActivities.get(activityId);
+    if (current)
+      memoryActivities.set(activityId, { ...current, reminderSentAt: now() });
+  } else {
+    await db.query(
+      'UPDATE "activities" SET "reminderSentAt"=now() WHERE "id"=$1 AND "reminderSentAt" IS NULL',
+      [activityId]
+    );
+  }
+}
+
 export async function upsertSourceActivity(input: CreateActivityInput) {
   if (!input.sourceType || !input.sourceKey)
     throw new Error("Origem automática inválida");
@@ -1082,10 +1694,12 @@ export async function upsertSourceActivity(input: CreateActivityInput) {
     ...input,
     assigneeUserId: "",
     participantUserIds: [
-      ...new Set([
-        ...(input.participantUserIds || []),
-        input.assigneeUserId || "",
-      ].filter(Boolean)),
+      ...new Set(
+        [
+          ...(input.participantUserIds || []),
+          input.assigneeUserId || "",
+        ].filter(Boolean)
+      ),
     ],
   };
   if (!input.sourceType || !input.sourceKey)
