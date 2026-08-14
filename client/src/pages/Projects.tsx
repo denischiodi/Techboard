@@ -168,7 +168,7 @@ export default function Projects() {
   const bulkImportMutation = trpc.projects.bulkImport.useMutation({
     onSuccess: () => utils.projects.list.invalidate(),
   });
-  const { data: savedCostCodes = [] } = trpc.projects.costCodes.list.useQuery(
+  const { data: savedCostCodes } = trpc.projects.costCodes.list.useQuery(
     { projectId: editing?.id || "" },
     { enabled: Boolean(editing?.id && dialogOpen) }
   );
@@ -212,9 +212,9 @@ export default function Projects() {
     Array<Partial<ProjectCostCode> & { localId: string }>
   >([]);
   useEffect(() => {
-    if (editing)
-      setCostCodes(savedCostCodes.map(item => ({ ...item, localId: item.id })));
-  }, [editing, savedCostCodes]);
+    if (!editing?.id || !dialogOpen || !savedCostCodes) return;
+    setCostCodes(savedCostCodes.map(item => ({ ...item, localId: item.id })));
+  }, [dialogOpen, editing?.id, savedCostCodes]);
 
   // Phases dialog
   const [phasesDialogOpen, setPhasesDialogOpen] = useState(false);
@@ -346,6 +346,7 @@ export default function Projects() {
 
   const openEdit = (p: Project) => {
     setEditing(p);
+    setCostCodes([]);
     setForm({
       name: p.name,
       logoUrl: p.logoUrl || "",
@@ -444,7 +445,7 @@ export default function Projects() {
         const retained = new Set(
           validCodes.map(item => item.id).filter(Boolean)
         );
-        for (const previous of savedCostCodes)
+        for (const previous of savedCostCodes ?? [])
           if (!retained.has(previous.id))
             await deleteCostCodeMutation.mutateAsync({ id: previous.id });
       }
@@ -940,6 +941,7 @@ export default function Projects() {
                       variant="ghost"
                       size="icon"
                       onClick={() => openEdit(p)}
+                      title={`Editar ${p.name}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -947,6 +949,7 @@ export default function Projects() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(p.id)}
+                      title={`Excluir ${p.name}`}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
