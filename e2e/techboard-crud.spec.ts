@@ -37,6 +37,23 @@ for (const [name, route, heading] of techBoardRoutes) {
   });
 }
 
+test("Projetos: edição abre sem ciclo de renderização", async ({ page }) => {
+  const errors = monitorUnexpectedErrors(page);
+  await page.goto("./techboard/projects");
+
+  const firstProject = page.locator("tbody tr").first();
+  await expect(firstProject).toBeVisible();
+  await firstProject.getByRole("button", { name: /Editar / }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Editar Projeto" })
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(
+    /Application error|Something went wrong|unexpected error/i
+  );
+  expect(errors).toEqual([]);
+});
+
 test("rotas legadas do TechBoard preservam o destino canônico", async ({
   page,
 }) => {
