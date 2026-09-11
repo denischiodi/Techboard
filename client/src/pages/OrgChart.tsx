@@ -11,7 +11,7 @@ import { addDays, format, parseISO, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { Allocation, Project, Resource } from "../../../shared/types";
 import { ProjectName } from "@/components/ProjectLogo";
-import { isResourceVisibleInOrgChart } from "@/lib/orgChartVisibility";
+import { isResourceVisibleInPlanningViews } from "@/lib/orgChartVisibility";
 
 type ViewMode = "team" | "group" | "project";
 
@@ -40,7 +40,7 @@ function resourceGroup(resource: Resource) {
 }
 
 function isActive(resource: Resource) {
-  return isResourceVisibleInOrgChart(resource.status || "");
+  return isResourceVisibleInPlanningViews(resource.status || "");
 }
 
 function hasProfile(resource: Resource, terms: string[]) {

@@ -8,6 +8,6 @@ function normalizeStatus(status: string) {
     .trim();
 }
 
-export function isResourceVisibleInOrgChart(status: string) {
+export function isResourceVisibleInPlanningViews(status: string) {
   return !HIDDEN_RESOURCE_STATUSES.has(normalizeStatus(status));
 }

@@ -20,6 +20,7 @@ import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, useDraggable, us
 import type { Allocation, Resource, Project, Phase, Absence, ResourceFront, AllocationType, AllocationStatus, ProjectFrontGap, ProjectMissingFrontsAlert, ResourceEndDateImpact } from "../../../shared/types";
 import * as XLSX from "xlsx";
 import { useLocation } from "wouter";
+import { isResourceVisibleInPlanningViews } from "@/lib/orgChartVisibility";
 
 const FRONTS_FALLBACK: ResourceFront[] = ['FI', 'CO', 'MM', 'SD', 'PP', 'QM', 'EWM', 'BTP', 'Integrações', 'Dados', 'Testes', 'PMO'];
 const ALLOCATION_TYPES: AllocationType[] = ['Projeto', 'Interna', 'Suporte', 'Treinamento'];
@@ -1299,7 +1300,7 @@ export default function Planner() {
     const resourceIdsWithAllocations = allocatedResourceIdsInView;
 
     let result = resources.filter((r: any) => {
-      if (r.status === 'Inativo') return false;
+      if (!isResourceVisibleInPlanningViews(r.status || '')) return false;
       if (isConsultant && linkedResource && r.id !== linkedResource.id) return false;
       if (filterResources.length > 0 && !filterResources.includes(r.id)) return false;
       if (selectedGroupResourceIds && !selectedGroupResourceIds.has(r.id)) return false;
@@ -1342,14 +1343,20 @@ export default function Planner() {
     const managerProjIds = selectedManagers
       ? new Set(projects.filter((p: any) => selectedManagers.has(p.manager)).map((p: any) => p.id))
       : null;
+    const visibleResourceIds = new Set(
+      resources
+        .filter((resource: Resource) => isResourceVisibleInPlanningViews(resource.status || ''))
+        .map((resource: Resource) => resource.id)
+    );
     return allAllocations.filter(a => {
+      if (!visibleResourceIds.has(a.resourceId)) return false;
       if (filterProjects.length > 0 && !filterProjects.includes(a.projectId)) return false;
       if (selectedGroupResourceIds && !selectedGroupResourceIds.has(a.resourceId)) return false;
       if (managerProjIds && !managerProjIds.has(a.projectId)) return false;
       if (filterFronts.length > 0 && !filterFronts.includes(a.front)) return false;
       return true;
     });
-  }, [allAllocations, filterProjects, selectedGroupResourceIds, filterManagers, filterFronts, projects]);
+  }, [allAllocations, filterProjects, selectedGroupResourceIds, filterManagers, filterFronts, projects, resources]);
 
   const plannerUnallocatedResources = useMemo(() => {
     if (visiblePlannerDays.length === 0) return [];
@@ -1357,7 +1364,7 @@ export default function Planner() {
     return filteredResources
       .filter((resource: Resource) => {
         if (resource.skipAllocationCheck) return false;
-        if (resource.status === 'Inativo') return false;
+        if (!isResourceVisibleInPlanningViews(resource.status || '')) return false;
         const resourceStart = resource.startDate && resource.startDate > '1900-01-01' && isValid(parseISO(resource.startDate))
           ? parseISO(resource.startDate)
           : null;
