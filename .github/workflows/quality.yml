@@ -43,7 +43,7 @@ jobs:
           DEMO_AUTH_ENABLED: true
           EMAIL_DELIVERY_MODE: log
           ACTIVITY_EMAIL_NOTIFICATIONS_ENABLED: false
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
