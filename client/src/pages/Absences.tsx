@@ -351,8 +351,8 @@ export default function Absences() {
                         <span className="ml-2 text-xs text-muted-foreground">{(a as any).daysCount}d</span>
                       ) : null}
                     </TableCell>
-                    <TableCell>{a.startDate}</TableCell>
-                    <TableCell>{isSoldVacationDays(a.type) ? '-' : a.endDate}</TableCell>
+                    <TableCell>{format(parseISO(a.startDate), 'dd/MM/yyyy')}</TableCell>
+                    <TableCell>{isSoldVacationDays(a.type) ? '-' : format(parseISO(a.endDate), 'dd/MM/yyyy')}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant={a.approved ? 'default' : 'outline'}>{a.approved ? 'Sim' : 'Não'}</Badge>
                     </TableCell>
