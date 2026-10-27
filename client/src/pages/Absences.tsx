@@ -57,6 +57,8 @@ export default function Absences() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Absence | null>(null);
   const [search, setSearch] = useState("");
+  const [onlyCurrentAndFuture, setOnlyCurrentAndFuture] = useState(true);
+  const today = format(new Date(), 'yyyy-MM-dd');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     resourceId: '', type: 'Férias' as string, startDate: '', endDate: '', daysCount: 0, approved: true, notes: ''
@@ -117,6 +119,7 @@ export default function Absences() {
 
   const filtered = useMemo(() => {
     let result = absences.filter(a => {
+      if (onlyCurrentAndFuture && a.endDate < today) return false;
       const rName = getResourceName(a.resourceId);
       return rName.toLowerCase().includes(search.toLowerCase()) || a.type.toLowerCase().includes(search.toLowerCase());
     });
@@ -135,7 +138,7 @@ export default function Absences() {
       return 0;
     });
     return result;
-  }, [absences, search, sortField, sortDir, resources]);
+  }, [absences, search, sortField, sortDir, resources, onlyCurrentAndFuture, today]);
 
   const openCreate = () => {
     setEditing(null);
@@ -310,10 +313,14 @@ export default function Absences() {
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
-          <div className="relative max-w-sm">
+        <CardHeader className="pb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar por recurso ou tipo..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch id="current-and-future-absences" checked={onlyCurrentAndFuture} onCheckedChange={setOnlyCurrentAndFuture} />
+            <Label htmlFor="current-and-future-absences" className="cursor-pointer">Somente atuais e futuras</Label>
           </div>
         </CardHeader>
         <CardContent className="p-0">
