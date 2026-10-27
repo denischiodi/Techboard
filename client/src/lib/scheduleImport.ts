@@ -47,38 +47,42 @@ export function summarizeSchedule(tasks: ScheduleTask[], manager = "") {
       "O cronograma possui mais de 200 fases. Organize as tarefas em fases de resumo no Project."
     );
   const day = (date: Date) => date.toISOString().slice(0, 10);
-  const rows = phases
-    .map(task => {
-      if (task.start > task.finish)
-        throw new Error(`A fase ${task.name} possui início posterior ao fim.`);
-      const matched = phaseName(task.name);
-      const phase = matched
-        ? matched[0].toUpperCase() + matched.slice(1).toLowerCase()
-        : task.name.trim();
-      const completionPercent = Math.max(
-        0,
-        Math.min(100, Math.round(task.percentComplete ?? 0))
-      );
-      return {
-        phase,
-        startDate: day(task.start),
-        endDate: day(task.finish),
-        responsible: manager,
-        completionPercent,
-        status:
-          completionPercent === 100
-            ? "Concluído"
-            : completionPercent > 0
-              ? "Em andamento"
-              : "Planejado",
-        notes:
-          task.name.trim() === phase ||
-          task.name.trim().toLowerCase() === phase.toLowerCase()
-            ? ""
-            : task.name.trim(),
-      };
-    })
-    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const entries = phases.flatMap(phase => [
+    { task: phase, parent: phase },
+    ...dated
+      .filter(task => task.parentUid === phase.uid && task.uid !== phase.uid)
+      .map(task => ({ task, parent: phase })),
+  ]);
+  const rows = entries.map(({ task, parent }) => {
+    if (task.start > task.finish)
+      throw new Error(`A fase ${task.name} possui início posterior ao fim.`);
+    const matched = phaseName(parent.name);
+    const phase = matched
+      ? matched[0].toUpperCase() + matched.slice(1).toLowerCase()
+      : parent.name.trim();
+    const completionPercent = Math.max(
+      0,
+      Math.min(100, Math.round(task.percentComplete ?? 0))
+    );
+    return {
+      phase,
+      startDate: day(task.start),
+      endDate: day(task.finish),
+      responsible: manager,
+      completionPercent,
+      status:
+        completionPercent === 100
+          ? "Concluído"
+          : completionPercent > 0
+            ? "Em andamento"
+            : "Planejado",
+      notes:
+        task.uid === parent.uid &&
+        task.name.trim().toLowerCase() === phase.toLowerCase()
+          ? ""
+          : task.name.trim(),
+    };
+  });
   return {
     startDate: dated.map(task => day(task.start)).sort()[0],
     endDate: dated
@@ -86,6 +90,8 @@ export function summarizeSchedule(tasks: ScheduleTask[], manager = "") {
       .sort()
       .at(-1)!,
     rows,
+    phaseCount: phases.length,
+    subdivisionCount: entries.length - phases.length,
   };
 }
 

@@ -668,7 +668,10 @@ export default function Projects() {
       setPhaseRows(
         schedule.rows.map(row => {
           const existing = projectPhases.find(
-            phase => phase.phase === row.phase && !matchedIds.has(phase.id)
+            phase =>
+              phase.phase === row.phase &&
+              phase.notes.trim() === row.notes.trim() &&
+              !matchedIds.has(phase.id)
           );
           if (existing) matchedIds.add(existing.id);
           return { ...row, id: existing?.id };
@@ -680,7 +683,7 @@ export default function Projects() {
         fileName: file.name,
       });
       toast.success(
-        `${schedule.rows.length} fases importadas. Revise e salve o cronograma.`
+        `${schedule.phaseCount} fases e ${schedule.subdivisionCount} subdivisões importadas. Revise e salve o cronograma.`
       );
     } catch (error) {
       toast.error(
@@ -757,7 +760,10 @@ export default function Projects() {
           await updatePhaseMutation.mutateAsync({ id: row.id, ...payload });
         else await createPhaseMutation.mutateAsync(payload);
       }
-      await utils.phases.list.invalidate();
+      await Promise.all([
+        utils.phases.list.invalidate(),
+        utils.projects.list.invalidate(),
+      ]);
       toast.success("Cronograma de marcos salvo");
       setPhasesDialogOpen(false);
     } catch (error: any) {
@@ -1420,7 +1426,8 @@ export default function Projects() {
             {importedSchedule && (
               <p className="rounded-lg border bg-blue-50 p-3 text-sm text-blue-900">
                 Arquivo: {importedSchedule.fileName}. Ao salvar, as fases desta
-                tabela substituirão os marcos atuais e as datas do projeto serão
+                tabela, incluindo as subdivisões em Marco/Descrição,
+                substituirão os marcos atuais e as datas do projeto serão
                 atualizadas. Revise antes de confirmar.
               </p>
             )}
