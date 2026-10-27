@@ -1293,6 +1293,45 @@ Confirme o projeto selecionado, sua alocação, suas permissões e os campos obr
   },
 ];
 
+TRAINING_CATALOG.push({
+  id: "consultor-educacao",
+  title: "Trilha do consultor — Educação",
+  category: "Educação",
+  color: "#0d9488",
+  description:
+    "Formação educacional do consultor. Estude as aulas, consulte os anexos e entregue as avaliações. Novos públicos poderão receber trilhas próprias posteriormente.",
+  modules: [
+    {
+      id: "consultor-fundamentos",
+      title: "Formação do consultor",
+      description: "Sequência inicial de aprendizagem e avaliação.",
+      lessons: [
+        {
+          id: "consultor-introducao",
+          title: "1. Boas-vindas e objetivos",
+          summary: "Conheça a jornada de formação.",
+          route: "",
+          keywords: ["educação", "consultor"],
+          audiences: ["Consultor"],
+          content:
+            "## Objetivos da formação\n- Compreender o papel do consultor.\n- Desenvolver escuta, organização e comunicação.\n- Aplicar o aprendizado em atividades práticas.\n## Como estudar\nSiga a sequência de aulas e consulte os materiais. Os vídeos e provas serão publicados pela equipe de educação.",
+        },
+        {
+          id: "consultor-pratica",
+          title: "2. Diagnóstico e comunicação",
+          summary:
+            "Pratique a identificação de necessidades e o registro de informações.",
+          route: "",
+          keywords: ["educação", "consultor"],
+          audiences: ["Consultor"],
+          content:
+            "## Atividade prática\nDescreva uma situação de atendimento, identifique as necessidades e proponha próximos passos.\n## Avaliação\nLeia a prova disponibilizada pela equipe e envie sua resposta em arquivo na própria aula.",
+        },
+      ],
+    },
+  ],
+});
+
 export const TRAINING_COVERAGE = TRAINING_CATALOG.flatMap(course =>
   course.modules.flatMap(module =>
     module.lessons.map(item => ({

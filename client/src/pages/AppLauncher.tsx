@@ -577,7 +577,7 @@ export default function AppLauncher() {
                 <span className="rounded-xl bg-lime-100 p-3 text-lime-800">
                   <BookOpenCheck className="h-6 w-6" />
                 </span>
-                <Badge variant="secondary">Consulta livre</Badge>
+                <Badge variant="secondary">Preparação do time</Badge>
               </div>
               <div>
                 <h3 className="flex items-center gap-2 font-semibold">

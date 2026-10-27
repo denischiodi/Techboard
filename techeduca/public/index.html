@@ -15,123 +15,636 @@
         --dark: #111827;
         --brand: #73c13d;
         --blue: #2563eb;
-        --shadow: 0 16px 42px rgba(15, 23, 42, .08);
+        --shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
       }
-      * { box-sizing: border-box; }
-      html { scroll-behavior: smooth; }
-      body { margin: 0; color: var(--ink); background: var(--soft); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      button, input, textarea, select { font: inherit; }
-      button { cursor: pointer; }
-      a { color: inherit; }
-      .hidden { display: none !important; }
-      .shell { min-height: 100vh; display: grid; grid-template-columns: 286px minmax(0, 1fr); }
-      aside { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 18px 14px; color: white; background: var(--dark); }
-      .brand { display: flex; align-items: center; gap: 12px; padding: 5px 8px 20px; }
-      .brand-mark { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; font-size: 17px; font-weight: 950; background: #050a12; }
-      .brand-mark span { color: var(--brand); }
-      .brand strong, .brand small { display: block; }
-      .brand small { color: #9eacc1; }
-      .back { width: 100%; margin-bottom: 16px; color: #dce5f2 !important; border-color: rgba(255,255,255,.16) !important; background: rgba(255,255,255,.06) !important; text-decoration: none; }
-      .side-label { margin: 18px 10px 8px; color: #7f8ca3; font-size: 11px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
-      .nav { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 9px; margin: 3px 0; padding: 9px 11px; border: 0; border-radius: 9px; color: #cdd6e4; background: transparent; text-align: left; }
-      .nav:hover, .nav.active { color: white; background: rgba(255,255,255,.1); }
-      .course-nav { border-left: 3px solid var(--course, #64748b); }
-      main { min-width: 0; }
-      .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.92); backdrop-filter: blur(14px); }
-      .search-wrap { position: relative; min-width: 240px; flex: 1; }
-      .search-wrap span { position: absolute; left: 13px; top: 10px; color: var(--muted); }
-      input, textarea, select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
-      .search-wrap input { padding-left: 38px; }
-      textarea { min-height: 100px; resize: vertical; }
-      .user { display: flex; align-items: center; gap: 10px; }
-      .avatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; color: #1e3a0c; background: #dcf8c8; font-weight: 900; }
-      .user small { display: block; color: var(--muted); }
-      .content { max-width: 1440px; margin: auto; padding: 26px; }
-      .hero { position: relative; overflow: hidden; padding: 28px; border-radius: 18px; color: white; background: linear-gradient(120deg, #101827, #1d3b2a); box-shadow: var(--shadow); }
-      .hero::after { content: ""; position: absolute; width: 330px; height: 330px; top: -190px; right: -80px; border-radius: 50%; background: rgba(115,193,61,.32); }
-      .hero h1 { margin: 0; max-width: 800px; font-size: clamp(28px, 4vw, 48px); line-height: 1.05; }
-      .hero p { max-width: 800px; margin: 12px 0 0; color: #dce7f4; line-height: 1.55; }
-      .hero-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-      .hero-stats span { padding: 7px 11px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(255,255,255,.08); font-size: 13px; font-weight: 750; }
-      .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 28px 0 14px; }
-      .section-head h2, .section-head p { margin: 0; }
-      .section-head p { margin-top: 5px; color: var(--muted); }
-      .grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
-      .card, .panel, .result, .module { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 7px 20px rgba(15,23,42,.04); }
-      .card { min-height: 205px; display: flex; flex-direction: column; padding: 18px; border-top: 5px solid var(--course, #64748b); transition: transform .16s, box-shadow .16s; }
-      .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
-      .card h3 { margin: 8px 0; }
-      .card p { margin: 0; color: var(--muted); line-height: 1.45; }
-      .card .meta { margin-top: auto; padding-top: 14px; color: var(--muted); font-size: 12px; }
-      .btn { min-height: 39px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 13px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font-weight: 800; text-decoration: none; }
-      .btn:hover { filter: brightness(.98); }
-      .btn.primary { color: white; border-color: var(--blue); background: var(--blue); }
-      .btn.green { color: #18330c; border-color: var(--brand); background: var(--brand); }
-      .btn.danger { color: #991b1b; border-color: #fecaca; background: #fff1f2; }
-      .btn.small { min-height: 32px; padding: 5px 9px; font-size: 12px; }
-      .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-      .panel { padding: 18px; }
-      .catalog-layout { display: grid; grid-template-columns: 320px minmax(0,1fr); gap: 18px; align-items: start; }
-      .module-list { position: sticky; top: 88px; max-height: calc(100vh - 112px); overflow-y: auto; }
-      .module-title { margin: 0 0 10px; font-size: 20px; }
-      .lesson-link { width: 100%; display: block; padding: 11px; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); background: transparent; text-align: left; }
-      .lesson-link:hover, .lesson-link.active { background: #eef5ff; }
-      .lesson-link strong, .lesson-link small { display: block; }
-      .lesson-link small { margin-top: 4px; color: var(--muted); }
-      .lesson { min-height: 600px; padding: 26px; }
-      .lesson h1 { margin: 0; font-size: clamp(25px, 3vw, 37px); }
-      .lesson-summary { color: var(--muted); font-size: 16px; line-height: 1.55; }
-      .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
-      .badge { display: inline-flex; align-items: center; min-height: 27px; padding: 4px 9px; border-radius: 999px; color: #1e40af; background: #e8efff; font-size: 12px; font-weight: 800; }
-      .badge.gray { color: #475569; background: #eef2f6; }
-      .article { margin-top: 22px; line-height: 1.65; }
-      .article h2 { margin: 26px 0 8px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 20px; }
-      .article ol, .article ul { padding-left: 24px; }
-      .article li { margin: 8px 0; }
-      .article code { padding: 2px 5px; border-radius: 4px; background: #eef2f6; }
-      .video { width: 100%; max-height: 520px; margin-top: 18px; border-radius: 10px; background: #050a12; }
-      .materials { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-      .empty { padding: 36px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
-      .search-results { display: grid; gap: 10px; }
-      .result { padding: 15px; cursor: pointer; }
-      .result:hover { border-color: #93b4ec; }
-      .result h3, .result p { margin: 0; }
-      .result p { margin-top: 5px; color: var(--muted); }
-      .admin-grid { display: grid; grid-template-columns: minmax(320px,.75fr) minmax(0,1.25fr); gap: 16px; }
-      .form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-      .field { display: grid; gap: 6px; }
-      .field.full { grid-column: 1/-1; }
-      label { color: #334155; font-size: 13px; font-weight: 850; }
-      .tree-course { margin-bottom: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: white; }
-      .tree-course > button { width: 100%; display: flex; justify-content: space-between; padding: 12px; border: 0; background: #f8fafc; text-align: left; font-weight: 900; }
-      .tree-module { padding: 10px 12px; border-top: 1px solid var(--line); }
-      .tree-lesson { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0 0 12px; color: var(--muted); font-size: 13px; }
-      .coverage { overflow-x: auto; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; }
-      th { color: var(--muted); background: #f8fafc; }
-      .loading { min-height: 100vh; display: grid; place-items: center; color: var(--muted); }
-      .modal { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.58); }
-      .modal-card { width: min(920px,100%); max-height: 92vh; overflow-y: auto; padding: 20px; border-radius: 14px; background: white; box-shadow: var(--shadow); }
-      .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-      .modal-head h2, .modal-head p { margin: 0; }
-      .modal-head p { margin-top: 4px; color: var(--muted); }
-      .notice { padding: 12px 14px; border-radius: 8px; color: #075985; background: #e0f2fe; }
-      .notice.error { color: #991b1b; background: #fee2e2; }
-      @media (max-width: 1180px) { .grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--soft);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      a {
+        color: inherit;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 286px minmax(0, 1fr);
+      }
+      aside {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+        padding: 18px 14px;
+        color: white;
+        background: var(--dark);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 5px 8px 20px;
+      }
+      .brand-mark {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        font-size: 17px;
+        font-weight: 950;
+        background: #050a12;
+      }
+      .brand-mark span {
+        color: var(--brand);
+      }
+      .brand strong,
+      .brand small {
+        display: block;
+      }
+      .brand small {
+        color: #9eacc1;
+      }
+      .back {
+        width: 100%;
+        margin-bottom: 16px;
+        color: #dce5f2 !important;
+        border-color: rgba(255, 255, 255, 0.16) !important;
+        background: rgba(255, 255, 255, 0.06) !important;
+        text-decoration: none;
+      }
+      .side-label {
+        margin: 18px 10px 8px;
+        color: #7f8ca3;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .nav {
+        width: 100%;
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 3px 0;
+        padding: 9px 11px;
+        border: 0;
+        border-radius: 9px;
+        color: #cdd6e4;
+        background: transparent;
+        text-align: left;
+      }
+      .nav:hover,
+      .nav.active {
+        color: white;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .course-nav {
+        border-left: 3px solid var(--course, #64748b);
+      }
+      main {
+        min-width: 0;
+      }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(14px);
+      }
+      .search-wrap {
+        position: relative;
+        min-width: 240px;
+        flex: 1;
+      }
+      .search-wrap span {
+        position: absolute;
+        left: 13px;
+        top: 10px;
+        color: var(--muted);
+      }
+      input,
+      textarea,
+      select {
+        width: 100%;
+        min-height: 42px;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--ink);
+        background: white;
+      }
+      .search-wrap input {
+        padding-left: 38px;
+      }
+      textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+      .user {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .avatar {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: #1e3a0c;
+        background: #dcf8c8;
+        font-weight: 900;
+      }
+      .user small {
+        display: block;
+        color: var(--muted);
+      }
+      .content {
+        max-width: 1440px;
+        margin: auto;
+        padding: 26px;
+      }
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 28px;
+        border-radius: 18px;
+        color: white;
+        background: linear-gradient(120deg, #101827, #1d3b2a);
+        box-shadow: var(--shadow);
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        width: 330px;
+        height: 330px;
+        top: -190px;
+        right: -80px;
+        border-radius: 50%;
+        background: rgba(115, 193, 61, 0.32);
+      }
+      .hero h1 {
+        margin: 0;
+        max-width: 800px;
+        font-size: clamp(28px, 4vw, 48px);
+        line-height: 1.05;
+      }
+      .hero p {
+        max-width: 800px;
+        margin: 12px 0 0;
+        color: #dce7f4;
+        line-height: 1.55;
+      }
+      .hero-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .hero-stats span {
+        padding: 7px 11px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 13px;
+        font-weight: 750;
+      }
+      .section-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 14px;
+        margin: 28px 0 14px;
+      }
+      .section-head h2,
+      .section-head p {
+        margin: 0;
+      }
+      .section-head p {
+        margin-top: 5px;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .card,
+      .panel,
+      .result,
+      .module {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 7px 20px rgba(15, 23, 42, 0.04);
+      }
+      .card {
+        min-height: 205px;
+        display: flex;
+        flex-direction: column;
+        padding: 18px;
+        border-top: 5px solid var(--course, #64748b);
+        transition:
+          transform 0.16s,
+          box-shadow 0.16s;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      .card h3 {
+        margin: 8px 0;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .card .meta {
+        margin-top: auto;
+        padding-top: 14px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .btn {
+        min-height: 39px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        padding: 8px 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--ink);
+        background: white;
+        font-weight: 800;
+        text-decoration: none;
+      }
+      .btn:hover {
+        filter: brightness(0.98);
+      }
+      .btn.primary {
+        color: white;
+        border-color: var(--blue);
+        background: var(--blue);
+      }
+      .btn.green {
+        color: #18330c;
+        border-color: var(--brand);
+        background: var(--brand);
+      }
+      .btn.danger {
+        color: #991b1b;
+        border-color: #fecaca;
+        background: #fff1f2;
+      }
+      .btn.small {
+        min-height: 32px;
+        padding: 5px 9px;
+        font-size: 12px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .panel {
+        padding: 18px;
+      }
+      .catalog-layout {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+      .module-list {
+        position: sticky;
+        top: 88px;
+        max-height: calc(100vh - 112px);
+        overflow-y: auto;
+      }
+      .module-title {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+      .lesson-link {
+        width: 100%;
+        display: block;
+        padding: 11px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink);
+        background: transparent;
+        text-align: left;
+      }
+      .lesson-link:hover,
+      .lesson-link.active {
+        background: #eef5ff;
+      }
+      .lesson-link strong,
+      .lesson-link small {
+        display: block;
+      }
+      .lesson-link small {
+        margin-top: 4px;
+        color: var(--muted);
+      }
+      .lesson {
+        min-height: 600px;
+        padding: 26px;
+      }
+      .lesson h1 {
+        margin: 0;
+        font-size: clamp(25px, 3vw, 37px);
+      }
+      .lesson-summary {
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.55;
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 12px 0;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 27px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        color: #1e40af;
+        background: #e8efff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .badge.gray {
+        color: #475569;
+        background: #eef2f6;
+      }
+      .article {
+        margin-top: 22px;
+        line-height: 1.65;
+      }
+      .article h2 {
+        margin: 26px 0 8px;
+        padding-bottom: 7px;
+        border-bottom: 1px solid var(--line);
+        font-size: 20px;
+      }
+      .article ol,
+      .article ul {
+        padding-left: 24px;
+      }
+      .article li {
+        margin: 8px 0;
+      }
+      .article code {
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: #eef2f6;
+      }
+      .video {
+        width: 100%;
+        max-height: 520px;
+        margin-top: 18px;
+        border-radius: 10px;
+        background: #050a12;
+      }
+      .materials {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+      .empty {
+        padding: 36px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .search-results {
+        display: grid;
+        gap: 10px;
+      }
+      .result {
+        padding: 15px;
+        cursor: pointer;
+      }
+      .result:hover {
+        border-color: #93b4ec;
+      }
+      .result h3,
+      .result p {
+        margin: 0;
+      }
+      .result p {
+        margin-top: 5px;
+        color: var(--muted);
+      }
+      .admin-grid {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.75fr) minmax(0, 1.25fr);
+        gap: 16px;
+      }
+      .form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+      .field.full {
+        grid-column: 1/-1;
+      }
+      label {
+        color: #334155;
+        font-size: 13px;
+        font-weight: 850;
+      }
+      .tree-course {
+        margin-bottom: 12px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: white;
+      }
+      .tree-course > button {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        padding: 12px;
+        border: 0;
+        background: #f8fafc;
+        text-align: left;
+        font-weight: 900;
+      }
+      .tree-module {
+        padding: 10px 12px;
+        border-top: 1px solid var(--line);
+      }
+      .tree-lesson {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 0 0 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .coverage {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        font-size: 13px;
+      }
+      th {
+        color: var(--muted);
+        background: #f8fafc;
+      }
+      .loading {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+      }
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.58);
+      }
+      .modal-card {
+        width: min(920px, 100%);
+        max-height: 92vh;
+        overflow-y: auto;
+        padding: 20px;
+        border-radius: 14px;
+        background: white;
+        box-shadow: var(--shadow);
+      }
+      .modal-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .modal-head h2,
+      .modal-head p {
+        margin: 0;
+      }
+      .modal-head p {
+        margin-top: 4px;
+        color: var(--muted);
+      }
+      .notice {
+        padding: 12px 14px;
+        border-radius: 8px;
+        color: #075985;
+        background: #e0f2fe;
+      }
+      .notice.error {
+        color: #991b1b;
+        background: #fee2e2;
+      }
+      @media (max-width: 1180px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
       @media (max-width: 900px) {
-        .shell, .catalog-layout, .admin-grid { grid-template-columns: 1fr; }
-        aside { position: static; height: auto; }
-        aside .side-label, aside #courseNav { display: none !important; }
-        .module-list { position: static; max-height: none; }
-        .topbar { position: static; flex-wrap: wrap; }
-        .search-wrap { flex-basis: 100%; order: 3; }
+        .shell,
+        .catalog-layout,
+        .admin-grid {
+          grid-template-columns: 1fr;
+        }
+        aside {
+          position: static;
+          height: auto;
+        }
+        aside .side-label,
+        aside #courseNav {
+          display: none !important;
+        }
+        .module-list {
+          position: static;
+          max-height: none;
+        }
+        .topbar {
+          position: static;
+          flex-wrap: wrap;
+        }
+        .search-wrap {
+          flex-basis: 100%;
+          order: 3;
+        }
       }
       @media (max-width: 620px) {
-        .content, .topbar { padding: 16px; }
-        .grid, .form { grid-template-columns: 1fr; }
-        .field.full { grid-column: auto; }
-        .user div:not(.avatar) { display: none; }
+        .content,
+        .topbar {
+          padding: 16px;
+        }
+        .grid,
+        .form {
+          grid-template-columns: 1fr;
+        }
+        .field.full {
+          grid-column: auto;
+        }
+        .user div:not(.avatar) {
+          display: none;
+        }
       }
     </style>
   </head>
@@ -141,82 +654,249 @@
       <aside>
         <div class="brand">
           <div class="brand-mark">TE<span>+</span></div>
-          <div><strong>TechEduca+</strong><small>Central de treinamento</small></div>
+          <div>
+            <strong>TechEduca+</strong><small>Central de treinamento</small>
+          </div>
         </div>
         <a class="btn back" href="/">← Voltar ao Portal Tech</a>
         <button class="nav active" data-view="home">⌂ Início</button>
         <button class="nav" data-view="catalog">▦ Todos os treinamentos</button>
-        <button class="nav" data-view="profiles">◎ Trilhas por perfil</button>
-        <div class="side-label">Produtos</div>
+        <button class="nav" data-view="learning">◉ Meu aprendizado</button
+        ><button class="nav" data-view="profiles">◎ Trilhas por perfil</button>
+        <div class="side-label">Cursos</div>
         <div id="courseNav"></div>
         <div id="adminNav" class="hidden">
           <div class="side-label">Administração</div>
           <button class="nav" data-view="admin">✎ Editar conteúdos</button>
-          <button class="nav" data-view="coverage">✓ Matriz de cobertura</button>
+          <button class="nav hidden" id="studentsNav" data-view="students">
+            ♙ Alunos e matrículas
+          </button>
+          <button class="nav" data-view="coverage">
+            ✓ Matriz de cobertura
+          </button>
         </div>
       </aside>
       <main>
         <header class="topbar">
-          <div class="search-wrap"><span>⌕</span><input id="globalSearch" aria-label="Buscar treinamentos" placeholder="Buscar tela, tarefa, campo, código, erro ou perfil…" /></div>
-          <button id="clearSearch" class="btn small hidden">Limpar busca</button>
-          <div class="user"><div id="avatar" class="avatar">U</div><div><strong id="userName">Usuário</strong><small id="userRole">Perfil</small></div></div>
+          <div class="search-wrap">
+            <span>⌕</span
+            ><input
+              id="globalSearch"
+              aria-label="Buscar treinamentos"
+              placeholder="Buscar tela, tarefa, campo, código, erro ou perfil…"
+            />
+          </div>
+          <button id="clearSearch" class="btn small hidden">
+            Limpar busca
+          </button>
+          <div class="user">
+            <div id="avatar" class="avatar">U</div>
+            <div>
+              <strong id="userName">Usuário</strong
+              ><small id="userRole">Perfil</small>
+            </div>
+          </div>
         </header>
         <div id="content" class="content"></div>
       </main>
     </div>
     <div id="editorModal" class="modal hidden">
       <form id="editorForm" class="modal-card">
-        <div class="modal-head"><div><h2 id="editorTitle">Editar aula</h2><p>Textos, rota, palavras-chave, público, vídeo e materiais.</p></div><button type="button" class="btn small" data-close>Fechar</button></div>
+        <div class="modal-head">
+          <div>
+            <h2 id="editorTitle">Editar aula</h2>
+            <p>Textos, rota, palavras-chave, público, vídeo e materiais.</p>
+          </div>
+          <button type="button" class="btn small" data-close>Fechar</button>
+        </div>
         <input type="hidden" name="courseId" />
         <input type="hidden" name="moduleId" />
         <input type="hidden" name="lessonId" />
         <input type="hidden" name="videoName" />
         <div class="form">
-          <div class="field full"><label>Título *</label><input name="title" required /></div>
-          <div class="field full"><label>Resumo *</label><textarea name="description" required></textarea></div>
-          <div class="field full"><label>Conteúdo detalhado *</label><textarea name="content" rows="18" required placeholder="Use ## para títulos, 1. para passos e - para listas."></textarea></div>
-          <div class="field"><label>Rota relacionada</label><input name="routePath" placeholder="/techmove/bdcq" /></div>
-          <div class="field"><label>Versão revisada</label><input name="versionLabel" placeholder="2026.07" /></div>
-          <div class="field full"><label>Palavras-chave</label><input name="keywords" placeholder="BDCQ, aprovação, key user, erro…" /></div>
-          <div class="field full"><label>Públicos</label><input name="audiences" placeholder="Administrador, Gestor, Consultor…" /></div>
-          <div class="field full"><label>Link de vídeo</label><input name="videoUrl" placeholder="https://…" /></div>
-          <div class="field"><label>Substituir vídeo</label><input name="video" type="file" accept="video/*" /></div>
-          <div class="field"><label>Adicionar materiais</label><input name="files" type="file" multiple /></div>
-          <div class="field full"><label><input name="published" type="checkbox" style="width:auto; min-height:0" checked /> Conteúdo publicado</label></div>
+          <div class="field full">
+            <label>Título *</label><input name="title" required />
+          </div>
+          <div class="field full">
+            <label>Resumo *</label
+            ><textarea name="description" required></textarea>
+          </div>
+          <div class="field full">
+            <label>Conteúdo detalhado *</label
+            ><textarea
+              name="content"
+              rows="18"
+              required
+              placeholder="Use ## para títulos, 1. para passos e - para listas."
+            ></textarea>
+          </div>
+          <div class="field">
+            <label>Rota relacionada</label
+            ><input name="routePath" placeholder="/techmove/bdcq" />
+          </div>
+          <div class="field">
+            <label>Versão revisada</label
+            ><input name="versionLabel" placeholder="2026.07" />
+          </div>
+          <div class="field full">
+            <label>Palavras-chave</label
+            ><input
+              name="keywords"
+              placeholder="BDCQ, aprovação, key user, erro…"
+            />
+          </div>
+          <div class="field full">
+            <label>Públicos</label
+            ><input
+              name="audiences"
+              placeholder="Administrador, Gestor, Consultor…"
+            />
+          </div>
+          <div class="field full">
+            <label>Link de vídeo</label
+            ><input name="videoUrl" placeholder="https://…" />
+          </div>
+          <div class="field">
+            <label>Substituir vídeo</label
+            ><input name="video" type="file" accept="video/*" />
+          </div>
+          <div class="field">
+            <label>Adicionar materiais</label
+            ><input name="files" type="file" multiple />
+          </div>
+          <div class="field full">
+            <label
+              ><input
+                name="published"
+                type="checkbox"
+                style="width: auto; min-height: 0"
+                checked
+              />
+              Conteúdo publicado</label
+            >
+          </div>
           <div id="editorFiles" class="field full"></div>
           <div id="editorMsg" class="field full"></div>
-          <div class="field full toolbar"><button class="btn primary" type="submit">Salvar conteúdo</button></div>
+          <div class="field full toolbar">
+            <button class="btn primary" type="submit">Salvar conteúdo</button>
+          </div>
         </div>
       </form>
     </div>
     <script>
       const base = "/techeduca";
-      const state = { user: null, courses: [], coverage: [], history: [], view: "home", courseId: "", moduleId: "", lessonId: "", search: "" };
+      const state = {
+        user: null,
+        courses: [],
+        learning: [],
+        students: [],
+        editingStudentId: "",
+        coverage: [],
+        history: [],
+        view: "home",
+        courseId: "",
+        moduleId: "",
+        lessonId: "",
+        search: "",
+      };
       const $ = selector => document.querySelector(selector);
       const $$ = selector => Array.from(document.querySelectorAll(selector));
-      const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+      const esc = value =>
+        String(value ?? "").replace(
+          /[&<>"']/g,
+          char =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#039;",
+            })[char]
+        );
       const api = async (path, options = {}) => {
-        const response = await fetch(`${base}${path}`, { ...options, headers: options.body instanceof FormData ? options.headers : { "Content-Type": "application/json", ...(options.headers || {}) } });
+        const response = await fetch(`${base}${path}`, {
+          ...options,
+          headers:
+            options.body instanceof FormData
+              ? options.headers
+              : {
+                  "Content-Type": "application/json",
+                  ...(options.headers || {}),
+                },
+        });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
+        if (!response.ok)
+          throw new Error(
+            data.error || "Não foi possível concluir a operação."
+          );
         return data;
       };
-      const lessons = () => state.courses.flatMap(course => course.modules.flatMap(module => module.lessons.map(item => ({ ...item, course, module }))));
-      const countCourseLessons = course => course.modules.reduce((total, module) => total + module.lessons.length, 0);
-      const initials = name => String(name || "U").split(" ").map(part => part[0]).slice(0, 2).join("").toUpperCase();
-      const csv = value => String(value || "").split(",").map(item => item.trim()).filter(Boolean);
+      const lessons = () =>
+        state.courses.flatMap(course =>
+          course.modules.flatMap(module =>
+            module.lessons.map(item => ({ ...item, course, module }))
+          )
+        );
+      const countCourseLessons = course =>
+        course.modules.reduce(
+          (total, module) => total + module.lessons.length,
+          0
+        );
+      const initials = name =>
+        String(name || "U")
+          .split(" ")
+          .map(part => part[0])
+          .slice(0, 2)
+          .join("")
+          .toUpperCase();
+      const csv = value =>
+        String(value || "")
+          .split(",")
+          .map(item => item.trim())
+          .filter(Boolean);
 
       function markdown(value) {
         const lines = esc(value).split("\n");
-        let html = "", list = "";
-        const close = () => { if (list) { html += `</${list}>`; list = ""; } };
+        let html = "",
+          list = "";
+        const close = () => {
+          if (list) {
+            html += `</${list}>`;
+            list = "";
+          }
+        };
         for (const line of lines) {
-          if (/^## /.test(line)) { close(); html += `<h2>${line.slice(3)}</h2>`; continue; }
-          if (/^### /.test(line)) { close(); html += `<h3>${line.slice(4)}</h3>`; continue; }
-          if (/^\d+\. /.test(line)) { if (list !== "ol") { close(); list = "ol"; html += "<ol>"; } html += `<li>${line.replace(/^\d+\. /,"")}</li>`; continue; }
-          if (/^- /.test(line)) { if (list !== "ul") { close(); list = "ul"; html += "<ul>"; } html += `<li>${line.slice(2)}</li>`; continue; }
+          if (/^## /.test(line)) {
+            close();
+            html += `<h2>${line.slice(3)}</h2>`;
+            continue;
+          }
+          if (/^### /.test(line)) {
+            close();
+            html += `<h3>${line.slice(4)}</h3>`;
+            continue;
+          }
+          if (/^\d+\. /.test(line)) {
+            if (list !== "ol") {
+              close();
+              list = "ol";
+              html += "<ol>";
+            }
+            html += `<li>${line.replace(/^\d+\. /, "")}</li>`;
+            continue;
+          }
+          if (/^- /.test(line)) {
+            if (list !== "ul") {
+              close();
+              list = "ul";
+              html += "<ul>";
+            }
+            html += `<li>${line.slice(2)}</li>`;
+            continue;
+          }
           close();
-          if (line.trim()) html += `<p>${line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/`(.+?)`/g,"<code>$1</code>")}</p>`;
+          if (line.trim())
+            html += `<p>${line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>")}</p>`;
         }
         close();
         return html;
@@ -224,25 +904,50 @@
 
       function setView(view) {
         state.view = view;
-        $$("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === view));
+        $$("[data-view]").forEach(button =>
+          button.classList.toggle("active", button.dataset.view === view)
+        );
         render();
       }
 
       function renderNav() {
-        $("#courseNav").innerHTML = state.courses.map(course => `<button class="nav course-nav ${state.courseId === course.id ? "active" : ""}" style="--course:${esc(course.color)}" data-course="${course.id}">${esc(course.title.replace(" completo",""))}</button>`).join("");
-        $$("[data-course]").forEach(button => button.onclick = () => { state.courseId = button.dataset.course; state.moduleId = ""; state.lessonId = ""; state.view = "course"; renderNav(); render(); });
-        $("#adminNav").classList.toggle("hidden", !state.user.isAdmin);
+        $("#courseNav").innerHTML = state.courses
+          .map(
+            course =>
+              `<button class="nav course-nav ${state.courseId === course.id ? "active" : ""}" style="--course:${esc(course.color)}" data-course="${course.id}">${esc(course.title.replace(" completo", ""))}</button>`
+          )
+          .join("");
+        $$("[data-course]").forEach(
+          button =>
+            (button.onclick = () => {
+              state.courseId = button.dataset.course;
+              state.moduleId = "";
+              state.lessonId = "";
+              state.view = "course";
+              renderNav();
+              render();
+            })
+        );
+        $("#adminNav").classList.toggle("hidden", !state.user.canAuthor);
+        $("#studentsNav").classList.toggle("hidden", !state.user.isAdmin);
       }
 
       function home() {
         const totalLessons = lessons().length;
-        return `<section class="hero"><h1>Aprenda o sistema completo, no momento em que precisar.</h1><p>Procedimentos por produto, perfil e fluxo de trabalho. Use a busca para localizar uma tela, tarefa, campo, código ou mensagem de erro.</p><div class="hero-stats"><span>${state.courses.length} treinamentos</span><span>${totalLessons} aulas detalhadas</span><span>${state.coverage.length} itens na matriz de cobertura</span><span>Consulta livre</span></div></section>
-          <div class="section-head"><div><h2>Treinamentos por produto</h2><p>Do Portal Tech à administração funcional.</p></div></div>
+        return `<section class="hero"><h1>Prepare-se para os próximos desafios do time.</h1><p>Acesse seus cursos, acompanhe as aulas e envie as avaliações. Sua jornada de formação fica reunida aqui.</p><div class="hero-stats"><span>${state.courses.length} treinamentos</span><span>${totalLessons} aulas detalhadas</span><span>${state.coverage.length} itens na matriz de cobertura</span><span>Acesso por matrícula</span></div></section>
+          <div class="section-head"><div><h2>Seus cursos e trilhas</h2><p>Conteúdos disponíveis para a sua preparação.</p></div></div>
           <div class="grid">${state.courses.map(courseCard).join("")}</div>
           <div class="section-head"><div><h2>Fluxos recomendados</h2><p>Sequências completas para executar o trabalho sem perder dependências.</p></div></div>
-          <div class="grid">${["flow-project-start","flow-discovery-design","flow-test-go-live"].map(id => {
-            const item = lessons().find(lesson => lesson.id === id); return item ? lessonCard(item) : "";
-          }).join("")}</div>`;
+          <div class="grid">${[
+            "flow-project-start",
+            "flow-discovery-design",
+            "flow-test-go-live",
+          ]
+            .map(id => {
+              const item = lessons().find(lesson => lesson.id === id);
+              return item ? lessonCard(item) : "";
+            })
+            .join("")}</div>`;
       }
 
       function courseCard(course) {
@@ -253,7 +958,7 @@
       }
 
       function catalog() {
-        return `<div class="section-head"><div><h2>Todos os treinamentos</h2><p>Catálogo completo em consulta livre.</p></div></div><div class="grid">${state.courses.map(courseCard).join("")}</div>`;
+        return `<div class="section-head"><div><h2>Todos os treinamentos</h2><p>Cursos liberados para você e conteúdos sob sua responsabilidade.</p></div></div><div class="grid">${state.courses.map(courseCard).join("")}</div>`;
       }
 
       function profiles() {
@@ -262,21 +967,32 @@
           ["Gestor de projetos", ["Gestor"]],
           ["Líder técnico", ["Líder técnico"]],
           ["Consultor", ["Consultor"]],
-          ["Key user e aprovador", ["Key user","Aprovador"]],
+          ["Key user e aprovador", ["Key user", "Aprovador"]],
           ["Usuário de consulta", ["Visualizador"]],
         ];
-        return `<div class="section-head"><div><h2>Trilhas por perfil</h2><p>As mesmas aulas são reutilizadas conforme as responsabilidades de cada pessoa.</p></div></div><div class="grid">${profiles.map(([name,tags]) => {
-          const total = lessons().filter(item => tags.some(tag => item.audiences.includes(tag))).length;
-          return `<article class="card" data-profile="${esc(tags[0])}"><span class="badge gray">Perfil</span><h3>${name}</h3><p>Conteúdos compatíveis com as tarefas e permissões deste perfil.</p><div class="meta">${total} aulas relacionadas</div></article>`;
-        }).join("")}</div>`;
+        return `<div class="section-head"><div><h2>Trilhas por perfil</h2><p>As mesmas aulas são reutilizadas conforme as responsabilidades de cada pessoa.</p></div></div><div class="grid">${profiles
+          .map(([name, tags]) => {
+            const total = lessons().filter(item =>
+              tags.some(tag => item.audiences.includes(tag))
+            ).length;
+            return `<article class="card" data-profile="${esc(tags[0])}"><span class="badge gray">Perfil</span><h3>${name}</h3><p>Conteúdos compatíveis com as tarefas e permissões deste perfil.</p><div class="meta">${total} aulas relacionadas</div></article>`;
+          })
+          .join("")}</div>`;
       }
 
       function courseView() {
-        const course = state.courses.find(item => item.id === state.courseId) || state.courses[0];
-        if (!course) return `<div class="empty">Nenhum treinamento publicado.</div>`;
+        const course =
+          state.courses.find(item => item.id === state.courseId) ||
+          state.courses[0];
+        if (!course)
+          return `<div class="empty">Nenhum treinamento publicado.</div>`;
         if (!state.courseId) state.courseId = course.id;
-        const currentModule = course.modules.find(item => item.id === state.moduleId) || course.modules[0];
-        const currentLesson = currentModule?.lessons.find(item => item.id === state.lessonId) || currentModule?.lessons[0];
+        const currentModule =
+          course.modules.find(item => item.id === state.moduleId) ||
+          course.modules[0];
+        const currentLesson =
+          currentModule?.lessons.find(item => item.id === state.lessonId) ||
+          currentModule?.lessons[0];
         if (currentModule) state.moduleId = currentModule.id;
         if (currentLesson) state.lessonId = currentLesson.id;
         return `<div class="section-head"><div><span class="badge" style="color:${esc(course.color)}">${esc(course.category)}</span><h2>${esc(course.title)}</h2><p>${esc(course.description)}</p></div></div>
@@ -286,53 +1002,442 @@
       }
 
       function lessonView(item, course) {
-        const routeLink = item.routePath ? `<a class="btn primary" href="${esc(item.routePath)}">Abrir tela relacionada ↗</a>` : "";
-        const edit = state.user.isAdmin ? `<button class="btn" data-edit-lesson="${item.id}">Editar conteúdo</button>` : "";
-        const video = item.videoUrl ? (/\.(mp4|webm|ogg)(\?|$)/i.test(item.videoUrl) || item.videoUrl.startsWith("/techeduca/api/files/") ? `<video class="video" controls src="${esc(item.videoUrl)}"></video>` : `<a class="btn" target="_blank" rel="noreferrer" href="${esc(item.videoUrl)}">Assistir ao vídeo ↗</a>`) : "";
-        return `<article class="panel lesson"><div class="toolbar">${routeLink}${edit}</div><div class="badges">${item.audiences.map(tag => `<span class="badge">${esc(tag)}</span>`).join("")}<span class="badge gray">Revisão ${esc(item.versionLabel || "não informada")}</span></div><h1>${esc(item.title)}</h1><p class="lesson-summary">${esc(item.description)}</p>${video}<div class="article">${markdown(item.content)}</div>${item.files.length ? `<div class="materials">${item.files.map(file => `<a class="btn" href="${esc(file.url)}">${esc(file.name)} ↓</a>`).join("")}</div>` : ""}</article>`;
+        const routeLink = item.routePath
+          ? `<a class="btn primary" href="${esc(item.routePath)}">Abrir tela relacionada ↗</a>`
+          : "";
+        const edit = item.course.canEdit
+          ? `<button class="btn" data-edit-lesson="${item.id}">Editar conteúdo</button>`
+          : "";
+        const video = item.videoUrl
+          ? /\.(mp4|webm|ogg)(\?|$)/i.test(item.videoUrl) ||
+            item.videoUrl.startsWith("/techeduca/api/files/")
+            ? `<video class="video" controls controlsList="nodownload noremoteplayback" disablePictureInPicture oncontextmenu="return false" src="${esc(item.videoUrl)}"></video>`
+            : `<a class="btn" target="_blank" rel="noreferrer" href="${esc(item.videoUrl)}">Assistir ao vídeo ↗</a>`
+          : "";
+        return `<article class="panel lesson"><div class="toolbar">${routeLink}${edit}</div><div class="badges">${item.audiences.map(tag => `<span class="badge">${esc(tag)}</span>`).join("")}<span class="badge gray">Revisão ${esc(item.versionLabel || "não informada")}</span></div><h1>${esc(item.title)}</h1><p class="lesson-summary">${esc(item.description)}</p>${video}${assessmentView(item)}<div class="article">${markdown(item.content)}</div>${item.files.length ? `<div class="materials">${item.files.map(file => `<a class="btn" href="${esc(file.url)}">${esc(file.name)} ↓</a>`).join("")}</div>` : ""}</article>`;
       }
 
       function searchView() {
         const term = state.search.trim().toLocaleLowerCase("pt-BR");
-        const results = lessons().filter(item => [item.title,item.description,item.content,item.routePath,item.keywords.join(" "),item.audiences.join(" "),item.course.title,item.module.title].join(" ").toLocaleLowerCase("pt-BR").includes(term));
+        const results = lessons().filter(item =>
+          [
+            item.title,
+            item.description,
+            item.content,
+            item.routePath,
+            item.keywords.join(" "),
+            item.audiences.join(" "),
+            item.course.title,
+            item.module.title,
+          ]
+            .join(" ")
+            .toLocaleLowerCase("pt-BR")
+            .includes(term)
+        );
         return `<div class="section-head"><div><h2>Resultados para “${esc(state.search)}”</h2><p>${results.length} aula(s) encontrada(s).</p></div></div><div class="search-results">${results.map(item => `<article class="result" data-open-lesson="${item.id}"><div class="badges"><span class="badge gray">${esc(item.course.title)}</span><span class="badge gray">${esc(item.routePath || "Ajuda geral")}</span></div><h3>${esc(item.title)}</h3><p>${esc(item.description)}</p></article>`).join("") || `<div class="empty">Nenhum resultado. Tente o nome da tela, uma ação, um campo ou a mensagem de erro.</div>`}</div>`;
       }
 
       function adminView() {
         return `<div class="section-head"><div><h2>Administração de conteúdos</h2><p>Crie cursos, módulos e aulas; edite as aulas existentes diretamente na árvore.</p></div></div>
-          <div class="admin-grid"><div class="panel"><h3>Novo curso</h3><form id="courseForm" class="form"><div class="field full"><label>Nome *</label><input name="title" required /></div><div class="field"><label>Categoria</label><input name="category" value="Treinamento" /></div><div class="field"><label>Cor</label><input name="color" type="color" value="#2563eb" /></div><div class="field full"><label>Descrição</label><textarea name="description"></textarea></div><div class="field full"><label><input name="published" type="checkbox" style="width:auto;min-height:0" checked /> Publicado</label></div><div class="field full"><button class="btn primary">Criar curso</button></div></form>
-          <hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Novo módulo</h3><form id="moduleForm" class="form"><div class="field full"><label>Curso</label><select name="courseId">${state.courses.map(course => `<option value="${course.id}">${esc(course.title)}</option>`).join("")}</select></div><div class="field full"><label>Nome *</label><input name="title" required /></div><div class="field full"><label>Descrição</label><textarea name="description"></textarea></div><div class="field full"><button class="btn primary">Criar módulo</button></div></form>
+          <div class="admin-grid"><div class="panel"><h3>Novo curso</h3><form id="courseForm" class="form"><div class="field full"><label>Nome *</label><input name="title" required /></div><div class="field"><label>Módulos SAP sob responsabilidade (separados por vírgula)</label><input name="ownerModules" placeholder="FI, CO" value="${esc((state.user.teamFronts || []).join(", "))}" /></div><div class="field"><label>Categoria</label><input name="category" value="Treinamento" /></div><div class="field"><label>Cor</label><input name="color" type="color" value="#2563eb" /></div><div class="field full"><label>Descrição</label><textarea name="description"></textarea></div><div class="field full"><label><input name="published" type="checkbox" style="width:auto;min-height:0" checked /> Publicado</label></div><div class="field full"><button class="btn primary">Criar curso</button></div></form>
+          <hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Novo módulo</h3><form id="moduleForm" class="form"><div class="field full"><label>Curso</label><select name="courseId">${state.courses
+            .filter(course => course.canEdit)
+            .map(
+              course =>
+                `<option value="${course.id}">${esc(course.title)}</option>`
+            )
+            .join(
+              ""
+            )}</select></div><div class="field full"><label>Nome *</label><input name="title" required /></div><div class="field full"><label>Descrição</label><textarea name="description"></textarea></div><div class="field full"><button class="btn primary">Criar módulo</button></div></form>
           <hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Nova aula</h3><p style="color:var(--muted)">Escolha o módulo na árvore e use Nova aula.</p></div>
-          <div class="panel"><h3>Estrutura editorial</h3>${state.courses.map(course => `<div class="tree-course"><div class="toolbar" style="justify-content:space-between;padding:10px 12px;background:#f8fafc"><button type="button" class="btn small" data-open-course="${course.id}">${esc(course.title)}</button><div class="toolbar"><span class="badge gray">${course.published ? "Publicado" : "Rascunho"}</span><button class="btn small" data-edit-course="${course.id}">Editar curso</button></div></div>${course.modules.map(module => `<div class="tree-module"><div class="toolbar" style="justify-content:space-between"><strong>${esc(module.title)}</strong><div class="toolbar"><button class="btn small" data-move-module="${course.id}|${module.id}|up" title="Mover módulo para cima">↑</button><button class="btn small" data-move-module="${course.id}|${module.id}|down" title="Mover módulo para baixo">↓</button><button class="btn small" data-new-lesson="${course.id}|${module.id}">Nova aula</button></div></div>${module.lessons.map(item => `<div class="tree-lesson"><span>${esc(item.title)} ${item.published ? "" : "· Rascunho"}</span><div class="toolbar"><button class="btn small" data-move-lesson="${course.id}|${module.id}|${item.id}|up" title="Mover aula para cima">↑</button><button class="btn small" data-move-lesson="${course.id}|${module.id}|${item.id}|down" title="Mover aula para baixo">↓</button><button class="btn small" data-edit-lesson="${item.id}">Editar</button></div></div>`).join("")}</div>`).join("")}</div>`).join("")}<div class="section-head"><div><h3>Histórico editorial</h3><p>Últimas alterações publicadas no portal.</p></div></div>${state.history.length ? state.history.slice(0,20).map(item => `<div class="tree-lesson"><span><strong>${esc(item.actorName)}</strong> · ${esc(item.action)} · ${esc(item.entityType)}</span><small>${new Date(item.createdAt).toLocaleString("pt-BR")}</small></div>`).join("") : `<div class="empty">O histórico aparecerá após a primeira edição persistida.</div>`}</div></div>`;
+          <div class="panel"><h3>Estrutura editorial</h3>${state.courses
+            .filter(course => course.canEdit)
+            .map(
+              course =>
+                `<div class="tree-course"><div class="toolbar" style="justify-content:space-between;padding:10px 12px;background:#f8fafc"><button type="button" class="btn small" data-open-course="${course.id}">${esc(course.title)}</button><div class="toolbar"><span class="badge gray">${course.published ? "Publicado" : "Rascunho"}</span><button class="btn small" data-edit-course="${course.id}">Editar curso</button></div></div>${course.modules.map(module => `<div class="tree-module"><div class="toolbar" style="justify-content:space-between"><strong>${esc(module.title)}</strong><div class="toolbar"><button class="btn small" data-move-module="${course.id}|${module.id}|up" title="Mover módulo para cima">↑</button><button class="btn small" data-move-module="${course.id}|${module.id}|down" title="Mover módulo para baixo">↓</button><button class="btn small" data-new-lesson="${course.id}|${module.id}">Nova aula</button></div></div>${module.lessons.map(item => `<div class="tree-lesson"><span>${esc(item.title)} ${item.published ? "" : "· Rascunho"}</span><div class="toolbar"><button class="btn small" data-move-lesson="${course.id}|${module.id}|${item.id}|up" title="Mover aula para cima">↑</button><button class="btn small" data-move-lesson="${course.id}|${module.id}|${item.id}|down" title="Mover aula para baixo">↓</button><button class="btn small" data-edit-lesson="${item.id}">Editar</button></div></div>`).join("")}</div>`).join("")}</div>`
+            )
+            .join(
+              ""
+            )}<div class="section-head"><div><h3>Histórico editorial</h3><p>Últimas alterações publicadas no portal.</p></div></div>${
+            state.history.length
+              ? state.history
+                  .slice(0, 20)
+                  .map(
+                    item =>
+                      `<div class="tree-lesson"><span><strong>${esc(item.actorName)}</strong> · ${esc(item.action)} · ${esc(item.entityType)}</span><small>${new Date(item.createdAt).toLocaleString("pt-BR")}</small></div>`
+                  )
+                  .join("")
+              : `<div class="empty">O histórico aparecerá após a primeira edição persistida.</div>`
+          }</div></div>`;
       }
 
       function coverageView() {
         return `<div class="section-head"><div><h2>Matriz de cobertura</h2><p>${state.coverage.length} aulas mapeadas por produto, módulo, rota, perfil e palavra-chave.</p></div><button class="btn" id="downloadCoverage">Baixar CSV</button></div><div class="panel coverage"><table><thead><tr><th>Curso</th><th>Módulo</th><th>Aula</th><th>Rota</th><th>Públicos</th></tr></thead><tbody>${state.coverage.map(row => `<tr><td>${esc(row.course)}</td><td>${esc(row.module)}</td><td>${esc(row.lesson)}</td><td>${esc(row.route)}</td><td>${esc(row.audiences.join(", "))}</td></tr>`).join("")}</tbody></table></div>`;
       }
 
+      function assessmentView(item) {
+        const records = state.learning.filter(r => r.lessonId === item.id);
+        const progress = records.find(
+          r => r.userId === state.user.id && !r.kind
+        );
+        return `<section class="materials"><h3>Aprendizado e avaliação</h3><p>${progress?.completed ? "✓ Vídeo assistido" : item.videoUrl ? "O vídeo será concluído após 90% de tempo assistido." : "Vídeo ainda não publicado."}</p>${records
+          .filter(r => r.kind)
+          .map(
+            r =>
+              `<p><a class="btn" href="${base}/api/learning/files/${encodeURIComponent(r.id)}">${r.kind === "exam" ? "Prova" : "Resposta"}: ${esc(r.name)}</a> · ${esc(r.userName)}</p>`
+          )
+          .join(
+            ""
+          )}<form id="assessmentForm" data-id="${esc(item.id)}" class="form"><div class="field"><label>Arquivo da avaliação (até 10 MB)</label><input required type="file" name="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.txt"></div><div class="field"><label>Tipo</label><select name="kind"><option value="submission">Enviar minha resposta</option>${state.user.isAdmin ? '<option value="exam">Publicar prova para os alunos</option>' : ""}</select></div><button class="btn primary">Enviar arquivo</button><p id="assessmentStatus" role="status"></p></form></section>`;
+      }
+      function learningView() {
+        const own = state.learning.filter(
+          r => r.userId === state.user.id && !r.kind
+        );
+        const videos = lessons().filter(l => l.videoUrl);
+        const completed = own.filter(r => r.completed).length;
+        const people = [
+          ...new Set(
+            state.learning.filter(r => r.kind !== "exam").map(r => r.userId)
+          ),
+        ];
+        return `<section class="hero"><h1>Meu aprendizado</h1><p>Preparação do time · Cursos liberados para você</p><div class="hero-stats"><span>${completed} de ${videos.length} vídeos assistidos</span><span>${state.learning.filter(r => r.userId === state.user.id && r.kind === "submission").length} respostas enviadas</span></div></section><div class="grid">${state.courses
+          .map(courseCard)
+          .join("")}</div><h2>Meu progresso</h2>${
+          videos
+            .map(l => {
+              const r = own.find(r => r.lessonId === l.id);
+              return `<button class="lesson-link" data-open-lesson="${esc(l.id)}">${esc(l.title)} · ${r?.completed ? "Concluído" : Math.min(100, Math.floor(((r?.seconds || 0) / (r?.duration || 1)) * 100)) + "%"}</button>`;
+            })
+            .join("") || "<p>Nenhum vídeo publicado ainda.</p>"
+        }${
+          state.user.isAdmin
+            ? `<h2>Controle de alunos</h2><p><button class="btn primary" data-view-students>Gerenciar alunos e matrículas</button> Conclusão indica tempo assistido; respostas aguardam revisão da equipe.</p><div class="panel">${
+                people
+                  .map(id => {
+                    const rows = state.learning.filter(r => r.userId === id);
+                    return `<p><strong>${esc(rows[0].userName)}</strong> · ${rows.filter(r => !r.kind && r.completed).length} vídeos assistidos · ${rows.filter(r => r.kind === "submission").length} respostas enviadas</p>`;
+                  })
+                  .join("") || "<p>Nenhuma atividade registrada.</p>"
+              }</div>`
+            : ""
+        }`;
+      }
+      async function refreshStudents() {
+        state.students = (await api("/api/students")).students;
+      }
+      function studentsView() {
+        const editing = state.students.find(
+          s => s.userId === state.editingStudentId
+        );
+        const activeCount = state.students.filter(
+          s => s.active && s.accountActive
+        ).length;
+        return `<section class="hero"><h1>Preparação do time</h1><p>Cadastre alunos, libere os cursos e acompanhe a evolução de cada pessoa.</p><div class="hero-stats"><span>${state.students.length} alunos cadastrados</span><span>${activeCount} cadastros ativos</span><span>${state.students.reduce((n, s) => n + s.enrollments.length, 0)} matrículas</span></div></section>
+        <div class="admin-grid"><section class="panel"><h2>${editing ? "Editar matrículas" : "Cadastrar aluno"}</h2><p>O aluno entra pelo Portal Tech usando o código enviado ao próprio e-mail. Contas existentes mantêm suas permissões no portal.</p>
+        <form id="studentForm" class="form"><div class="field full"><label for="studentName">Nome</label><input id="studentName" name="name" required minlength="2" maxlength="160" value="${esc(editing?.name || "")}" ${editing ? "readonly" : ""}></div><div class="field full"><label for="studentEmail">E-mail de acesso</label><input id="studentEmail" type="email" name="email" required maxlength="254" value="${esc(editing?.email || "")}" ${editing ? "readonly" : ""}></div>
+        <div class="field full"><label><input name="active" type="checkbox" style="width:auto;min-height:0" ${!editing || editing.active ? "checked" : ""}> Acesso ativo ao TechEduca</label></div>
+        <div class="field full"><h3>Cursos liberados</h3><p>Somente cursos matriculados ficam disponíveis ao aluno. Deixe a validade vazia para acesso sem prazo. Rascunhos ficam ocultos até a publicação.</p>${
+          state.courses
+            .map(c => {
+              const enrollment = editing?.enrollments.find(
+                e => e.courseId === c.id
+              );
+              return `<div style="border-bottom:1px solid var(--line);padding:12px 0"><label><input type="checkbox" name="course" value="${esc(c.id)}" style="width:auto;min-height:0" ${enrollment ? "checked" : ""}> ${esc(c.title)} ${c.published ? "" : "· Rascunho"}</label><label style="display:block;margin-top:8px">Validade (opcional)<input type="date" data-expiry="${esc(c.id)}" aria-label="Validade de ${esc(c.title)}" value="${enrollment?.expiresAt ? esc(enrollment.expiresAt.slice(0, 10)) : ""}"></label></div>`;
+            })
+            .join("") || "<p>Crie um curso antes de matricular alunos.</p>"
+        }</div>
+        <div class="field full toolbar"><button class="btn primary">${editing ? "Salvar matrículas" : "Cadastrar e liberar acesso"}</button>${editing ? '<button type="button" class="btn" id="cancelStudentEdit">Cancelar edição</button>' : ""}</div></form><p id="studentStatus" role="status" aria-live="polite"></p><p>Um cadastro sem cursos fica ativo, mas não libera conteúdo. Bloquear aqui encerra o acesso à formação e preserva o histórico.</p></section>
+        <section class="panel"><div class="toolbar" style="justify-content:space-between"><h2>Alunos e evolução</h2><button class="btn small" id="refreshStudents">Atualizar</button></div><div class="field"><label for="studentSearch">Buscar por nome ou e-mail</label><input type="search" id="studentSearch" placeholder="Nome ou e-mail"></div><p id="rosterStatus" role="status"></p><div id="studentRoster">${state.students.map(studentCard).join("") || '<div class="empty">Nenhum aluno cadastrado. Cadastre a primeira pessoa ao lado.</div>'}</div></section></div>`;
+      }
+      function studentCard(student) {
+        const rows = state.learning.filter(r => r.userId === student.userId);
+        const enrollments = student.enrollments
+          .map(e => {
+            const course = state.courses.find(c => c.id === e.courseId);
+            const lessons = course?.modules.flatMap(m => m.lessons) || [];
+            const ids = new Set(lessons.map(l => l.id));
+            const videos = lessons.filter(l => l.published && l.videoUrl);
+            const completed = rows.filter(
+              r =>
+                !r.kind && r.completed && videos.some(l => l.id === r.lessonId)
+            ).length;
+            const expired =
+              e.expiresAt && Date.parse(e.expiresAt) <= Date.now();
+            return `<div style="margin:12px 0"><strong>${esc(course?.title || "Curso indisponível")}</strong><p>${completed}/${videos.length} vídeos assistidos · ${expired ? "Matrícula expirada" : e.expiresAt ? "Até " + new Date(e.expiresAt).toLocaleDateString("pt-BR") : "Sem prazo"} ${course && !course.published ? "· Rascunho" : ""}</p><progress max="${videos.length || 1}" value="${completed}" aria-label="Progresso de ${esc(student.name)} em ${esc(course?.title)}" style="width:100%"></progress>${rows
+              .filter(r => r.kind === "submission" && ids.has(r.lessonId))
+              .map(
+                r =>
+                  `<p><a href="${base}/api/learning/files/${encodeURIComponent(r.id)}">Resposta: ${esc(r.name)}</a> · ${esc(lessons.find(l => l.id === r.lessonId)?.title)}</p>`
+              )
+              .join("")}</div>`;
+          })
+          .join("");
+        return `<article data-student-card data-search="${esc((student.name + " " + student.email).toLocaleLowerCase("pt-BR"))}" style="padding:18px 0;border-bottom:1px solid var(--line)"><div class="toolbar" style="justify-content:space-between"><strong>${esc(student.name)}</strong><span class="badge ${student.active && student.accountActive ? "" : "gray"}">${!student.accountActive ? "Conta inativa no portal" : student.active ? "Ativo" : "Bloqueado"}</span></div><p>${esc(student.email)}</p>${enrollments || "<p>Sem cursos liberados.</p>"}${!rows.length ? "<p>Ainda não iniciou a formação.</p>" : ""}<div class="toolbar"><button class="btn small" data-edit-student="${esc(student.userId)}">Editar matrículas</button><button class="btn small" data-toggle-student="${esc(student.userId)}">${student.active ? "Bloquear acesso" : "Reativar acesso"}</button><button class="btn small" data-copy-student="${esc(student.userId)}">Copiar orientações de acesso</button></div></article>`;
+      }
+      function bindStudents() {
+        if (!state.user.isAdmin) return;
+        $("[data-view-students]")?.addEventListener("click", () => {
+          state.search = "";
+          setView("students");
+        });
+        $("#studentSearch")?.addEventListener("input", event => {
+          const term = event.target.value.trim().toLocaleLowerCase("pt-BR");
+          $$("[data-student-card]").forEach(card => {
+            card.hidden = !card.dataset.search.includes(term);
+          });
+        });
+        $("#cancelStudentEdit")?.addEventListener("click", () => {
+          state.editingStudentId = "";
+          render();
+        });
+        $$("[data-edit-student]").forEach(
+          button =>
+            (button.onclick = () => {
+              state.editingStudentId = button.dataset.editStudent;
+              render();
+              $("#studentName").focus();
+            })
+        );
+        $("#refreshStudents")?.addEventListener("click", async () => {
+          try {
+            await Promise.all([refreshStudents(), refreshLearning()]);
+            render();
+          } catch (error) {
+            $("#rosterStatus").textContent = error.message;
+          }
+        });
+        $$("[data-copy-student]").forEach(
+          button =>
+            (button.onclick = async () => {
+              const student = state.students.find(
+                s => s.userId === button.dataset.copyStudent
+              );
+              try {
+                await navigator.clipboard.writeText(
+                  `Olá, ${student.name}! Seu acesso à preparação do time está cadastrado. Entre no Portal Tech (${location.origin}/) com o e-mail ${student.email} e solicite seu código de acesso. Depois abra TechEduca ou acesse ${location.origin}/techeduca/. Seus cursos aparecerão em Meu aprendizado.`
+                );
+                $("#rosterStatus").textContent =
+                  "Orientações copiadas. Compartilhe com o aluno.";
+              } catch {
+                $("#rosterStatus").textContent =
+                  `Acesso pelo Portal Tech: ${location.origin}/ — use o e-mail cadastrado e depois abra TechEduca.`;
+              }
+            })
+        );
+        $$("[data-toggle-student]").forEach(
+          button =>
+            (button.onclick = async () => {
+              const student = state.students.find(
+                s => s.userId === button.dataset.toggleStudent
+              );
+              button.disabled = true;
+              try {
+                const data = await api(
+                  `/api/students/${encodeURIComponent(student.userId)}`,
+                  {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                      active: !student.active,
+                      enrollments: student.enrollments,
+                    }),
+                  }
+                );
+                state.students = data.students;
+                render();
+              } catch (error) {
+                $("#rosterStatus").textContent = error.message;
+                button.disabled = false;
+              }
+            })
+        );
+        const form = $("#studentForm");
+        if (!form) return;
+        form.onsubmit = async event => {
+          event.preventDefault();
+          const submit = form.querySelector("button");
+          submit.disabled = true;
+          const data = new FormData(form);
+          const enrollments = data.getAll("course").map(courseId => {
+            const input = $$("[data-expiry]").find(
+              node => node.dataset.expiry === courseId
+            );
+            return {
+              courseId,
+              expiresAt: input.value ? input.value + "T23:59:59-03:00" : null,
+            };
+          });
+          const payload = {
+            active: data.has("active"),
+            enrollments,
+            ...(!state.editingStudentId
+              ? { name: data.get("name"), email: data.get("email") }
+              : {}),
+          };
+          try {
+            const result = await api(
+              state.editingStudentId
+                ? `/api/students/${encodeURIComponent(state.editingStudentId)}`
+                : "/api/students",
+              {
+                method: state.editingStudentId ? "PATCH" : "POST",
+                body: JSON.stringify(payload),
+              }
+            );
+            state.students = result.students;
+            state.editingStudentId = "";
+            render();
+            $("#studentStatus").textContent =
+              "Acesso e matrículas salvos. Use Copiar orientações de acesso para orientar o aluno.";
+          } catch (error) {
+            $("#studentStatus").textContent = error.message;
+            submit.disabled = false;
+          }
+        };
+      }
+
+      async function refreshLearning() {
+        state.learning = (await api("/api/learning")).records;
+      }
+      function bindLearning() {
+        const form = $("#assessmentForm");
+        if (form)
+          form.onsubmit = async event => {
+            event.preventDefault();
+            const button = form.querySelector("button");
+            button.disabled = true;
+            try {
+              await api(
+                `/api/learning/${encodeURIComponent(form.dataset.id)}/files`,
+                { method: "POST", body: new FormData(form) }
+              );
+              await refreshLearning();
+              render();
+            } catch (error) {
+              $("#assessmentStatus").textContent = error.message;
+              button.disabled = false;
+            }
+          };
+        const video = $("video.video");
+        const trackedLessonId = state.lessonId;
+        if (!video) return;
+        let last = 0,
+          pending = 0,
+          saving = false;
+        const flush = async () => {
+          if (saving || pending < 1 || !Number.isFinite(video.duration)) return;
+          saving = true;
+          const seconds = Math.min(15, pending);
+          pending -= seconds;
+          try {
+            const { record } = await api(
+              `/api/learning/${encodeURIComponent(trackedLessonId)}/progress`,
+              {
+                method: "POST",
+                body: JSON.stringify({ seconds, duration: video.duration }),
+              }
+            );
+            state.learning = [
+              ...state.learning.filter(r => r.id !== record.id),
+              record,
+            ];
+          } catch {
+            pending += seconds;
+          } finally {
+            saving = false;
+          }
+        };
+        video.onplay = () => {
+          last = video.currentTime;
+        };
+        video.onseeking = () => {
+          last = video.currentTime;
+        };
+        video.ontimeupdate = () => {
+          const delta = video.currentTime - last;
+          last = video.currentTime;
+          if (!video.seeking && !video.paused && delta > 0 && delta < 2)
+            pending += delta;
+          if (pending >= 10) void flush();
+        };
+        video.onpause = flush;
+        video.onended = flush;
+      }
+
       function render() {
         let html;
         if (state.search) html = searchView();
+        else if (state.view === "learning") html = learningView();
+        else if (state.view === "students" && state.user.isAdmin)
+          html = studentsView();
         else if (state.view === "catalog") html = catalog();
         else if (state.view === "profiles") html = profiles();
         else if (state.view === "course") html = courseView();
         else if (state.view === "admin") html = adminView();
         else if (state.view === "coverage") html = coverageView();
-        else html = home();
+        else
+          html =
+            !state.courses.length && !state.user.canAuthor
+              ? `<section class="hero"><h1>Seu espaço de preparação</h1><p>Você ainda não tem cursos liberados ou suas matrículas expiraram. Procure o responsável pela formação.</p></section>`
+              : home();
         $("#content").innerHTML = html;
         bind();
       }
 
       function bind() {
-        $$("[data-open-course]").forEach(node => node.onclick = () => { state.courseId = node.dataset.openCourse; state.view = "course"; state.search = ""; $("#globalSearch").value = ""; renderNav(); render(); });
-        $$("[data-open-lesson]").forEach(node => node.onclick = () => openLesson(node.dataset.openLesson));
-        $$("[data-profile]").forEach(node => node.onclick = () => { state.search = node.dataset.profile; $("#globalSearch").value = state.search; render(); });
-        $$("[data-lesson]").forEach(node => node.onclick = () => { state.moduleId = node.dataset.module; state.lessonId = node.dataset.lesson; render(); });
-        $$("[data-edit-lesson]").forEach(node => node.onclick = () => openEditor(node.dataset.editLesson));
-        $$("[data-new-lesson]").forEach(node => node.onclick = () => openNewEditor(...node.dataset.newLesson.split("|")));
-        $$("[data-edit-course]").forEach(node => node.onclick = () => editCourse(node.dataset.editCourse));
-        $$("[data-move-module]").forEach(node => node.onclick = () => moveModule(...node.dataset.moveModule.split("|")));
-        $$("[data-move-lesson]").forEach(node => node.onclick = () => moveLesson(...node.dataset.moveLesson.split("|")));
+        bindLearning();
+        bindStudents();
+        $$("[data-open-course]").forEach(
+          node =>
+            (node.onclick = () => {
+              state.courseId = node.dataset.openCourse;
+              state.view = "course";
+              state.search = "";
+              $("#globalSearch").value = "";
+              renderNav();
+              render();
+            })
+        );
+        $$("[data-open-lesson]").forEach(
+          node => (node.onclick = () => openLesson(node.dataset.openLesson))
+        );
+        $$("[data-profile]").forEach(
+          node =>
+            (node.onclick = () => {
+              state.search = node.dataset.profile;
+              $("#globalSearch").value = state.search;
+              render();
+            })
+        );
+        $$("[data-lesson]").forEach(
+          node =>
+            (node.onclick = () => {
+              state.moduleId = node.dataset.module;
+              state.lessonId = node.dataset.lesson;
+              render();
+            })
+        );
+        $$("[data-edit-lesson]").forEach(
+          node => (node.onclick = () => openEditor(node.dataset.editLesson))
+        );
+        $$("[data-new-lesson]").forEach(
+          node =>
+            (node.onclick = () =>
+              openNewEditor(...node.dataset.newLesson.split("|")))
+        );
+        $$("[data-edit-course]").forEach(
+          node => (node.onclick = () => editCourse(node.dataset.editCourse))
+        );
+        $$("[data-move-module]").forEach(
+          node =>
+            (node.onclick = () =>
+              moveModule(...node.dataset.moveModule.split("|")))
+        );
+        $$("[data-move-lesson]").forEach(
+          node =>
+            (node.onclick = () =>
+              moveLesson(...node.dataset.moveLesson.split("|")))
+        );
         $("#courseForm")?.addEventListener("submit", createCourse);
         $("#moduleForm")?.addEventListener("submit", createModule);
         $("#downloadCoverage")?.addEventListener("click", downloadCoverage);
@@ -341,51 +1446,238 @@
       function openLesson(id) {
         const item = lessons().find(lesson => lesson.id === id);
         if (!item) return;
-        state.courseId = item.course.id; state.moduleId = item.module.id; state.lessonId = item.id; state.view = "course"; state.search = "";
-        $("#globalSearch").value = ""; $("#clearSearch").classList.add("hidden"); renderNav(); render();
+        state.courseId = item.course.id;
+        state.moduleId = item.module.id;
+        state.lessonId = item.id;
+        state.view = "course";
+        state.search = "";
+        $("#globalSearch").value = "";
+        $("#clearSearch").classList.add("hidden");
+        renderNav();
+        render();
       }
 
       function openNewEditor(courseId, moduleId) {
-        const form = $("#editorForm"); form.reset(); form.courseId.value = courseId; form.moduleId.value = moduleId; form.lessonId.value = ""; form.versionLabel.value = "2026.07"; form.published.checked = true; $("#editorTitle").textContent = "Nova aula"; $("#editorFiles").innerHTML = ""; $("#editorModal").classList.remove("hidden");
+        const form = $("#editorForm");
+        form.reset();
+        form.courseId.value = courseId;
+        form.moduleId.value = moduleId;
+        form.lessonId.value = "";
+        form.versionLabel.value = "2026.07";
+        form.published.checked = true;
+        $("#editorTitle").textContent = "Nova aula";
+        $("#editorFiles").innerHTML = "";
+        $("#editorModal").classList.remove("hidden");
       }
       function openEditor(id) {
-        const item = lessons().find(lesson => lesson.id === id); if (!item) return;
-        const form = $("#editorForm"); form.courseId.value = item.course.id; form.moduleId.value = item.module.id; form.lessonId.value = item.id; form.title.value = item.title; form.description.value = item.description; form.content.value = item.content; form.routePath.value = item.routePath; form.versionLabel.value = item.versionLabel; form.keywords.value = item.keywords.join(", "); form.audiences.value = item.audiences.join(", "); form.videoUrl.value = item.videoUrl; form.videoName.value = item.videoName; form.published.checked = item.published; $("#editorTitle").textContent = "Editar aula"; $("#editorFiles").innerHTML = item.files.length ? `<label>Materiais atuais</label>${item.files.map(file => `<div class="toolbar"><a class="btn small" href="${file.url}">${esc(file.name)}</a><button type="button" class="btn danger small" data-delete-file="${file.id}">Remover</button></div>`).join("")}` : ""; $$("[data-delete-file]").forEach(button => button.onclick = () => deleteFile(button.dataset.deleteFile)); $("#editorModal").classList.remove("hidden");
+        const item = lessons().find(lesson => lesson.id === id);
+        if (!item) return;
+        const form = $("#editorForm");
+        form.courseId.value = item.course.id;
+        form.moduleId.value = item.module.id;
+        form.lessonId.value = item.id;
+        form.title.value = item.title;
+        form.description.value = item.description;
+        form.content.value = item.content;
+        form.routePath.value = item.routePath;
+        form.versionLabel.value = item.versionLabel;
+        form.keywords.value = item.keywords.join(", ");
+        form.audiences.value = item.audiences.join(", ");
+        form.videoUrl.value = item.videoUrl;
+        form.videoName.value = item.videoName;
+        form.published.checked = item.published;
+        $("#editorTitle").textContent = "Editar aula";
+        $("#editorFiles").innerHTML = item.files.length
+          ? `<label>Materiais atuais</label>${item.files.map(file => `<div class="toolbar"><a class="btn small" href="${file.url}">${esc(file.name)}</a><button type="button" class="btn danger small" data-delete-file="${file.id}">Remover</button></div>`).join("")}`
+          : "";
+        $$("[data-delete-file]").forEach(
+          button =>
+            (button.onclick = () => deleteFile(button.dataset.deleteFile))
+        );
+        $("#editorModal").classList.remove("hidden");
       }
 
       async function saveEditor(event) {
-        event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); data.set("published", String(form.published.checked)); data.set("keywords", JSON.stringify(csv(form.keywords.value))); data.set("audiences", JSON.stringify(csv(form.audiences.value)));
-        const path = form.lessonId.value ? `/api/courses/${form.courseId.value}/modules/${form.moduleId.value}/lessons/${form.lessonId.value}` : `/api/courses/${form.courseId.value}/modules/${form.moduleId.value}/lessons`;
-        try { await api(path, { method: form.lessonId.value ? "PATCH" : "POST", body: data }); $("#editorModal").classList.add("hidden"); await loadCatalog(); state.view = "admin"; render(); }
-        catch (error) { $("#editorMsg").innerHTML = `<div class="notice error">${esc(error.message)}</div>`; }
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        data.set("published", String(form.published.checked));
+        data.set("keywords", JSON.stringify(csv(form.keywords.value)));
+        data.set("audiences", JSON.stringify(csv(form.audiences.value)));
+        const path = form.lessonId.value
+          ? `/api/courses/${form.courseId.value}/modules/${form.moduleId.value}/lessons/${form.lessonId.value}`
+          : `/api/courses/${form.courseId.value}/modules/${form.moduleId.value}/lessons`;
+        try {
+          await api(path, {
+            method: form.lessonId.value ? "PATCH" : "POST",
+            body: data,
+          });
+          $("#editorModal").classList.add("hidden");
+          await loadCatalog();
+          state.view = "admin";
+          render();
+        } catch (error) {
+          $("#editorMsg").innerHTML =
+            `<div class="notice error">${esc(error.message)}</div>`;
+        }
       }
-      async function deleteFile(id) { if (!confirm("Remover este material da aula?")) return; await api(`/api/files/${id}`, { method: "DELETE" }); await loadCatalog(); $("#editorModal").classList.add("hidden"); render(); }
-      async function createCourse(event) { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); data.published = form.published.checked; await api("/api/courses", { method: "POST", body: JSON.stringify(data) }); await loadCatalog(); render(); }
-      async function createModule(event) { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); await api(`/api/courses/${data.courseId}/modules`, { method: "POST", body: JSON.stringify(data) }); await loadCatalog(); render(); }
-      async function editCourse(id) { const course = state.courses.find(item => item.id === id); if (!course) return; const title = prompt("Nome do curso", course.title); if (title === null || !title.trim()) return; const description = prompt("Descrição", course.description); if (description === null) return; const published = confirm("OK para manter o curso publicado. Cancelar para deixá-lo como rascunho."); await api(`/api/courses/${id}`, { method: "PATCH", body: JSON.stringify({ ...course, title: title.trim(), description, published }) }); await loadCatalog(); render(); }
-      async function moveModule(courseId, moduleId, direction) { await api(`/api/courses/${courseId}/modules/${moduleId}/move`, { method: "POST", body: JSON.stringify({ direction }) }); await loadCatalog(); render(); }
-      async function moveLesson(courseId, moduleId, lessonId, direction) { await api(`/api/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/move`, { method: "POST", body: JSON.stringify({ direction }) }); await loadCatalog(); render(); }
-      function downloadCoverage() { const rows = [["Curso","Módulo","Aula","Rota","Públicos","Palavras-chave"], ...state.coverage.map(row => [row.course,row.module,row.lesson,row.route,row.audiences.join("; "),row.keywords.join("; ")])]; const blob = new Blob([rows.map(row => row.map(value => `"${String(value).replaceAll('"','""')}"`).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "matriz-cobertura-techeduca.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); }
-      async function loadCatalog() { const data = await api(`/api/catalog${state.user?.isAdmin ? "?drafts=1" : ""}`); state.courses = data.courses; state.coverage = data.coverage; state.history = data.history || []; renderNav(); }
+      async function deleteFile(id) {
+        if (!confirm("Remover este material da aula?")) return;
+        await api(`/api/files/${id}`, { method: "DELETE" });
+        await loadCatalog();
+        $("#editorModal").classList.add("hidden");
+        render();
+      }
+      async function createCourse(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = Object.fromEntries(new FormData(form));
+        data.published = form.published.checked;
+        data.ownerModules = csv(form.ownerModules?.value || "");
+        await api("/api/courses", {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+        await loadCatalog();
+        render();
+      }
+      async function createModule(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = Object.fromEntries(new FormData(form));
+        await api(`/api/courses/${data.courseId}/modules`, {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+        await loadCatalog();
+        render();
+      }
+      async function editCourse(id) {
+        const course = state.courses.find(item => item.id === id);
+        if (!course) return;
+        const title = prompt("Nome do curso", course.title);
+        if (title === null || !title.trim()) return;
+        const description = prompt("Descrição", course.description);
+        if (description === null) return;
+        const published = confirm(
+          "OK para manter o curso publicado. Cancelar para deixá-lo como rascunho."
+        );
+        await api(`/api/courses/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...course,
+            title: title.trim(),
+            description,
+            published,
+          }),
+        });
+        await loadCatalog();
+        render();
+      }
+      async function moveModule(courseId, moduleId, direction) {
+        await api(`/api/courses/${courseId}/modules/${moduleId}/move`, {
+          method: "POST",
+          body: JSON.stringify({ direction }),
+        });
+        await loadCatalog();
+        render();
+      }
+      async function moveLesson(courseId, moduleId, lessonId, direction) {
+        await api(
+          `/api/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/move`,
+          { method: "POST", body: JSON.stringify({ direction }) }
+        );
+        await loadCatalog();
+        render();
+      }
+      function downloadCoverage() {
+        const rows = [
+          ["Curso", "Módulo", "Aula", "Rota", "Públicos", "Palavras-chave"],
+          ...state.coverage.map(row => [
+            row.course,
+            row.module,
+            row.lesson,
+            row.route,
+            row.audiences.join("; "),
+            row.keywords.join("; "),
+          ]),
+        ];
+        const blob = new Blob(
+          [
+            rows
+              .map(row =>
+                row
+                  .map(value => `"${String(value).replaceAll('"', '""')}"`)
+                  .join(",")
+              )
+              .join("\n"),
+          ],
+          { type: "text/csv;charset=utf-8" }
+        );
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "matriz-cobertura-techeduca.csv";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      }
+      async function loadCatalog() {
+        const data = await api(
+          `/api/catalog${state.user?.canAuthor ? "?drafts=1" : ""}`
+        );
+        state.courses = data.courses;
+        state.coverage = data.coverage;
+        state.history = data.history || [];
+        await refreshLearning();
+        if (state.user.isAdmin) await refreshStudents();
+        renderNav();
+      }
 
-      $$("[data-view]").forEach(button => button.onclick = () => setView(button.dataset.view));
-      $("#globalSearch").addEventListener("input", event => { state.search = event.target.value; $("#clearSearch").classList.toggle("hidden", !state.search); render(); });
-      $("#clearSearch").onclick = () => { state.search = ""; $("#globalSearch").value = ""; $("#clearSearch").classList.add("hidden"); render(); };
-      $$("[data-close]").forEach(button => button.onclick = () => $("#editorModal").classList.add("hidden"));
+      $$("[data-view]").forEach(
+        button => (button.onclick = () => setView(button.dataset.view))
+      );
+      $("#globalSearch").addEventListener("input", event => {
+        state.search = event.target.value;
+        $("#clearSearch").classList.toggle("hidden", !state.search);
+        render();
+      });
+      $("#clearSearch").onclick = () => {
+        state.search = "";
+        $("#globalSearch").value = "";
+        $("#clearSearch").classList.add("hidden");
+        render();
+      };
+      $$("[data-close]").forEach(
+        button =>
+          (button.onclick = () => $("#editorModal").classList.add("hidden"))
+      );
       $("#editorForm").addEventListener("submit", saveEditor);
-      $("#editorModal").addEventListener("click", event => { if (event.target === $("#editorModal")) $("#editorModal").classList.add("hidden"); });
+      $("#editorModal").addEventListener("click", event => {
+        if (event.target === $("#editorModal"))
+          $("#editorModal").classList.add("hidden");
+      });
 
       (async () => {
         try {
-          const { user } = await api("/api/me"); state.user = user; $("#userName").textContent = user.name; $("#userRole").textContent = user.role; $("#avatar").textContent = initials(user.name); await loadCatalog();
+          const { user } = await api("/api/me");
+          state.user = user;
+          $("#userName").textContent = user.name;
+          $("#userRole").textContent = user.role;
+          $("#avatar").textContent = initials(user.name);
+          await loadCatalog();
           const params = new URLSearchParams(location.search);
           const lessonId = params.get("lesson");
           const route = params.get("route");
           if (lessonId) openLesson(lessonId);
-          else if (route) { const exact = lessons().find(item => item.routePath === route); if (exact) openLesson(exact.id); }
-          $("#loading").classList.add("hidden"); $("#app").classList.remove("hidden"); render();
+          else if (route) {
+            const exact = lessons().find(item => item.routePath === route);
+            if (exact) openLesson(exact.id);
+          }
+          $("#loading").classList.add("hidden");
+          $("#app").classList.remove("hidden");
+          render();
         } catch (error) {
-          $("#loading").innerHTML = `<div style="max-width:520px;padding:24px;text-align:center"><h1>Acesso pelo Portal Tech</h1><p>Entre no Portal Tech para usar a Central de treinamento com a mesma sessão.</p><a class="btn primary" href="/">Ir para o Portal Tech</a></div>`;
+          $("#loading").innerHTML =
+            `<div role="alert" style="max-width:520px;padding:24px;text-align:center"><h1>Acesso ao TechEduca</h1><p>${esc(error.message === "portal_login_required" ? "Entre no Portal Tech com seu e-mail e código de acesso para abrir seus cursos." : error.message)}</p><a class="btn primary" href="/">Ir para o Portal Tech</a></div>`;
         }
       })();
     </script>

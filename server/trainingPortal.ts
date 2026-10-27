@@ -1,6 +1,13 @@
 import crypto from "node:crypto";
+import { promises as fs } from "node:fs";
 import express, { type Express, type Request, type Response } from "express";
 import path from "node:path";
+import { z } from "zod";
+import {
+  canLearnCourse,
+  createTrainingStudentStore,
+  type TrainingStudent,
+} from "./trainingAccess";
 import { createContext } from "./_core/context";
 import * as store from "./plannerStore";
 import { getPgPool } from "./db";
@@ -22,7 +29,10 @@ type PortalUser = {
   email: string;
   role: string;
   isAdmin: boolean;
+  canAuthor: boolean;
+  teamFronts: string[];
   permissions: UserPermissions;
+  student?: TrainingStudent;
 };
 
 type UploadedFile = {
@@ -59,6 +69,8 @@ type EditableModule = {
 };
 
 type EditableCourse = {
+  ownerModules?: string[];
+  canEdit?: boolean;
   id: string;
   title: string;
   description: string;
@@ -70,6 +82,65 @@ type EditableCourse = {
 
 const publicDir = path.resolve(process.cwd(), "techeduca", "public");
 const memoryCourses = new Map<string, EditableCourse>();
+const studentStore = createTrainingStudentStore(getPgPool);
+
+type LearningRecord = {
+  id: string;
+  userId: string;
+  userName: string;
+  lessonId: string;
+  seconds: number;
+  duration: number;
+  completed: boolean;
+  updatedAt: string;
+  kind?: string;
+  name?: string;
+  data?: string;
+};
+const learningFile = path.resolve(
+  process.cwd(),
+  ".local/techeduca-learning.json"
+);
+let learningQueue = Promise.resolve();
+async function learningRecords(): Promise<LearningRecord[]> {
+  const db = getPgPool();
+  if (db)
+    return (await db.query("select payload from techeduca_learning")).rows.map(
+      row => row.payload
+    );
+  try {
+    return JSON.parse(await fs.readFile(learningFile, "utf8"));
+  } catch (error: any) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+async function saveLearning(record: LearningRecord) {
+  const operation = learningQueue.then(async () => {
+    const db = getPgPool();
+    if (db) {
+      await db.query(
+        "insert into techeduca_learning(id,payload) values($1,$2) on conflict(id) do update set payload=excluded.payload",
+        [record.id, JSON.stringify(record)]
+      );
+      return;
+    }
+    const records = await learningRecords();
+    await fs.mkdir(path.dirname(learningFile), { recursive: true });
+    await fs.writeFile(
+      learningFile + ".tmp",
+      JSON.stringify([...records.filter(row => row.id !== record.id), record])
+    );
+    await fs.rename(learningFile + ".tmp", learningFile);
+  });
+  learningQueue = operation.catch(() => {});
+  await operation;
+}
+async function visibleLesson(user: PortalUser, id: string) {
+  return filterCoursesForUser(await listCourses(false), user)
+    .flatMap(course => course.modules.flatMap(module => module.lessons))
+    .find(lesson => lesson.id === id);
+}
 
 function newId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`;
@@ -318,20 +389,51 @@ function canViewTrainingRoute(user: PortalUser, routePath: string) {
   );
 }
 
+export function canEditTrainingCourse(
+  user: Pick<PortalUser, "isAdmin" | "role" | "teamFronts">,
+  course: { ownerModules?: string[] }
+) {
+  const owned = new Set(
+    user.teamFronts.map(value => value.trim().toLocaleUpperCase("pt-BR"))
+  );
+  return (
+    user.isAdmin ||
+    (user.role === "technical_lead" &&
+      Boolean(course.ownerModules?.length) &&
+      course.ownerModules!.every(value =>
+        owned.has(value.trim().toLocaleUpperCase("pt-BR"))
+      ))
+  );
+}
 function filterCoursesForUser(courses: EditableCourse[], user: PortalUser) {
   return courses
-    .map(course => ({
-      ...course,
-      modules: course.modules
-        .map(module => ({
-          ...module,
-          lessons: module.lessons.filter(item =>
-            canViewTrainingRoute(user, item.routePath)
-          ),
-        }))
-        .filter(module => module.lessons.length > 0),
-    }))
-    .filter(course => course.modules.length > 0);
+    .filter(
+      course =>
+        (course.published && canLearnCourse(user.student, course.id)) ||
+        canEditTrainingCourse(user, course)
+    )
+    .map(course => {
+      const canEdit = canEditTrainingCourse(user, course);
+      return {
+        ...course,
+        canEdit,
+        modules: course.modules
+          .map(module => ({
+            ...module,
+            lessons: module.lessons.filter(
+              item =>
+                canEdit ||
+                (item.published &&
+                  (canLearnCourse(user.student, course.id) ||
+                    canViewTrainingRoute(user, item.routePath)))
+            ),
+          }))
+          .filter(module => canEdit || module.lessons.length > 0),
+      };
+    })
+    .filter(
+      course => canEditTrainingCourse(user, course) || course.modules.length > 0
+    );
 }
 
 async function currentUser(
@@ -348,13 +450,25 @@ async function currentUser(
     email: appUser.email,
     role: appUser.role,
     isAdmin: appUser.role === "admin",
+    canAuthor: ["admin", "technical_lead"].includes(appUser.role),
+    teamFronts: appUser.teamFronts || [],
     permissions: appUser.permissions,
+    student: (await studentStore.list()).find(
+      student => student.userId === appUser.id
+    ),
   };
 }
 
 async function requireUser(req: Request, res: Response) {
   const user = await currentUser(req, res);
   if (!user) send(res, 401, { error: "portal_login_required" });
+  if (user?.student && !user.student.active && !user.isAdmin) {
+    send(res, 403, {
+      error:
+        "Seu acesso ao TechEduca está bloqueado. Procure o responsável pela formação.",
+    });
+    return null;
+  }
   return user;
 }
 
@@ -364,6 +478,59 @@ async function requireAdmin(req: Request, res: Response) {
   if (!user.isAdmin) {
     send(res, 403, { error: "admin_required" });
     return null;
+  }
+  return user;
+}
+
+async function requireCourseEditor(req: Request, res: Response) {
+  const user = await requireUser(req, res);
+  if (!user) return null;
+  let courseId = req.params.courseId;
+  if (!courseId && req.params.id) {
+    const pool = getPgPool();
+    const row = pool
+      ? (
+          await pool.query(
+            "SELECT m.course_id FROM techeduca_files f JOIN techeduca_lessons l ON l.id=f.lesson_id JOIN techeduca_modules m ON m.id=l.module_id WHERE f.id=$1",
+            [req.params.id]
+          )
+        ).rows[0]
+      : null;
+    if (!row) {
+      send(res, 404, { error: "Material não encontrado" });
+      return null;
+    }
+    courseId = row.course_id;
+  }
+  if (courseId) {
+    const course = (await listCourses(true)).find(item => item.id === courseId);
+    if (
+      !course ||
+      (req.params.moduleId &&
+        !course.modules.some(
+          module =>
+            module.id === req.params.moduleId &&
+            (!req.params.lessonId ||
+              module.lessons.some(lesson => lesson.id === req.params.lessonId))
+        ))
+    ) {
+      send(res, 404, { error: "Curso, módulo ou aula não encontrado" });
+      return null;
+    }
+    if (!canEditTrainingCourse(user, course)) {
+      send(res, 403, { error: "Você não responde pelos módulos deste curso" });
+      return null;
+    }
+  } else {
+    const ownerModules = parseJsonList(req.body.ownerModules)
+      .map(value => value.trim())
+      .filter(Boolean);
+    if (!canEditTrainingCourse(user, { ownerModules })) {
+      send(res, 403, {
+        error: "Selecione somente os módulos sob sua responsabilidade",
+      });
+      return null;
+    }
   }
   return user;
 }
@@ -425,6 +592,8 @@ async function ensureSchema() {
     return;
   }
   await db.query(`
+    create table if not exists techeduca_students (user_id text primary key, payload jsonb not null);
+    create table if not exists techeduca_learning (id text primary key, payload jsonb not null);
     create table if not exists techeduca_courses (
       id text primary key,
       title text not null,
@@ -482,6 +651,7 @@ async function ensureSchema() {
     );
   `);
   const alterations = [
+    "alter table techeduca_courses add column if not exists owner_modules jsonb not null default '[]'",
     "alter table techeduca_courses add column if not exists color text not null default '#2563eb'",
     "alter table techeduca_courses add column if not exists updated_at timestamptz not null default now()",
     "alter table techeduca_modules add column if not exists description text not null default ''",
@@ -584,7 +754,7 @@ async function listCourses(includeDrafts: boolean): Promise<EditableCourse[]> {
       const lessons: EditableLesson[] = [];
       for (const row of lessonRows.rows) {
         const fileRows = await db.query(
-          "select id,name,size from techeduca_files where lesson_id=$1 order by created_at",
+          "select id,name,size from techeduca_files where lesson_id=$1 and mime_type not like 'video/%' order by created_at",
           [row.id]
         );
         lessons.push({
@@ -624,6 +794,7 @@ async function listCourses(includeDrafts: boolean): Promise<EditableCourse[]> {
       category: courseRow.category || "Treinamento",
       color: courseRow.color || "#2563eb",
       published: Boolean(courseRow.published),
+      ownerModules: parseJsonList(courseRow.owner_modules),
       modules,
     });
   }
@@ -726,7 +897,7 @@ export async function registerTrainingPortal(app: Express) {
     const user = await requireUser(req, res);
     if (!user) return;
     const allCourses = await listCourses(
-      Boolean(user.isAdmin && req.query.drafts === "1")
+      Boolean(user.canAuthor && req.query.drafts === "1")
     );
     const courses = filterCoursesForUser(allCourses, user);
     const visibleLessonIds = new Set(
@@ -744,13 +915,271 @@ export async function registerTrainingPortal(app: Express) {
     });
   });
 
+  const enrollmentSchema = z.object({
+    active: z.boolean(),
+    enrollments: z
+      .array(
+        z.object({
+          courseId: z.string().min(1).max(100),
+          expiresAt: z.iso.datetime({ offset: true }).nullable(),
+        })
+      )
+      .max(500),
+  });
+  const studentSchema = enrollmentSchema.extend({
+    name: z.string().trim().min(2).max(160),
+    email: z.string().trim().toLowerCase().email().max(254),
+  });
+  const studentSummary = async () => {
+    const [students, users] = await Promise.all([
+      studentStore.list(),
+      store.listAppUsers(),
+    ]);
+    return students.map(student => {
+      const account = users.find(user => user.id === student.userId);
+      return {
+        ...student,
+        name: account?.name || "Usuário removido",
+        email: account?.email || "",
+        accountActive: Boolean(account?.active),
+      };
+    });
+  };
+  const validEnrollments = async (
+    enrollments: TrainingStudent["enrollments"]
+  ) => {
+    const ids = new Set((await listCourses(true)).map(course => course.id));
+    return (
+      new Set(enrollments.map(e => e.courseId)).size === enrollments.length &&
+      enrollments.every(e => ids.has(e.courseId))
+    );
+  };
+  app.get("/techeduca/api/students", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    send(res, 200, { students: await studentSummary() });
+  });
+  app.post("/techeduca/api/students", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const parsed = studentSchema.safeParse(req.body);
+    if (!parsed.success)
+      return send(res, 400, {
+        error: "Informe nome, e-mail, situação e matrículas válidos.",
+      });
+    const input = parsed.data;
+    if (!(await validEnrollments(input.enrollments)))
+      return send(res, 400, {
+        error: "Curso inexistente ou matrícula duplicada.",
+      });
+    let account = await store.getAppUserByEmail(input.email);
+    if (account?.role === "admin")
+      return send(res, 400, {
+        error: "Administradores já possuem acesso de gestão.",
+      });
+    if (
+      account &&
+      (await studentStore.list()).some(
+        student => student.userId === account!.id
+      )
+    )
+      return send(res, 409, {
+        error: "Aluno já cadastrado. Edite as matrículas existentes.",
+      });
+    if (account && !account.active)
+      return send(res, 409, {
+        error:
+          "Esta conta está inativa no Portal Tech. Reative-a na administração de acessos antes da matrícula.",
+      });
+    if (!account)
+      account = await store.createAppUser({
+        name: input.name,
+        email: input.email,
+        role: "viewer",
+        active: true,
+        permissions: {
+          dashboard: false,
+          resources: false,
+          projects: false,
+          absences: false,
+          planner: false,
+          activities: false,
+          gpChecklist: false,
+          organogram: false,
+          techmove: false,
+          access: false,
+          settings: false,
+          products: {
+            techboard: false,
+            techlead: false,
+            techmove: false,
+            techtask: false,
+            admin: false,
+          },
+        },
+      });
+    // Reuse existing accounts without changing their role, name or application permissions.
+    await studentStore.save({
+      userId: account.id,
+      active: input.active,
+      enrollments: input.enrollments,
+      updatedAt: new Date().toISOString(),
+    });
+    send(res, 201, { students: await studentSummary() });
+  });
+  app.patch("/techeduca/api/students/:userId", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const parsed = enrollmentSchema.safeParse(req.body);
+    if (!parsed.success || !(await validEnrollments(parsed.data.enrollments)))
+      return send(res, 400, { error: "Situação ou matrículas inválidas." });
+    const student = (await studentStore.list()).find(
+      row => row.userId === req.params.userId
+    );
+    if (!student) return send(res, 404, { error: "Aluno não encontrado." });
+    await studentStore.save({
+      ...student,
+      ...parsed.data,
+      updatedAt: new Date().toISOString(),
+    });
+    send(res, 200, { students: await studentSummary() });
+  });
+
+  app.get("/techeduca/api/learning", async (req, res) => {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const records = await learningRecords();
+    const visible = new Set(
+      filterCoursesForUser(await listCourses(false), user).flatMap(c =>
+        c.modules.flatMap(m => m.lessons.map(l => l.id))
+      )
+    );
+    send(res, 200, {
+      records: records
+        .filter(
+          r =>
+            visible.has(r.lessonId) &&
+            (user.isAdmin || r.userId === user.id || r.kind === "exam")
+        )
+        .map(({ data, ...row }) => row),
+    });
+  });
+  app.post("/techeduca/api/learning/:lessonId/progress", async (req, res) => {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const lessonId = String(req.params.lessonId);
+    const lesson = await visibleLesson(user, lessonId);
+    if (!lesson?.videoUrl)
+      return send(res, 404, { error: "Vídeo não encontrado." });
+    const seconds = Number(req.body?.seconds),
+      duration = Number(req.body?.duration);
+    if (
+      !Number.isFinite(seconds) ||
+      !Number.isFinite(duration) ||
+      seconds < 0 ||
+      seconds > 15 ||
+      duration <= 0 ||
+      duration > 86400
+    )
+      return send(res, 400, { error: "Progresso inválido." });
+    const id = `progress:${user.id}:${lessonId}`;
+    const previous = (await learningRecords()).find(r => r.id === id);
+    const elapsed = previous
+      ? Math.max(0, (Date.now() - Date.parse(previous.updatedAt)) / 1000)
+      : 15;
+    const watched = Math.min(
+      duration,
+      (previous?.seconds || 0) + Math.min(seconds, elapsed)
+    );
+    const record = {
+      id,
+      userId: user.id,
+      userName: user.name,
+      lessonId,
+      seconds: watched,
+      duration,
+      completed: Boolean(previous?.completed || watched / duration >= 0.9),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveLearning(record);
+    send(res, 200, { record });
+  });
+  app.post("/techeduca/api/learning/:lessonId/files", async (req, res) => {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const lessonId = String(req.params.lessonId);
+    if (!(await visibleLesson(user, lessonId)))
+      return send(res, 404, { error: "Aula não encontrada." });
+    const form = await multipart(req);
+    const kind = form.fields.kind;
+    if (kind !== "submission" && kind !== "exam")
+      return send(res, 400, { error: "Tipo inválido." });
+    if (kind === "exam" && !user.isAdmin)
+      return send(res, 403, {
+        error: "Apenas administradores publicam provas.",
+      });
+    const file = form.files[0];
+    if (
+      !file ||
+      !file.size ||
+      file.size > 10 * 1024 * 1024 ||
+      !/\.(pdf|docx|xlsx|png|jpe?g|txt)$/i.test(file.originalName)
+    )
+      return send(res, 400, {
+        error: "Envie PDF, DOCX, XLSX, imagem ou TXT de até 10 MB.",
+      });
+    await saveLearning({
+      id: newId("assessment"),
+      userId: user.id,
+      userName: user.name,
+      lessonId,
+      kind,
+      name: file.originalName,
+      data: file.data.toString("base64"),
+      seconds: 0,
+      duration: 0,
+      completed: false,
+      updatedAt: new Date().toISOString(),
+    });
+    send(res, 201, { ok: true });
+  });
+  app.get("/techeduca/api/learning/files/:id", async (req, res) => {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const record = (await learningRecords()).find(r => r.id === req.params.id);
+    if (
+      !record?.data ||
+      !(await visibleLesson(user, record.lessonId)) ||
+      (!user.isAdmin && record.userId !== user.id && record.kind !== "exam")
+    )
+      return res.sendStatus(404);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(record.name || "arquivo")}`
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.end(Buffer.from(record.data, "base64"));
+  });
+
   app.get("/techeduca/api/coverage", async (req, res) => {
     if (!(await requireAdmin(req, res))) return;
     send(res, 200, { coverage: TRAINING_COVERAGE });
   });
 
   app.get("/techeduca/api/files/:id", async (req, res) => {
-    if (!(await requireUser(req, res))) return;
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const accessible = filterCoursesForUser(
+      await listCourses(user.canAuthor),
+      user
+    ).flatMap(c => c.modules.flatMap(m => m.lessons));
+    if (
+      !accessible.some(
+        l =>
+          l.files.some(f => f.id === req.params.id) ||
+          l.videoUrl === `/techeduca/api/files/${req.params.id}`
+      )
+    )
+      return res.sendStatus(404);
+    res.setHeader("Cache-Control", "private, no-store");
     const db = getPgPool();
     if (!db)
       return res.status(404).send("Arquivo não disponível no modo local.");
@@ -769,7 +1198,7 @@ export async function registerTrainingPortal(app: Express) {
   });
 
   app.post("/techeduca/api/courses", async (req, res) => {
-    const user = await requireAdmin(req, res);
+    const user = await requireCourseEditor(req, res);
     if (!user) return;
     const course: EditableCourse = {
       id: newId("tc"),
@@ -778,13 +1207,16 @@ export async function registerTrainingPortal(app: Express) {
       category: String(req.body.category || "Treinamento"),
       color: String(req.body.color || "#2563eb"),
       published: Boolean(req.body.published),
+      ownerModules: parseJsonList(req.body.ownerModules)
+        .map(value => value.trim())
+        .filter(Boolean),
       modules: [],
     };
     const db = getPgPool();
     if (db)
       await db.query(
         `insert into techeduca_courses
-         (id,title,description,category,color,published) values ($1,$2,$3,$4,$5,$6)`,
+         (id,title,description,category,color,published,owner_modules) values ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
         [
           course.id,
           course.title,
@@ -792,6 +1224,7 @@ export async function registerTrainingPortal(app: Express) {
           course.category,
           course.color,
           course.published,
+          JSON.stringify(course.ownerModules || []),
         ]
       );
     else memoryCourses.set(course.id, course);
@@ -800,7 +1233,7 @@ export async function registerTrainingPortal(app: Express) {
   });
 
   app.patch("/techeduca/api/courses/:courseId", async (req, res) => {
-    const user = await requireAdmin(req, res);
+    const user = await requireCourseEditor(req, res);
     if (!user) return;
     const data = {
       title: String(req.body.title || "").trim(),
@@ -832,7 +1265,7 @@ export async function registerTrainingPortal(app: Express) {
   });
 
   app.post("/techeduca/api/courses/:courseId/modules", async (req, res) => {
-    const user = await requireAdmin(req, res);
+    const user = await requireCourseEditor(req, res);
     if (!user) return;
     const module: EditableModule = {
       id: newId("tm"),
@@ -863,7 +1296,7 @@ export async function registerTrainingPortal(app: Express) {
   app.post(
     "/techeduca/api/courses/:courseId/modules/:moduleId/move",
     async (req, res) => {
-      const user = await requireAdmin(req, res);
+      const user = await requireCourseEditor(req, res);
       if (!user) return;
       const direction = req.body.direction === "down" ? 1 : -1;
       const db = getPgPool();
@@ -922,7 +1355,7 @@ export async function registerTrainingPortal(app: Express) {
   app.post(
     "/techeduca/api/courses/:courseId/modules/:moduleId/lessons",
     async (req, res) => {
-      const user = await requireAdmin(req, res);
+      const user = await requireCourseEditor(req, res);
       if (!user) return;
       const form = await multipart(req);
       const data = parseFormLesson(form.fields);
@@ -1008,7 +1441,7 @@ export async function registerTrainingPortal(app: Express) {
   app.patch(
     "/techeduca/api/courses/:courseId/modules/:moduleId/lessons/:lessonId",
     async (req, res) => {
-      const user = await requireAdmin(req, res);
+      const user = await requireCourseEditor(req, res);
       if (!user) return;
       const form = await multipart(req);
       const memoryModule = memoryFindModule(
@@ -1083,7 +1516,7 @@ export async function registerTrainingPortal(app: Express) {
   app.post(
     "/techeduca/api/courses/:courseId/modules/:moduleId/lessons/:lessonId/move",
     async (req, res) => {
-      const user = await requireAdmin(req, res);
+      const user = await requireCourseEditor(req, res);
       if (!user) return;
       const direction = req.body.direction === "down" ? 1 : -1;
       const db = getPgPool();
@@ -1143,7 +1576,7 @@ export async function registerTrainingPortal(app: Express) {
   );
 
   app.delete("/techeduca/api/files/:id", async (req, res) => {
-    if (!(await requireAdmin(req, res))) return;
+    if (!(await requireCourseEditor(req, res))) return;
     const db = getPgPool();
     if (db)
       await db.query("delete from techeduca_files where id=$1", [

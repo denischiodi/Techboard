@@ -119,3 +119,6 @@ temp/
 client/public/__manus__/version.json
 .project-config.json
 .deploy-keys/
+
+# Local TechEduca student records and assessments
+.local/
