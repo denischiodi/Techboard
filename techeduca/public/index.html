@@ -1137,16 +1137,15 @@
         <div class="admin-grid"><section class="panel"><h2>${editing ? "Editar matrículas" : "Cadastrar aluno"}</h2><p>O aluno entra pelo Portal Tech usando o código enviado ao próprio e-mail. Contas existentes mantêm suas permissões no portal.</p>
         <form id="studentForm" class="form"><div class="field full"><label for="studentName">Nome</label><input id="studentName" name="name" required minlength="2" maxlength="160" value="${esc(editing?.name || "")}" ${editing ? "readonly" : ""}></div><div class="field full"><label for="studentEmail">E-mail de acesso</label><input id="studentEmail" type="email" name="email" required maxlength="254" value="${esc(editing?.email || "")}" ${editing ? "readonly" : ""}></div>
         <div class="field full"><label><input name="active" type="checkbox" style="width:auto;min-height:0" ${!editing || editing.active ? "checked" : ""}> Acesso ativo ao TechEduca</label></div>
-        <div class="field full"><h3>Cursos liberados</h3><p>Somente cursos matriculados ficam disponíveis ao aluno. Deixe a validade vazia para acesso sem prazo. Rascunhos ficam ocultos até a publicação.</p>${
-          state.courses
-            .map(c => {
-              const enrollment = editing?.enrollments.find(
-                e => e.courseId === c.id
-              );
-              return `<div style="border-bottom:1px solid var(--line);padding:12px 0"><label><input type="checkbox" name="course" value="${esc(c.id)}" style="width:auto;min-height:0" ${enrollment ? "checked" : ""}> ${esc(c.title)} ${c.published ? "" : "· Rascunho"}</label><label style="display:block;margin-top:8px">Validade (opcional)<input type="date" data-expiry="${esc(c.id)}" aria-label="Validade de ${esc(c.title)}" value="${enrollment?.expiresAt ? esc(enrollment.expiresAt.slice(0, 10)) : ""}"></label></div>`;
-            })
-            .join("") || "<p>Crie um curso antes de matricular alunos.</p>"
-        }</div>
+        <div class="field full"><h3>Cursos liberados</h3><p>Busque um curso e clique em Adicionar. Defina a validade apenas quando o acesso tiver prazo. As alterações serão aplicadas ao salvar.</p>
+        <label for="enrollmentSearch">Buscar curso</label><input id="enrollmentSearch" type="search" placeholder="Digite o nome do curso">
+        <label for="enrollmentCourse">Curso para adicionar</label><div class="toolbar"><select id="enrollmentCourse" style="flex:1;min-width:0" aria-label="Curso para adicionar"></select><button type="button" class="btn" id="addEnrollment">Adicionar curso</button></div>
+        <p id="enrollmentCount" role="status" aria-live="polite"></p><div id="enrollmentList">${
+          state.courses.map(c => {
+            const enrollment = editing?.enrollments.find(e => e.courseId === c.id);
+            return `<div data-enrollment-row="${esc(c.id)}" ${enrollment ? "" : "hidden"} style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:10px"><div class="toolbar" style="justify-content:space-between"><strong>${esc(c.title)}</strong><button type="button" class="btn small" data-remove-enrollment="${esc(c.id)}" aria-label="Remover ${esc(c.title)}">Remover</button></div>${c.published ? "" : "<p>Rascunho · ficará disponível após a publicação.</p>"}<input type="checkbox" name="course" value="${esc(c.id)}" hidden ${enrollment ? "checked" : ""}><label style="display:block;margin-top:8px">Validade (opcional)<input type="date" data-expiry="${esc(c.id)}" aria-label="Validade de ${esc(c.title)}" value="${enrollment?.expiresAt ? esc(enrollment.expiresAt.slice(0, 10)) : ""}"></label><small>Deixe em branco para acesso sem prazo.</small></div>`;
+          }).join("")
+        }</div><p id="enrollmentEmpty">Nenhum curso adicionado. Use a busca acima para liberar cursos ao aluno.</p></div>
         <div class="field full toolbar"><button class="btn primary">${editing ? "Salvar matrículas" : "Cadastrar e liberar acesso"}</button>${editing ? '<button type="button" class="btn" id="cancelStudentEdit">Cancelar edição</button>' : ""}</div></form><p id="studentStatus" role="status" aria-live="polite"></p><p>Um cadastro sem cursos fica ativo, mas não libera conteúdo. Bloquear aqui encerra o acesso à formação e preserva o histórico.</p></section>
         <section class="panel"><div class="toolbar" style="justify-content:space-between"><h2>Alunos e evolução</h2><button class="btn small" id="refreshStudents">Atualizar</button></div><div class="field"><label for="studentSearch">Buscar por nome ou e-mail</label><input type="search" id="studentSearch" placeholder="Nome ou e-mail"></div><p id="rosterStatus" role="status"></p><div id="studentRoster">${state.students.map(studentCard).join("") || '<div class="empty">Nenhum aluno cadastrado. Cadastre a primeira pessoa ao lado.</div>'}</div></section></div>`;
       }
@@ -1253,9 +1252,35 @@
         );
         const form = $("#studentForm");
         if (!form) return;
+        const coursePicker = $("#enrollmentCourse");
+        const refreshEnrollmentPicker = () => {
+          const term = $("#enrollmentSearch").value.trim().toLocaleLowerCase("pt-BR");
+          const selected = new Set(Array.from(form.querySelectorAll('input[name="course"]:checked'), input => input.value));
+          const available = state.courses.filter(course => !selected.has(course.id) && course.title.toLocaleLowerCase("pt-BR").includes(term));
+          coursePicker.innerHTML = available.map(course => `<option value="${esc(course.id)}">${esc(course.title)}${course.published ? "" : " · Rascunho"}</option>`).join("") || '<option value="">Nenhum curso disponível</option>';
+          coursePicker.disabled = !available.length;
+          $("#addEnrollment").disabled = !available.length;
+          $("#enrollmentCount").textContent = `${selected.size} curso${selected.size === 1 ? "" : "s"} adicionado${selected.size === 1 ? "" : "s"}`;
+          $("#enrollmentEmpty").hidden = selected.size > 0;
+        };
+        $("#enrollmentSearch").addEventListener("input", refreshEnrollmentPicker);
+        $("#addEnrollment").addEventListener("click", () => {
+          const row = Array.from(form.querySelectorAll("[data-enrollment-row]")).find(node => node.dataset.enrollmentRow === coursePicker.value);
+          if (!row) return;
+          row.querySelector('input[name="course"]').checked = true;
+          row.hidden = false;
+          refreshEnrollmentPicker();
+        });
+        form.querySelectorAll("[data-remove-enrollment]").forEach(button => button.addEventListener("click", () => {
+          const row = button.closest("[data-enrollment-row]");
+          row.querySelector('input[name="course"]').checked = false;
+          row.hidden = true;
+          refreshEnrollmentPicker();
+        }));
+        refreshEnrollmentPicker();
         form.onsubmit = async event => {
           event.preventDefault();
-          const submit = form.querySelector("button");
+          const submit = form.querySelector('button:not([type="button"])');
           submit.disabled = true;
           const data = new FormData(form);
           const enrollments = data.getAll("course").map(courseId => {
