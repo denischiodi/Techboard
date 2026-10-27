@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: read
+
 concurrency:
   group: railway-production
   cancel-in-progress: true
@@ -45,39 +49,56 @@ jobs:
       RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
       RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
     steps:
+      - name: Detect native Railway deployment
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          native_status=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" --jq '.statuses[] | select(.context == "adorable-renewal - delivery-resource-planner") | .state' | head -n 1)
+          if [ -n "$native_status" ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "Railway is publishing this commit through the repository integration."
+            echo "Native deployment state: $native_status"
+            if [ "$native_status" = "failure" ] || [ "$native_status" = "error" ]; then
+              exit 1
+            fi
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check Railway configuration
-        if: ${{ env.RAILWAY_API_TOKEN == '' || env.RAILWAY_PROJECT_ID == '' || env.RAILWAY_ENVIRONMENT_ID == '' || env.RAILWAY_SERVICE_ID == '' }}
+        if: ${{ steps.native.outputs.active != 'true' && (env.RAILWAY_API_TOKEN == '' || env.RAILWAY_PROJECT_ID == '' || env.RAILWAY_ENVIRONMENT_ID == '' || env.RAILWAY_SERVICE_ID == '') }}
         run: |
           echo "Railway deploy not configured."
           echo "Configure GitHub secret RAILWAY_API_TOKEN and Railway project, environment, and service variables."
           exit 1
 
       - name: Checkout
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ steps.native.outputs.active != 'true' && env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ steps.native.outputs.active != 'true' && env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Enable pnpm
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ steps.native.outputs.active != 'true' && env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         run: corepack enable
 
       - name: Install dependencies and Railway CLI
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ steps.native.outputs.active != 'true' && env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         run: |
           pnpm install --frozen-lockfile
           npm install --global @railway/cli
 
       - name: Deploy
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ steps.native.outputs.active != 'true' && env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         run: railway up --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --detach
 
       - name: Confirm production deployment
-        if: ${{ env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
+        if: ${{ steps.native.outputs.active != 'true' && env.RAILWAY_API_TOKEN != '' && env.RAILWAY_PROJECT_ID != '' && env.RAILWAY_ENVIRONMENT_ID != '' && env.RAILWAY_SERVICE_ID != '' }}
         run: |
           for attempt in $(seq 1 60); do
             status=$(railway deployment list --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --limit 1 --json | jq -r '.[0].status // "UNKNOWN"')

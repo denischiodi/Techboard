@@ -84,6 +84,8 @@ Configuracao esperada:
 
 O projeto possui o workflow `.github/workflows/deploy-railway.yml`.
 
+Quando o serviço Railway já está conectado diretamente ao repositório, o workflow reconhece a publicação nativa para o mesmo commit e evita uma segunda publicação por CLI. As validações de TypeScript, testes e build continuam ativas. O token da CLI só é necessário como alternativa quando não existe publicação nativa. O status do deploy e a saúde do ambiente devem ser conferidos no Railway antes de considerar a publicação concluída.
+
 Com ele, todo push na branch `main` faz:
 
 1. Instala as dependencias com `pnpm`.
