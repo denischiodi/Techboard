@@ -44,6 +44,7 @@ import {
   ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { readSchedule } from "@/lib/scheduleImport";
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
 import type {
   Project,
@@ -220,6 +221,14 @@ export default function Projects() {
   const [phasesDialogOpen, setPhasesDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [phaseRows, setPhaseRows] = useState<PhaseGridRow[]>([]);
+  const scheduleInputRef = useRef<HTMLInputElement>(null);
+  const [importingSchedule, setImportingSchedule] = useState(false);
+  const [importedSchedule, setImportedSchedule] = useState<{
+    startDate: string;
+    endDate: string;
+    fileName: string;
+  } | null>(null);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const [sortField, setSortField] = useState<
     "name" | "client" | "fronts" | "startDate" | "endDate" | "status"
@@ -583,6 +592,7 @@ export default function Projects() {
 
   const openPhases = (p: Project) => {
     setSelectedProject(p);
+    setImportedSchedule(null);
     const existingRows = allPhases
       .filter(ph => ph.projectId === p.id)
       .sort((a, b) => a.startDate.localeCompare(b.startDate))
@@ -634,14 +644,56 @@ export default function Projects() {
 
   const regeneratePhaseRows = () => {
     if (!selectedProject) return;
-    setPhaseRows(buildSuggestedPhaseRows(selectedProject));
+    setPhaseRows(
+      buildSuggestedPhaseRows({
+        ...selectedProject,
+        ...(importedSchedule || {}),
+      })
+    );
   };
 
   const getPhaseRowLabel = (row: PhaseGridRow) =>
     row.notes?.trim() ? `${row.phase} (${row.notes.trim()})` : row.phase;
 
+  const handleScheduleImport = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !selectedProject) return;
+    setImportingSchedule(true);
+    try {
+      const schedule = await readSchedule(file, selectedProject.manager || "");
+      const matchedIds = new Set<string>();
+      setPhaseRows(
+        schedule.rows.map(row => {
+          const existing = projectPhases.find(
+            phase => phase.phase === row.phase && !matchedIds.has(phase.id)
+          );
+          if (existing) matchedIds.add(existing.id);
+          return { ...row, id: existing?.id };
+        })
+      );
+      setImportedSchedule({
+        startDate: schedule.startDate,
+        endDate: schedule.endDate,
+        fileName: file.name,
+      });
+      toast.success(
+        `${schedule.rows.length} fases importadas. Revise e salve o cronograma.`
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao importar cronograma"
+      );
+    } finally {
+      setImportingSchedule(false);
+    }
+  };
+
   const handleSavePhases = async () => {
     if (!selectedProject) return;
+    const period = importedSchedule || selectedProject;
     const validRows = phaseRows.filter(row => row.phase.trim());
     if (validRows.length === 0) {
       toast.error("Inclua pelo menos uma fase");
@@ -657,12 +709,9 @@ export default function Projects() {
         toast.error(`${rowLabel} está com início posterior ao fim`);
         return;
       }
-      if (
-        row.startDate < selectedProject.startDate ||
-        row.endDate > selectedProject.endDate
-      ) {
+      if (row.startDate < period.startDate || row.endDate > period.endDate) {
         toast.error(
-          `${rowLabel} precisa ficar dentro do período do projeto (${selectedProject.startDate} a ${selectedProject.endDate})`
+          `${rowLabel} precisa ficar dentro do período do projeto (${period.startDate} a ${period.endDate})`
         );
         return;
       }
@@ -676,18 +725,15 @@ export default function Projects() {
         a.startDate.localeCompare(b.startDate) ||
         a.endDate.localeCompare(b.endDate)
     );
-    for (let index = 1; index < sortedRows.length; index += 1) {
-      const previous = sortedRows[index - 1];
-      const current = sortedRows[index];
-      if (current.startDate <= previous.endDate) {
-        toast.error(
-          `${getPhaseRowLabel(current)} sobrepõe ${getPhaseRowLabel(previous)}. Ajuste as datas ou deixe um intervalo entre os marcos.`
-        );
-        return;
-      }
-    }
-
+    setSavingSchedule(true);
     try {
+      if (importedSchedule) {
+        await updateMutation.mutateAsync({
+          id: selectedProject.id,
+          startDate: period.startDate,
+          endDate: period.endDate,
+        });
+      }
       const keptIds = new Set(sortedRows.map(row => row.id).filter(Boolean));
       const removedPhases = projectPhases.filter(
         phase => !keptIds.has(phase.id)
@@ -716,6 +762,8 @@ export default function Projects() {
       setPhasesDialogOpen(false);
     } catch (error: any) {
       toast.error(error?.message || "Erro ao salvar marcos");
+    } finally {
+      setSavingSchedule(false);
     }
   };
 
@@ -1291,7 +1339,12 @@ export default function Projects() {
       </Dialog>
 
       {/* Phases Management Dialog */}
-      <Dialog open={phasesDialogOpen} onOpenChange={setPhasesDialogOpen}>
+      <Dialog
+        open={phasesDialogOpen}
+        onOpenChange={open => {
+          if (!importingSchedule && !savingSchedule) setPhasesDialogOpen(open);
+        }}
+      >
         <DialogContent className="flex max-h-[92vh] w-[96vw] max-w-[1500px] flex-col overflow-hidden sm:max-w-[1500px]">
           <DialogHeader>
             <DialogTitle>
@@ -1306,16 +1359,37 @@ export default function Projects() {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Agrupe por fase e detalhe marcos como Sprint 1, Teste
-                  Integrado ou Congelamento. Os períodos não podem sobrepor.
+                  Integrado ou Congelamento. Fases podem ocorrer em paralelo.
                 </p>
                 {selectedProject && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Período do projeto: {selectedProject.startDate} a{" "}
-                    {selectedProject.endDate}
+                    Período do projeto:{" "}
+                    {importedSchedule?.startDate || selectedProject.startDate} a{" "}
+                    {importedSchedule?.endDate || selectedProject.endDate}
                   </p>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
+                <input
+                  ref={scheduleInputRef}
+                  type="file"
+                  accept=".mpp"
+                  className="hidden"
+                  aria-label="Arquivo do cronograma"
+                  onChange={handleScheduleImport}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={importingSchedule || savingSchedule}
+                  onClick={() => scheduleInputRef.current?.click()}
+                >
+                  <Upload className="mr-1 h-3.5 w-3.5" />
+                  {importingSchedule
+                    ? "Lendo cronograma..."
+                    : "Importar cronograma"}
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -1343,6 +1417,13 @@ export default function Projects() {
               </div>
             </div>
 
+            {importedSchedule && (
+              <p className="rounded-lg border bg-blue-50 p-3 text-sm text-blue-900">
+                Arquivo: {importedSchedule.fileName}. Ao salvar, as fases desta
+                tabela substituirão os marcos atuais e as datas do projeto serão
+                atualizadas. Revise antes de confirmar.
+              </p>
+            )}
             <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
@@ -1373,7 +1454,12 @@ export default function Projects() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {PHASES.map(phase => (
+                            {Array.from(
+                              new Set([
+                                ...PHASES,
+                                ...phaseRows.map(row => row.phase),
+                              ])
+                            ).map(phase => (
                               <SelectItem key={phase} value={phase}>
                                 {phase}
                               </SelectItem>
@@ -1488,11 +1574,17 @@ export default function Projects() {
           <DialogFooter>
             <Button
               variant="outline"
+              disabled={importingSchedule || savingSchedule}
               onClick={() => setPhasesDialogOpen(false)}
             >
               Cancelar
             </Button>
-            <Button onClick={handleSavePhases}>Salvar Cronograma</Button>
+            <Button
+              disabled={importingSchedule || savingSchedule}
+              onClick={handleSavePhases}
+            >
+              {savingSchedule ? "Salvando..." : "Salvar Cronograma"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

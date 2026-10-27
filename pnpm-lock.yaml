@@ -170,6 +170,9 @@ importers:
       lucide-react:
         specifier: ^0.453.0
         version: 0.453.0(react@19.2.1)
+      mppwriter:
+        specifier: 0.4.3
+        version: 0.4.3
       mysql2:
         specifier: ^3.23.0
         version: 3.23.0(@types/node@24.7.0)
@@ -4383,6 +4386,10 @@ packages:
 
   motion-utils@12.23.6:
     resolution: {integrity: sha512-eAWoPgr4eFEOFfg2WjIsMoqJTW6Z8MTUCgn/GZ3VRpClWBdnbjryiA3ZSNLyxCTmCQx4RmYX6jX1iWHbenUPNQ==}
+
+  mppwriter@0.4.3:
+    resolution: {integrity: sha512-Gw33EdITaFKNYbGqVvfyQx9nwAu1XOoSOd0euYUB9A8JLiiTPGhFaM+GZ2SbumnKmrdpktb8KkaC1h5VbouMQQ==}
+    engines: {node: '>=20'}
 
   ms@2.0.0:
     resolution: {integrity: sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==}
@@ -10088,6 +10095,8 @@ snapshots:
       motion-utils: 12.23.6
 
   motion-utils@12.23.6: {}
+
+  mppwriter@0.4.3: {}
 
   ms@2.0.0: {}
 
