@@ -69,6 +69,7 @@ export default function ProjectWorkflow() {
   const [, setLocation] = useLocation();
   const { projectId, withProject, rememberProject } = useWorkflowProject();
   const [search, setSearch] = useState("");
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [modelsOpen, setModelsOpen] = useState(false);
   const [selectedOccurrences, setSelectedOccurrences] = useState<string[]>([]);
@@ -156,9 +157,9 @@ export default function ProjectWorkflow() {
     onError: error => toast.error(error.message || "Erro ao exportar relatório"),
   });
   const progressByStep = new Map((progress?.steps || []).map(step => [step.id, step]));
-  const itemsForStep = (stepId: string) => {
+  const itemsForStep = (stepId: string, source: any[] = deliveryItems as any[]) => {
     const acceptedTypes = deliveryTypesByStep[stepId] || [];
-    return (deliveryItems as any[]).filter(item => {
+    return source.filter(item => {
       const normalizedStage = String(item.stage || "").toLocaleLowerCase("pt-BR").replaceAll("_", "-");
       if (item.type === "activity") {
         if (stepId === "scope-items") return ["scope", "scope-items", "dda", "escopo"].includes(normalizedStage);
@@ -167,8 +168,8 @@ export default function ProjectWorkflow() {
       return acceptedTypes.includes(item.type) || normalizedStage === stepId;
     });
   };
-  const deliverySummary = (stepId: string) => {
-    const items = itemsForStep(stepId);
+  const deliverySummary = (stepId: string, source: any[] = deliveryItems as any[]) => {
+    const items = itemsForStep(stepId, source);
     const completedStatuses = new Set(["completed", "concluido", "approved", "aprovado", "accepted", "aceito"]);
     const completed = items.filter(item => completedStatuses.has(String(item.status || "").toLocaleLowerCase("pt-BR"))).length;
     const requiredPending = items.filter(item => item.required && !completedStatuses.has(String(item.status || "").toLocaleLowerCase("pt-BR"))).length;
@@ -212,6 +213,73 @@ export default function ProjectWorkflow() {
     const completed = phaseSteps.reduce((sum, step) => sum + deliverySummary(step.id).completed, 0);
     return { percent, total, completed };
   };
+  const exportTrailExcel = async () => {
+    const project = projects.find(project => project.id === projectId);
+    if (!project || exportingExcel) return;
+    setExportingExcel(true);
+    try {
+      const [XLSX, items, resources] = await Promise.all([
+        import("xlsx"),
+        utils.workflow.delivery.trail.list.fetch({ projectId }),
+        utils.resources.list.fetch(),
+      ]);
+      const people = new Map(resources.map(resource => [resource.id, resource.name]));
+      const statusLabels: Record<string, string> = {
+        not_started: "Não iniciado", ready: "Pronto para começar",
+        in_progress: "Em andamento", awaiting_validation: "Aguardando validação",
+        approved: "Aprovado", blocked: "Bloqueado", completed: "Concluído",
+      };
+      const dateLabel = (value: unknown) => {
+        const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || "");
+      };
+      const stageLabel = (item: any) => steps.find(step => itemsForStep(step.id, [item]).length)?.title || item.stage || item.type || "";
+      const rows = items.map((item: any) => ({
+        Projeto: project.name,
+        Código: item.code || item.id,
+        Etapa: stageLabel(item),
+        Fase: item.phase || "",
+        Módulo: item.module || "",
+        Título: item.title || "",
+        Descrição: item.description || "",
+        Responsável: people.get(item.responsibleId) || item.responsibleId || "Sem responsável",
+        Status: statusLabels[item.status] || item.status || "",
+        Prazo: dateLabel(item.dueDate),
+        Obrigatório: item.required ? "Sim" : "Não",
+        "Evidências exigidas": (item.evidenceRequirements || []).join("; "),
+        "Evidências registradas": (item.evidences || []).length,
+      }));
+      const summary = steps.map((step, index) => {
+        const result = deliverySummary(step.id, items);
+        return {
+          Projeto: project.name, Ordem: index + 1, Etapa: step.title,
+          Descrição: step.description, Itens: result.total,
+          Concluídos: result.completed,
+          "Obrigatórios pendentes": result.requiredPending,
+          "Evidências pendentes": result.evidencePending,
+          "Conclusão (%)": result.percent ?? progressByStep.get(step.id)?.percent ?? 0,
+          Dependências: step.dependencies.map(id => steps.find(candidate => candidate.id === id)?.title || id).join("; "),
+        };
+      });
+      const workbook = XLSX.utils.book_new();
+      const overview = XLSX.utils.json_to_sheet(summary);
+      overview["!cols"] = [28, 8, 32, 65, 10, 12, 22, 22, 16, 45].map(wch => ({ wch }));
+      overview["!autofilter"] = { ref: overview["!ref"]! };
+      XLSX.utils.book_append_sheet(workbook, overview, "Etapas");
+      const headers = ["Projeto", "Código", "Etapa", "Fase", "Módulo", "Título", "Descrição", "Responsável", "Status", "Prazo", "Obrigatório", "Evidências exigidas", "Evidências registradas"];
+      const detail = XLSX.utils.json_to_sheet(rows, { header: headers });
+      detail["!cols"] = [28, 22, 32, 18, 16, 55, 70, 32, 24, 14, 14, 45, 22].map(wch => ({ wch }));
+      detail["!autofilter"] = { ref: detail["!ref"]! };
+      XLSX.utils.book_append_sheet(workbook, detail, "Itens da trilha");
+      const filename = project.name.replace(/[\\/:*?"<>|]/g, "-");
+      XLSX.writeFile(workbook, `Trilha-${filename}.xlsx`);
+      toast.success(`Trilha exportada: ${items.length} itens`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível exportar a trilha");
+    } finally {
+      setExportingExcel(false);
+    }
+  };
   const selectProject = (value: string) => { rememberProject(value); setLocation(`/techmove?projectId=${encodeURIComponent(value)}`); };
   useEffect(() => {
     if (projects.length && !hasSelectedProject) selectProject((projects[0] as any).id);
@@ -233,12 +301,13 @@ export default function ProjectWorkflow() {
           <h1 className="text-2xl font-bold">Trilha do Projeto</h1>
           <p className="text-muted-foreground mt-1">Fluxo completo de implementação SAP S/4HANA - do escopo à configuração</p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
           <Select value={hasSelectedProject ? projectId : undefined} onValueChange={selectProject}>
             <SelectTrigger className="w-full sm:w-72"><SelectValue placeholder="Selecione o projeto" /></SelectTrigger>
             <SelectContent>{projects.map((project: any) => <SelectItem key={project.id} value={project.id}><ProjectName project={project} /></SelectItem>)}</SelectContent>
           </Select>
           <Button variant="outline" onClick={() => setLocation(withProject("/techmove/raid"))}><AlertTriangle className="mr-2 h-4 w-4" />Issues e riscos</Button>
+          <Button variant="outline" onClick={exportTrailExcel} disabled={!hasSelectedProject || exportingExcel}><FileSpreadsheet className="mr-2 h-4 w-4" />{exportingExcel ? "Exportando..." : "Exportar Excel"}</Button>
           <Button variant="outline" onClick={() => consolidatedReport.mutate({ projectId })} disabled={!hasSelectedProject || consolidatedReport.isPending}><Download className="mr-2 h-4 w-4" />{consolidatedReport.isPending ? "Gerando..." : "Relatório consolidado"}</Button>
         </div>
       </div>
