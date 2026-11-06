@@ -2056,6 +2056,12 @@ export default function Planner() {
     const resourceIdsWithAllocations = allocatedResourceIdsInView;
 
     let result = resources.filter((r: any) => {
+      // Hide unchecked resources without allocations unless explicitly selected.
+      if (
+        r.skipAllocationCheck &&
+        !resourceIdsWithAllocations.has(r.id) &&
+        !filterResources.includes(r.id)
+      ) return false;
       if (!isResourceVisibleInPlanningViews(r.status || "")) return false;
       if (isConsultant && linkedResource && r.id !== linkedResource.id)
         return false;
