@@ -133,6 +133,7 @@ function resizeImage(file: File): Promise<string> {
 export default function Resources() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
+  const [exportingResources, setExportingResources] = useState(false);
   const { data: resources = [] } = trpc.resources.list.useQuery();
   const { data: lookups } = trpc.settings.getLookups.useQuery();
   const { data: appUser } = trpc.access.getByEmail.useQuery(
@@ -475,6 +476,55 @@ export default function Resources() {
     }
   };
 
+  const exportAllResources = async () => {
+    if (exportingResources) return;
+    setExportingResources(true);
+    try {
+      const allResources = await utils.resources.list.fetch();
+      const dateLabel = (value: string | undefined) => {
+        const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return match ? `${match[3]}/${match[2]}/${match[1]}` : value || "";
+      };
+      const rows = [...allResources]
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        .map(resource => ({
+          ID: resource.id,
+          Nome: resource.name,
+          "E-mail": resource.email || "",
+          Perfil: resource.profile || "",
+          Grupo: resource.group || "",
+          Frentes: (resource.fronts?.length ? resource.fronts : [resource.front]).filter(Boolean).join(", "),
+          "Tipo de contratação": resource.contractType || "CLT",
+          Status: resource.status || "",
+          "Capacidade diária (h)": resource.dailyCapacity,
+          Aniversário: dateLabel(resource.birthDate),
+          "Data de início": dateLabel(resource.startDate),
+          "Data de saída": dateLabel(resource.endDate),
+          "Dias de férias por ano": resource.vacationDaysEntitled,
+          "Dias de férias liberados": resource.vacationDaysAvailableEntitled ?? resource.vacationDaysEntitled,
+          "Dias de férias usados": resource.vacationDaysUsed ?? 0,
+          "Saldo de férias": resource.vacationBalance ?? resource.vacationDaysEntitled,
+          "Período de férias início": dateLabel(resource.vacationPeriodStart),
+          "Período de férias fim": dateLabel(resource.vacationPeriodEnd),
+          "Próxima liberação de férias": dateLabel(resource.vacationNextReleaseDate),
+          "Não checar alocação": resource.skipAllocationCheck ? "Sim" : "Não",
+          Observações: resource.notes || "",
+        }));
+      const headers = ["ID", "Nome", "E-mail", "Perfil", "Grupo", "Frentes", "Tipo de contratação", "Status", "Capacidade diária (h)", "Aniversário", "Data de início", "Data de saída", "Dias de férias por ano", "Dias de férias liberados", "Dias de férias usados", "Saldo de férias", "Período de férias início", "Período de férias fim", "Próxima liberação de férias", "Não checar alocação", "Observações"];
+      const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+      sheet["!cols"] = headers.map(header => ({ wch: header === "Nome" || header === "E-mail" ? 36 : header === "Observações" ? 60 : Math.max(20, header.length + 2) }));
+      sheet["!autofilter"] = { ref: sheet["!ref"]! };
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, "Todos os recursos");
+      XLSX.writeFile(workbook, "Todos-os-recursos.xlsx");
+      toast.success(`${allResources.length} recursos exportados`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível exportar os recursos");
+    } finally {
+      setExportingResources(false);
+    }
+  };
+
   const downloadTemplate = () => {
     const exportData =
       resources.length > 0
@@ -482,7 +532,6 @@ export default function Resources() {
             ID: r.id,
             Nome: r.name,
             "E-mail": r.email || "",
-            Foto: r.photoUrl || "",
             Grupo: r.group || "",
             Perfil: r.profile,
             "Frente Principal": r.front || (r.fronts || [])[0] || "",
@@ -648,8 +697,18 @@ export default function Resources() {
           </p>
         </div>
         <div
-          className={`grid w-full gap-2 sm:flex sm:w-auto ${canEdit ? "grid-cols-3" : "grid-cols-1"}`}
+          className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap"
         >
+          <Button
+            variant="outline"
+            onClick={exportAllResources}
+            disabled={exportingResources}
+            title="Exportar todos os recursos, independentemente dos filtros"
+            className="min-w-0 gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm"
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            <span className="truncate">{exportingResources ? "Exportando..." : "Exportar Excel"}</span>
+          </Button>
           <Button
             variant="outline"
             onClick={downloadTemplate}
