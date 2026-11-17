@@ -1853,3 +1853,68 @@ export async function upsertSourceActivity(input: CreateActivityInput) {
     sourceResolved: input.sourceResolved,
   });
 }
+
+/** Permanently removes only archived cards visible to the acting administrator. */
+export async function adminPurgeArchivedActivities(
+  activityIds: string[],
+  actor: Pick<AppUser, "id" | "name">
+) {
+  const ids = [...new Set(activityIds)];
+  const db = getPgPool();
+  if (!db) {
+    let deleted = 0;
+    for (const activityId of ids) {
+      const row = memoryActivities.get(activityId);
+      if (!row?.archivedAt ||
+          (row.visibility === "private" && row.ownerUserId !== actor.id)) continue;
+      if (row.sourceType !== "manual")
+        memorySuppressions.set(`${row.sourceType}:${row.sourceKey}`, {
+          activityId, reason: "Exclusão definitiva de item arquivado",
+          createdByUserId: actor.id, restoredAt: "",
+        });
+      memoryActivities.delete(activityId);
+      memoryParticipants.delete(activityId);
+      memoryChecklist.delete(activityId);
+      memoryComments.delete(activityId);
+      memoryAttachments.delete(activityId);
+      memoryHistory.delete(activityId);
+      memoryLabelAssignments.delete(activityId);
+      for (const [key, planning] of memoryPlanning)
+        if (planning.activityId === activityId) memoryPlanning.delete(key);
+      for (let i = memoryNotifications.length - 1; i >= 0; i--)
+        if (memoryNotifications[i].activityId === activityId) memoryNotifications.splice(i, 1);
+      deleted++;
+    }
+    return { deleted };
+  }
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    // Lock candidates so restoration cannot race the permanent deletion.
+    const candidates = await client.query<{ id: string }>(
+      'SELECT "id" FROM "activities" WHERE "id" = ANY($1::varchar[]) AND "archivedAt" IS NOT NULL AND ("visibility" <> \'private\' OR "ownerUserId" = $2) FOR UPDATE',
+      [ids, actor.id]
+    );
+    const eligibleIds = candidates.rows.map(row => row.id);
+    // Retain source tombstones so synchronization cannot recreate deleted cards.
+    await client.query(
+      `INSERT INTO "activity_source_suppressions" ("id","sourceType","sourceKey","activityId","reason","createdByUserId")
+       SELECT 'purge_' || "id", "sourceType", "sourceKey", "id",
+              'Exclusão definitiva de item arquivado', $2
+       FROM "activities" WHERE "id" = ANY($1::varchar[]) AND "sourceType" <> 'manual'
+       ON CONFLICT DO NOTHING`,
+      [eligibleIds, actor.id]
+    );
+    const result = await client.query(
+      'DELETE FROM "activities" WHERE "id" = ANY($1::varchar[]) AND "archivedAt" IS NOT NULL RETURNING "id"',
+      [eligibleIds]
+    );
+    await client.query("COMMIT");
+    return { deleted: result.rows.length };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}

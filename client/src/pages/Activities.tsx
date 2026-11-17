@@ -2035,6 +2035,35 @@ function AdminActivityPanel({
     },
     onError: error => toast.error(error.message),
   });
+  const [purging, setPurging] = useState(false);
+  const purge = trpc.activities.admin.purgeArchived.useMutation();
+  const purgeAll = async () => {
+    const ids = (archived.data || []).map(item => item.id);
+    if (!ids.length || !window.confirm(
+      `Excluir definitivamente todos os ${ids.length} itens arquivados, incluindo histórico, comentários e anexos dos cards? Esta ação não pode ser desfeita. Os registros de origem dos projetos serão preservados.`
+    )) return;
+    setPurging(true);
+    let deleted = 0;
+    try {
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const result = await purge.mutateAsync({
+          ids: ids.slice(offset, offset + 500),
+          confirmation: "EXCLUIR ARQUIVADOS",
+        });
+        deleted += result.deleted;
+      }
+      toast.success(`${deleted} itens arquivados excluídos definitivamente.`);
+    } catch (error) {
+      toast.error(`Exclusão interrompida após ${deleted} itens: ${error instanceof Error ? error.message : "tente novamente"}`);
+    } finally {
+      await Promise.all([
+        utils.activities.list.invalidate(),
+        utils.activities.admin.archived.invalidate(),
+        utils.activities.admin.audit.invalidate(),
+      ]);
+      setPurging(false);
+    }
+  };
   const term = normalizeSearch(search);
   const items = (archived.data || []).filter(
     item =>
@@ -2074,6 +2103,14 @@ function AdminActivityPanel({
                 />
               </div>
             </div>
+            <Button
+              variant="destructive"
+              disabled={purging || archived.isLoading || !(archived.data || []).length}
+              onClick={() => void purgeAll()}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {purging ? "Excluindo arquivados..." : `Excluir todos os arquivados (${(archived.data || []).length})`}
+            </Button>
             <div className="space-y-2">
               {items.map(item => (
                 <Card key={item.id}>

@@ -511,6 +511,14 @@ export const activitiesRouter = router({
         );
         return activityStore.getActivity(activity.id);
       }),
+    purgeArchived: adminProcedure
+      .input(z.object({
+        ids: z.array(z.string().min(1)).min(1).max(500),
+        confirmation: z.literal("EXCLUIR ARQUIVADOS"),
+      }))
+      .mutation(({ ctx, input }) =>
+        activityStore.adminPurgeArchivedActivities(input.ids, ctx.appUser)
+      ),
     archiveCards: adminProcedure
       .input(
         z.object({
