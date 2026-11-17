@@ -511,6 +511,30 @@ export const activitiesRouter = router({
         );
         return activityStore.getActivity(activity.id);
       }),
+    archiveCards: adminProcedure
+      .input(
+        z.object({
+          ids: z.array(z.string().min(1)).min(1).max(50),
+          reason: z.string().trim().min(5).max(1000),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const activities = [];
+        for (const id of new Set(input.ids))
+          activities.push(await requireActivity(id, ctx.appUser));
+        let archived = 0;
+        for (const activity of activities) {
+          if (activity.archivedAt) continue;
+          // Clearing the board preserves source records and suppresses card recreation.
+          await activityStore.adminArchiveActivity(
+            activity.id,
+            ctx.appUser,
+            input.reason
+          );
+          archived++;
+        }
+        return { archived };
+      }),
     archive: adminProcedure
       .input(
         z.object({

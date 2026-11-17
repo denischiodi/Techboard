@@ -661,6 +661,34 @@ export default function Activities() {
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [clearBoardOpen, setClearBoardOpen] = useState(false);
+  const [clearingBoard, setClearingBoard] = useState(false);
+  const archiveCards = trpc.activities.admin.archiveCards.useMutation();
+  const clearBoard = async () => {
+    setClearingBoard(true);
+    let archived = 0;
+    try {
+      const ids = (activitiesQuery.data || []).map(activity => activity.id);
+      for (let offset = 0; offset < ids.length; offset += 50) {
+        const result = await archiveCards.mutateAsync({
+          ids: ids.slice(offset, offset + 50),
+          reason: "Limpeza de todos os cards do Kanban solicitada pelo administrador",
+        });
+        archived += result.archived;
+      }
+      toast.success(`${archived} cards arquivados. O quadro foi limpo.`);
+      setClearBoardOpen(false);
+    } catch (error) {
+      toast.error(`Limpeza interrompida após ${archived} cards: ${error instanceof Error ? error.message : "tente novamente"}`);
+    } finally {
+      await Promise.all([
+        utils.activities.list.invalidate(),
+        utils.activities.admin.archived.invalidate(),
+        utils.activities.admin.audit.invalidate(),
+      ]);
+      setClearingBoard(false);
+    }
+  };
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [viewName, setViewName] = useState("");
   const [savedViews, setSavedViews] = useState<SavedActivityView[]>(() => {
@@ -1316,6 +1344,35 @@ export default function Activities() {
               Arquivados e auditoria
             </Button>
           )}
+          {appUser?.role === "admin" && (
+            <Button
+              variant="outline"
+              disabled={clearingBoard || activitiesQuery.isLoading || !(activitiesQuery.data || []).length}
+              onClick={() => setClearBoardOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Limpar Kanban
+            </Button>
+          )}
+          <Dialog open={clearBoardOpen} onOpenChange={open => !clearingBoard && setClearBoardOpen(open)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Limpar todos os cards do Kanban</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Arquivar todos os {(activitiesQuery.data || []).length} cards acessíveis,
+                de todos os projetos e da operação interna, incluindo os concluídos.
+                Os filtros atuais não limitam esta limpeza. Você poderá restaurá-los
+                em Arquivados e auditoria. Os registros de origem serão preservados.
+              </p>
+              <DialogFooter>
+                <Button variant="outline" disabled={clearingBoard} onClick={() => setClearBoardOpen(false)}>Cancelar</Button>
+                <Button disabled={clearingBoard} onClick={() => void clearBoard()}>
+                  {clearingBoard ? "Arquivando cards..." : "Arquivar todos os cards"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Button variant="outline" onClick={() => void handleExportExcel()}>
             <Download className="mr-2 h-4 w-4" />
             Baixar Excel
