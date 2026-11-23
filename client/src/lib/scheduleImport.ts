@@ -101,13 +101,25 @@ export async function readSchedule(file: File, manager: string) {
   if (file.size > 20 * 1024 * 1024)
     throw new Error("O cronograma deve ter no máximo 20 MB.");
   const { readProject } = await import("mppwriter");
+  const { parseProjectSchedule } = await import("@shared/projectSchedule");
+  const bytes = new Uint8Array(await file.arrayBuffer());
   let tasks: ScheduleTask[];
+  let viewer;
   try {
-    tasks = readProject(new Uint8Array(await file.arrayBuffer())).tasks;
+    tasks = readProject(bytes).tasks;
+    viewer = parseProjectSchedule(bytes, file.name);
   } catch {
     throw new Error(
       "Não foi possível ler o MPP. Use um arquivo válido do Project 2010 ou posterior, sem senha."
     );
   }
-  return summarizeSchedule(tasks, manager);
+  return { ...summarizeSchedule(tasks, manager), viewer };
+}
+
+export async function scheduleFileData(file: File) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 8192)
+    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
+  return btoa(binary);
 }

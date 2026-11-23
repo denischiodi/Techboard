@@ -45,6 +45,8 @@ import { isValid } from "date-fns/isValid";
 import * as store from "./plannerStore";
 import * as gpChecklistStore from "./gpChecklistStore";
 import { storagePut } from "./storage";
+import { parseProjectSchedule } from "../shared/projectSchedule";
+import * as projectScheduleStore from "./projectScheduleStore";
 import {
   LoginCodeRateLimitError,
   consumeLoginCode,
@@ -1454,6 +1456,49 @@ export const appRouter = router({
 
   // ===== PROJECTS =====
   projects: router({
+    schedule: router({
+      get: protectedProcedure
+        .input(z.object({ projectId: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+          await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+          return projectScheduleStore.getProjectSchedule(input.projectId);
+        }),
+      save: projectsModifyProcedure
+        .input(
+          z.object({
+            projectId: z.string().min(1),
+            fileName: z.string().min(1).max(255),
+            fileData: z.string().min(1).max(28_000_000),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          assertCanWrite(ctx);
+          await getVisibleProjectOrThrow(input.projectId, ctx.appUser);
+          const bytes = Buffer.from(input.fileData, "base64");
+          if (
+            !input.fileName.toLowerCase().endsWith(".mpp") ||
+            !bytes.length ||
+            bytes.length > 20 * 1024 * 1024
+          )
+            badRequest("Envie um arquivo .mpp de até 20 MB.");
+          let snapshot;
+          try {
+            snapshot = parseProjectSchedule(bytes, input.fileName);
+          } catch {
+            badRequest(
+              "Não foi possível ler o cronograma. Use um MPP válido do Project 2010 ou posterior, sem senha."
+            );
+          }
+          if (!snapshot.tasks.length)
+            badRequest("O cronograma não contém tarefas válidas.");
+          return projectScheduleStore.saveProjectSchedule(
+            input.projectId,
+            snapshot,
+            bytes,
+            ctx.appUser.id
+          );
+        }),
+    }),
     list: protectedProcedure.query(async ({ ctx }) => {
       const explicit = await projectAccess.listProjectMemberships(
         undefined,

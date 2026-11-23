@@ -44,7 +44,9 @@ import {
   ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
-import { readSchedule } from "@/lib/scheduleImport";
+import { readSchedule, scheduleFileData } from "@/lib/scheduleImport";
+import ProjectScheduleViewer from "@/components/ProjectScheduleViewer";
+import type { ProjectScheduleView } from "@shared/projectSchedule";
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
 import type {
   Project,
@@ -223,6 +225,10 @@ export default function Projects() {
   const [phaseRows, setPhaseRows] = useState<PhaseGridRow[]>([]);
   const scheduleInputRef = useRef<HTMLInputElement>(null);
   const [importingSchedule, setImportingSchedule] = useState(false);
+  const [schedulePreview, setSchedulePreview] =
+    useState<ProjectScheduleView | null>(null);
+  const scheduleFileRef = useRef<File | null>(null);
+  const saveScheduleMutation = trpc.projects.schedule.save.useMutation();
   const [importedSchedule, setImportedSchedule] = useState<{
     startDate: string;
     endDate: string;
@@ -591,6 +597,8 @@ export default function Projects() {
   });
 
   const openPhases = (p: Project) => {
+    scheduleFileRef.current = null;
+    setSchedulePreview(null);
     setSelectedProject(p);
     setImportedSchedule(null);
     const existingRows = allPhases
@@ -664,6 +672,8 @@ export default function Projects() {
     setImportingSchedule(true);
     try {
       const schedule = await readSchedule(file, selectedProject.manager || "");
+      scheduleFileRef.current = file;
+      setSchedulePreview(schedule.viewer);
       const matchedIds = new Set<string>();
       setPhaseRows(
         schedule.rows.map(row => {
@@ -764,6 +774,17 @@ export default function Projects() {
         utils.phases.list.invalidate(),
         utils.projects.list.invalidate(),
       ]);
+      if (scheduleFileRef.current) {
+        await saveScheduleMutation.mutateAsync({
+          projectId: selectedProject.id,
+          fileName: scheduleFileRef.current.name,
+          fileData: await scheduleFileData(scheduleFileRef.current),
+        });
+        await utils.projects.schedule.get.invalidate({
+          projectId: selectedProject.id,
+        });
+        scheduleFileRef.current = null;
+      }
       toast.success("Cronograma de marcos salvo");
       setPhasesDialogOpen(false);
     } catch (error: any) {
@@ -983,6 +1004,12 @@ export default function Projects() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
+                    <ProjectScheduleViewer
+                      project={p}
+                      phases={allPhases.filter(
+                        phase => phase.projectId === p.id
+                      )}
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1376,6 +1403,13 @@ export default function Projects() {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
+                {selectedProject && (
+                  <ProjectScheduleViewer
+                    project={selectedProject}
+                    phases={projectPhases}
+                    preview={schedulePreview}
+                  />
+                )}
                 <input
                   ref={scheduleInputRef}
                   type="file"
