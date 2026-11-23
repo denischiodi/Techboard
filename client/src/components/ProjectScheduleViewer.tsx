@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
-import { BarChart3, Download, Search } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { BarChart3, Download, Search, Upload } from "lucide-react";
+import { toast } from "sonner";
+import { readScheduleView, scheduleFileData } from "@/lib/scheduleImport";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -304,6 +306,55 @@ export default function ProjectScheduleViewer({
   preview?: ProjectScheduleView | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [filePreview, setFilePreview] = useState<ProjectScheduleView | null>(
+    null
+  );
+  const [reading, setReading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const selectedFile = useRef<File | null>(null);
+  const utils = trpc.useUtils();
+  const save = trpc.projects.schedule.save.useMutation();
+  const busy = reading || save.isPending;
+  const activePreview = filePreview || preview;
+  const selectFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setReading(true);
+    try {
+      const data = await readScheduleView(file);
+      selectedFile.current = file;
+      setFilePreview(data);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao abrir cronograma"
+      );
+    } finally {
+      setReading(false);
+    }
+  };
+  const saveFile = async () => {
+    const file = selectedFile.current;
+    if (!file) return;
+    try {
+      await save.mutateAsync({
+        projectId: project.id,
+        fileName: file.name,
+        fileData: await scheduleFileData(file),
+      });
+      await utils.projects.schedule.get.invalidate({ projectId: project.id });
+      await query.refetch();
+      selectedFile.current = null;
+      setFilePreview(null);
+      toast.success(
+        "Cronograma completo salvo. Os marcos cadastrados foram preservados."
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao salvar cronograma"
+      );
+    }
+  };
   const query = trpc.projects.schedule.get.useQuery(
     { projectId: project.id },
     { enabled: open && !preview, staleTime: 0 }
@@ -320,19 +371,81 @@ export default function ProjectScheduleViewer({
         <BarChart3 className="mr-1 h-4 w-4" />
         Visualizar cronograma
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={value => {
+          if (!busy) {
+            setOpen(value);
+            if (!value) {
+              setFilePreview(null);
+              selectedFile.current = null;
+            }
+          }
+        }}
+      >
         <DialogContent className="flex max-h-[94vh] w-[96vw] flex-col overflow-hidden sm:max-w-[1500px]">
           <DialogHeader>
             <DialogTitle>Cronograma — {project.name}</DialogTitle>
           </DialogHeader>
+          {!preview && (
+            <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept=".mpp"
+                  className="hidden"
+                  aria-label="Arquivo MPP completo"
+                  onChange={selectFile}
+                  disabled={busy}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => fileInput.current?.click()}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {reading ? "Lendo arquivo…" : "Importar MPP completo"}
+                </Button>
+                {filePreview && (
+                  <>
+                    <Button type="button" disabled={busy} onClick={saveFile}>
+                      {save.isPending
+                        ? "Salvando…"
+                        : "Salvar arquivo no projeto"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        selectedFile.current = null;
+                        setFilePreview(null);
+                      }}
+                    >
+                      Descartar prévia
+                    </Button>
+                  </>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Abra todas as tarefas do arquivo original. Salvar aqui preserva
+                as fases e os marcos já cadastrados.
+              </p>
+            </div>
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {preview ? (
+            {activePreview ? (
               <>
                 <p className="mb-3 text-sm text-muted-foreground">
-                  Prévia de {preview.fileName}. Salve o cronograma para
+                  Prévia de {activePreview.fileName}. Salve o cronograma para
                   consultá-lo novamente.
                 </p>
-                <ScheduleContent schedule={preview} />
+                <ScheduleContent
+                  key={activePreview.fileName}
+                  schedule={activePreview}
+                />
               </>
             ) : query.isLoading ? (
               <p role="status">Carregando cronograma…</p>

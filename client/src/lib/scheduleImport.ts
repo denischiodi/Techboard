@@ -95,11 +95,32 @@ export function summarizeSchedule(tasks: ScheduleTask[], manager = "") {
   };
 }
 
-export async function readSchedule(file: File, manager: string) {
+function validateScheduleFile(file: File) {
   if (!file.name.toLowerCase().endsWith(".mpp"))
     throw new Error("Selecione um arquivo Microsoft Project (.mpp).");
   if (file.size > 20 * 1024 * 1024)
     throw new Error("O cronograma deve ter no máximo 20 MB.");
+}
+
+export async function readScheduleView(file: File) {
+  validateScheduleFile(file);
+  const { parseProjectSchedule } = await import("@shared/projectSchedule");
+  try {
+    const view = parseProjectSchedule(
+      new Uint8Array(await file.arrayBuffer()),
+      file.name
+    );
+    if (!view.tasks.length) throw new Error("Sem tarefas");
+    return view;
+  } catch {
+    throw new Error(
+      "Não foi possível ler o MPP. Use um arquivo válido do Project 2010 ou posterior, sem senha."
+    );
+  }
+}
+
+export async function readSchedule(file: File, manager: string) {
+  validateScheduleFile(file);
   const { readProject } = await import("mppwriter");
   const { parseProjectSchedule } = await import("@shared/projectSchedule");
   const bytes = new Uint8Array(await file.arrayBuffer());

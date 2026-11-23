@@ -246,6 +246,9 @@ Observacao: se `NODE_ENV=production` e alguma variavel obrigatoria estiver ausen
 ## Visualizador de cronogramas MPP
 
 Em Projetos, “Visualizar cronograma” mostra tarefas, Gantt, busca e exportação CSV.
+Na própria visualização, “Importar MPP completo” abre uma prévia de todas as tarefas;
+“Salvar arquivo no projeto” preserva o original sem alterar as fases e os marcos.
+Essa opção também recupera o detalhe de projetos com importações antigas.
 Importações anteriores continuam exibindo os marcos salvos. Elas não preservavam o
 arquivo MPP, os percentuais de trabalho ou a data de status; esses campos ficam
 indisponíveis até uma nova importação do arquivo original.

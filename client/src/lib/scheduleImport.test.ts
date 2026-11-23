@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { summarizeSchedule, type ScheduleTask } from "./scheduleImport";
+import {
+  readScheduleView,
+  summarizeSchedule,
+  type ScheduleTask,
+} from "./scheduleImport";
 
 const task = (
   uid: number,
@@ -16,6 +20,24 @@ const task = (
 });
 
 describe("importação do cronograma", () => {
+  it("valida o arquivo completo sem depender da importação de marcos", async () => {
+    const file = (name: string, size: number) =>
+      ({
+        name,
+        size,
+        arrayBuffer: async () =>
+          new TextEncoder().encode("arquivo inválido").buffer,
+      }) as File;
+    await expect(readScheduleView(file("teste.pdf", 20))).rejects.toThrow(
+      /\.mpp/
+    );
+    await expect(
+      readScheduleView(file("teste.mpp", 21 * 1024 * 1024))
+    ).rejects.toThrow(/20 MB/);
+    await expect(readScheduleView(file("teste.mpp", 20))).rejects.toThrow(
+      /MPP/
+    );
+  });
   it("preserva fases paralelas, progresso, encerramento e datas sem deslocamento de fuso", () => {
     const result = summarizeSchedule(
       [
