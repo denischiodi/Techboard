@@ -1,4 +1,5 @@
 import * as M from "mppwriter";
+import { expectedProgress } from "./scheduleProgress";
 
 export type ScheduleViewTask = {
   uid: number;
@@ -148,7 +149,7 @@ export function parseProjectSchedule(
       workComplete: percent(
         fixedValue(row, M.NATIVE.PERCENT_WORK_COMPLETE, "u16")
       ),
-      expected: custom["% Esperado Previsto"] || null,
+      expected: expectedProgress(custom),
       custom,
     });
   });
