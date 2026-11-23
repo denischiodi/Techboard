@@ -739,7 +739,21 @@ export default function Projects() {
         a.endDate.localeCompare(b.endDate)
     );
     setSavingSchedule(true);
+    let completeFileSaved = false;
     try {
+      // Preserve the original first: phase writes may fail independently.
+      if (scheduleFileRef.current) {
+        await saveScheduleMutation.mutateAsync({
+          projectId: selectedProject.id,
+          fileName: scheduleFileRef.current.name,
+          fileData: await scheduleFileData(scheduleFileRef.current),
+        });
+        await utils.projects.schedule.get.invalidate({
+          projectId: selectedProject.id,
+        });
+        scheduleFileRef.current = null;
+        completeFileSaved = true;
+      }
       if (importedSchedule) {
         await updateMutation.mutateAsync({
           id: selectedProject.id,
@@ -774,21 +788,14 @@ export default function Projects() {
         utils.phases.list.invalidate(),
         utils.projects.list.invalidate(),
       ]);
-      if (scheduleFileRef.current) {
-        await saveScheduleMutation.mutateAsync({
-          projectId: selectedProject.id,
-          fileName: scheduleFileRef.current.name,
-          fileData: await scheduleFileData(scheduleFileRef.current),
-        });
-        await utils.projects.schedule.get.invalidate({
-          projectId: selectedProject.id,
-        });
-        scheduleFileRef.current = null;
-      }
       toast.success("Cronograma de marcos salvo");
       setPhasesDialogOpen(false);
     } catch (error: any) {
-      toast.error(error?.message || "Erro ao salvar marcos");
+      toast.error(
+        completeFileSaved
+          ? `Arquivo completo salvo, mas houve erro ao salvar os marcos: ${error?.message || "tente novamente"}`
+          : error?.message || "Erro ao salvar marcos"
+      );
     } finally {
       setSavingSchedule(false);
     }
