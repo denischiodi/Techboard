@@ -1,5 +1,6 @@
 import * as M from "mppwriter";
 import { expectedProgress } from "./scheduleProgress";
+import { readMppText } from "./mppText";
 
 export type ScheduleViewTask = {
   uid: number;
@@ -132,7 +133,7 @@ export function parseProjectSchedule(
     M.TEXT_IDS.forEach((id, index) => {
       const raw = variable(uid, id);
       if (!raw) return;
-      const text = M.decodeUnicode(raw).trim();
+      const text = readMppText(raw);
       if (text) custom[aliases.get(id) || `Texto${index + 1}`] = text;
     });
     displayIds.set(uid, fixedValue(row, M.NATIVE.ID, "u32") ?? row);
