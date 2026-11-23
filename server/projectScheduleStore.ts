@@ -1,5 +1,6 @@
 import { getPgPool } from "./db";
 import type { ProjectScheduleView } from "../shared/projectSchedule";
+import { withExpectedProgress } from "../shared/scheduleProgress";
 
 export type SavedProjectSchedule = ProjectScheduleView & { savedAt: string };
 const memory = new Map<string, SavedProjectSchedule>();
@@ -8,14 +9,20 @@ export async function getProjectSchedule(
   projectId: string
 ): Promise<SavedProjectSchedule | null> {
   const db = getPgPool();
-  if (!db) return memory.get(projectId) || null;
+  if (!db) {
+    const snapshot = memory.get(projectId);
+    return snapshot ? withExpectedProgress(snapshot) : null;
+  }
   const result = await db.query(
     'SELECT "snapshot", "savedAt" FROM "project_schedules" WHERE "projectId"=$1',
     [projectId]
   );
   const row = result.rows[0];
   return row
-    ? { ...row.snapshot, savedAt: new Date(row.savedAt).toISOString() }
+    ? withExpectedProgress({
+        ...row.snapshot,
+        savedAt: new Date(row.savedAt).toISOString(),
+      })
     : null;
 }
 
