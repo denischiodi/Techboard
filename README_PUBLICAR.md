@@ -242,3 +242,22 @@ Depois:
 5. Validar dominio e HTTPS.
 
 Observacao: se `NODE_ENV=production` e alguma variavel obrigatoria estiver ausente, o servidor deve falhar no boot. Isso e intencional para evitar uma publicacao sem seguranca ou sem persistencia.
+
+## Visualizador de cronogramas MPP
+
+Em Projetos, “Visualizar cronograma” mostra tarefas, Gantt, busca e exportação CSV.
+Importações anteriores continuam exibindo os marcos salvos. Elas não preservavam o
+arquivo MPP, os percentuais de trabalho ou a data de status; esses campos ficam
+indisponíveis até uma nova importação do arquivo original.
+
+Novas importações em “Cronograma de Marcos” oferecem uma prévia completa. Ao clicar
+em “Salvar Cronograma”, o arquivo original e os dados extraídos são gravados em
+`project_schedules`, pela migration `0045_project_schedules.sql`. O limite é 20 MB.
+A leitura e a gravação respeitam o acesso ao projeto e as permissões de alteração.
+O ambiente sem PostgreSQL mantém somente uma cópia em memória durante a execução.
+
+Os percentuais são valores gravados no MPP: duração e trabalho são indicadores
+distintos. O previsto usa exclusivamente o campo identificado pelo alias
+“% Esperado Previsto”; nenhum percentual é estimado por dias corridos e as fórmulas
+do Project não são recalculadas. Datas preservam o dia do arquivo, sem conversão
+de fuso. A leitura usa a dependência MIT `mppwriter` já existente, sem Java.
